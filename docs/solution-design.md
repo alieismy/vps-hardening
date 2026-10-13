@@ -4,7 +4,7 @@
 |---|---|
 | 状态 | 已批准 v1.0。用户于 2026-10-13 确认第 11 节的五项建议（需求 U9、D18～D20）；作为详细设计、验证计划和实现的依据，修改需重新评审 |
 | 日期 | 2026-10-13 |
-| 上游 | [需求规格说明 v1.1](requirements.md)（已批准） |
+| 上游 | [需求规格说明 v1.2](requirements.md)（已批准） |
 | 下游 | 详细设计、[验证计划](verification-plan.md)、实现 |
 | 深度 | 高层设计：确定组件、边界、流程和关键机制，不含代码和操作手册 |
 
@@ -254,6 +254,7 @@ stateDiagram-v2
 - `apply`、`confirm` 和 `status` 输出隧道命令模板：本地只绑定 `127.0.0.1`；用管理用户登录，指定私钥，带上 `IdentitiesOnly=yes` 和 `ExitOnForwardFailure=yes`；不使用 `-g` 或 `0.0.0.0`。使用说明中另外给出写进 Windows `~/.ssh/config`（`LocalForward`）的写法。
 - verify 发现 `x-ui.service` 后检查：面板端口只在回环地址上监听。监听在 `0.0.0.0`、`::` 或公网地址上时判为不符合。这一层由 vps-proxy-setup 设置，本工具只核对。
 - 对 vps-proxy-setup 的要求：安装 3X-UI 后必须执行 `x-ui setting -listenIP 127.0.0.1` 并重启 x-ui。v3.7.0 只有在交互安装、并且选择不配证书时，才会询问是否绑定回环；非交互安装会强制不绑定（已核实 v3.7.0 `install.sh`）。
+- 对 vps-proxy-setup 的另外两条要求（需求 D21）：安装时带版本参数 `v3.7.0`；安装后用 tag 中已校验的 `x-ui.sh` 替换 `/usr/bin/x-ui`，因为 `install.sh` 总是从 main 分支下载这个菜单脚本。
 
 ### 7.5 防锁死与确认（FR-05）
 
