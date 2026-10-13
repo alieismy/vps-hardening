@@ -4,7 +4,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: planning — no usa
 
 为 Debian/Ubuntu VPS 提供基础安全加固，包括：SSH 只允许密钥登录、禁止 root 登录、UFW 只开放必要端口、Fail2ban，以及自动安全更新。目标是在不明显增加日常管理负担的前提下缩小暴露面，同时避免把管理员锁在服务器外。
 
-**当前状态：规划中，尚无可用版本。** 本仓库目前只有范围记录、[需求规格说明](docs/requirements.md)（v1.1，已确认）、[方案设计](docs/solution-design.md)（v1.0，已确认）和[验证计划](docs/verification-plan.md)（草案，待评审），不要在任何 VPS 上运行。
+**当前状态：规划中，尚无可用版本。** 本仓库目前只有范围记录、[需求规格说明](docs/requirements.md)（v1.2，已确认）、[方案设计](docs/solution-design.md)（v1.0，已确认）和[验证计划](docs/verification-plan.md)（v1.0，已确认），不要在任何 VPS 上运行。
 
 ## 已确认的范围（2026-10-10，2026-10-13 补充）
 
@@ -20,18 +20,15 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: planning — no usa
 | 镜像默认用户 | 如果有免密 sudo，禁止该账户经 SSH 登录 |
 | 适用主机 | 只支持新机，在安装 3X-UI 之前执行；已运行 3X-UI 的存量主机不在范围内 |
 | 交付形态 | 在 VPS 本机运行的单命令工具 `vps-hardening`，提供预检、应用、验证和回滚，不依赖控制端；应用后须在 10 分钟内（可设 3～60 分钟）从新的 SSH 会话确认，否则自动恢复 |
-| 3X-UI 共存基线 | v3.7.0：安装时设 `XUI_ENABLE_FAIL2BAN=false`，用 `XUI_PANEL_PORT` 预先指定面板端口，不使用 3X-UI 的防火墙菜单和 BBR 菜单 |
+| 3X-UI 共存基线 | v3.7.0：安装时带版本参数 `v3.7.0`，并用该 tag 中已校验的 `x-ui.sh` 替换 `/usr/bin/x-ui`（上游安装脚本总是从 main 分支下载它）；设 `XUI_ENABLE_FAIL2BAN=false`，用 `XUI_PANEL_PORT` 预先指定面板端口；不使用 3X-UI 的防火墙菜单和 BBR 菜单 |
 
 范围限定为基础加固，不做 CIS 全量合规、入侵检测、AppArmor/SELinux 策略或审计系统。本仓库不安装代理服务，也不做网络性能调优。
 
 ## 待定事项
 
-需求和方案设计已没有待决事项（2026-10-13 确认）。验证计划的待决事项见[验证计划第 9 节](docs/verification-plan.md#9-待决事项)，其中需要用户决定的是：
+需求、方案设计和验证计划都已确认（2026-10-13）。剩下一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
 
-- 是否在需求第 7.2 节补登两条 3X-UI 安装约定：v3.7.0 的 `install.sh` 不带版本参数会安装最新版，并且总是从 main 分支安装管理脚本 `/usr/bin/x-ui`；
-- 真实主机验收的时间和主机。
-
-下一步：评审验证计划，然后进入里程碑 M1（只读的预检和验证，以及虚拟机测试框架）。
+下一步：里程碑 M1（只读的预检和验证，以及虚拟机测试框架）。
 
 ## 配套仓库
 
