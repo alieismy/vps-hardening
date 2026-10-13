@@ -77,14 +77,17 @@ expect_clean() {
 }
 
 # Everything a read-only command must leave untouched (verification plan 4).
-# Rule counters are excluded: they change with the test's own SSH traffic.
+# Excluded, because other processes change them during a test: rule counters
+# (the test's own SSH traffic) and the content of the 3X-UI database, which the
+# running panel writes on its own.
 snapshot() {
   local out="$phase_dir/snap-$1.txt" unit tool
   {
     echo '== /etc metadata'
     find /etc -xdev -printf '%M %u:%g %p -> %l\n' | sort || true
     echo '== /etc content'
-    find /etc -xdev -type f -print0 | sort -z | xargs -0 -r sha256sum || true
+    find /etc -xdev -type f -print0 | sort -z | xargs -0 -r sha256sum |
+      grep -vE '  /etc/x-ui/x-ui\.db(-wal|-shm)?$' || true
     echo '== ssh keys'
     find /root/.ssh /home -xdev -path '*/.ssh/*' -type f -print0 | sort -z | xargs -0 -r sha256sum || true
     echo '== nft'
@@ -121,8 +124,11 @@ same_snapshot() {
 }
 
 apt_busy() {
-  local locks
-  pgrep -x 'apt|apt-get|aptitude|dpkg|apt.systemd.dai' >/dev/null && return 0
+  local locks name
+  # One name per call: pgrep -x rejects patterns longer than 15 characters.
+  for name in apt apt-get aptitude dpkg apt.systemd.dai; do
+    pgrep -x -- "$name" >/dev/null && return 0
+  done
   pgrep -f '^/usr/bin/python3 /usr/bin/unattended-upgrade( |$)' >/dev/null && return 0
   locks="$(lslocks -n -o PATH 2>/dev/null)" || locks=''
   grep -qE '^/var/(lib/dpkg/lock(-frontend)?|lib/apt/lists/lock|cache/apt/archives/lock)$' <<<"$locks"
@@ -323,6 +329,16 @@ phase_negative() {
   release_dpkg_lock
   expect_rc vt02-aptlock 1
   expect_report vt02-aptlock FAIL apt.idle
+
+  # A dpkg process between lock acquisitions holds no lock; its name must count.
+  install -m 0755 "$(command -v sleep)" "$PRIVATE/dpkg"
+  "$PRIVATE/dpkg" 300 &
+  dpkg_pid=$!
+  capture vt02-dpkgproc "$VH" preflight "${GOOD_ARGS[@]}"
+  kill "$dpkg_pid"
+  wait "$dpkg_pid" 2>/dev/null || true
+  expect_rc vt02-dpkgproc 1
+  expect_report vt02-dpkgproc FAIL apt.idle
 
   input_case user-root 2 '管理用户不能是 root' preflight --user root "${key[@]}"
   input_case user-upper 2 '用户名不合法' preflight --user Admin "${key[@]}"

@@ -148,7 +148,7 @@ apt_config_list() {
 # alone are not used for unattended-upgrades: its shutdown helper always runs
 # under the same truncated name, so the run lock is checked instead.
 package_manager_busy() {
-  local lock locks
+  local lock locks name
   locks="$(lslocks -n -o PATH 2>/dev/null)" || locks=''
   for lock in /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock \
     /var/cache/apt/archives/lock /run/unattended-upgrades.lock; do
@@ -156,7 +156,14 @@ package_manager_busy() {
       return 0
     fi
   done
-  pgrep -x 'apt|apt-get|aptitude|dpkg' >/dev/null 2>&1
+  # One name per call: pgrep matches nothing when the whole pattern is longer
+  # than 15 characters, even for an alternation of short names.
+  for name in apt apt-get aptitude dpkg; do
+    if pgrep -x -- "$name" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 apt_candidate() {
