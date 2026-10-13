@@ -2,10 +2,10 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 草案 v0.1，待用户评审。评审通过前不作为实现依据 |
+| 状态 | 已批准 v1.0。用户于 2026-10-13 确认第 11 节的五项建议（需求 U9、D18～D20）；作为详细设计、验证计划和实现的依据，修改需重新评审 |
 | 日期 | 2026-10-13 |
-| 上游 | [需求规格说明 v1.0](requirements.md)（已批准） |
-| 下游 | 详细设计、验证计划、实现 |
+| 上游 | [需求规格说明 v1.1](requirements.md)（已批准） |
+| 下游 | 详细设计、[验证计划](verification-plan.md)、实现 |
 | 深度 | 高层设计：确定组件、边界、流程和关键机制，不含代码和操作手册 |
 
 **证据状态。** 本文只是设计，仓库里还没有实现，也没有任何运行证据。文中标"已核实"的，是 2026-10-13 对照上游源码、发行版软件包或官方文档核实的结果；标"推断"的，要在实现和虚拟机测试中证实。
@@ -125,7 +125,7 @@
 
 ### 7.1 命令面
 
-命令名暂定为 `vps-hardening`（OI-2）。
+命令名为 `vps-hardening`（OI-2，已确认）。
 
 | 子命令 | 作用 | 是否修改系统 | 需求 |
 |---|---|---|---|
@@ -142,7 +142,7 @@
 - 用户名、公钥文件、面板端口、公开端口、`maxretry` 和确认时限，都由命令行参数提供；密码不经参数传递。
 - `apply`、`ports`、`rollback` 必须在交互终端中运行，否则拒绝执行。这也排除了 `curl | bash` 式的误用。
 - 公钥从文件读入，可以直接用新机上 root 的 `authorized_keys`，也就是需求 U5 中登录用的那把。逐行用 `ssh-keygen -l` 校验；内容带私钥头时拒绝。
-- 面板端口默认 2053（与用户的隧道配置一致），可以修改（OI-1）。工具记录这个值，供 verify 核对和输出隧道命令；vps-proxy-setup 安装 3X-UI 时把同一个值传给 `XUI_PANEL_PORT`。
+- 面板端口默认 2053（与用户的隧道配置一致），可以修改（需求 D20）。工具记录这个值，供 verify 核对和输出隧道命令；vps-proxy-setup 安装 3X-UI 时把同一个值传给 `XUI_PANEL_PORT`。
 
 ### 7.2 文件与对象
 
@@ -241,12 +241,12 @@ stateDiagram-v2
 #### 自动安全更新（FR-09）
 
 - 独立文件设置 `APT::Periodic::Update-Package-Lists "1"`、`APT::Periodic::Unattended-Upgrade "1"` 和 `Unattended-Upgrade::Automatic-Reboot "false"`。
-- 先清空 `Unattended-Upgrade::Origins-Pattern` 和 `Unattended-Upgrade::Allowed-Origins`（unattended-upgrades 两个列表都读，已核实 2.12 源码），再只写安全来源：
-  - Debian：`Debian-Security` 标签的来源，与发行版默认值中的安全来源相同；
+- 先清空 `Unattended-Upgrade::Origins-Pattern` 和 `Unattended-Upgrade::Allowed-Origins`（unattended-upgrades 两个列表都读，已核实 2.12 源码），再写入 FR-09 规定的来源（需求 D19）：
+  - Debian：`Debian-Security` 标签的安全来源，以及 `label=Debian` 的稳定版小版本更新；
   - Ubuntu：`<代号>-security`，另外保留 ESM 的两个安全来源（不附加 Ubuntu Pro 时不起作用）。
-- 与发行版默认值相比，有两处收紧（已核实）：
-  - Debian 默认还包含 `label=Debian`，也就是稳定版小版本更新。这涉及取舍，见 OI-3；
-  - Ubuntu 默认还包含发布仓库本身。发布仓库在版本发布后不再变化，去掉它实际没有影响。
+- 与发行版默认值相比（已核实）：
+  - Debian 与默认值相同。仍然显式写入，是为了让生效值不依赖镜像对 `50unattended-upgrades` 的改动；
+  - Ubuntu 去掉了发布仓库本身。发布仓库在版本发布后不再变化，去掉它实际没有影响。
 
 #### 面板隧道（FR-07）
 
@@ -259,7 +259,7 @@ stateDiagram-v2
 
 **布置顺序。** 先写待确认标记，再启用开机兜底单元，最后创建临时定时器。三者都成功，才开始改 SSH。
 
-**确认时限（OD-4 建议值）：默认 10 分钟，允许 3～60 分钟。**
+**确认时限（OD-4，已定为需求 D18）：默认 10 分钟，允许 3～60 分钟。**
 
 - 下限 3 分钟：在 Windows 上新开终端、以管理用户登录、输入 sudo 密码，正常情况下一两分钟就能完成，3 分钟留出余量。
 - 默认 10 分钟：留出排查密钥路径、`~/.ssh/config` 写错等常见问题的时间。代价是，如果真的被锁在外面，最多要等 10 分钟才会自动恢复。
@@ -296,7 +296,7 @@ stateDiagram-v2
 | UFW | 已启用；默认策略符合要求；`IPV6=yes`；规则集合与声明逐条一致，没有多余规则（包括不带工具注释的规则）；没有面板端口和 80 端口 | 不符合 |
 | Fail2ban | 配置检查通过；服务启用且运行；只有 `sshd` 一个 jail，没有 `3x-ipl`；生效值等于 FR-08 表；`jail.conf` 和 `fail2ban.conf` 未改动 | 不符合 |
 | nftables | `nftables.service` 未启用 | 不符合 |
-| 自动更新 | `apt-config dump` 中的三个值；两个 APT 定时器启用且运行；来源列表只有安全来源 | 不符合 |
+| 自动更新 | `apt-config dump` 中的三个值；两个 APT 定时器启用且运行；来源列表与 FR-09 一致 | 不符合 |
 | 边界 | 安装了 3X-UI 时：面板端口只在回环地址上监听；`/etc/sysctl.d/99-bbr-x-ui.conf` 不存在。没有 Docker | 不符合 |
 | 待重启 | `/var/run/reboot-required` 存在 | 警告 |
 
@@ -353,8 +353,8 @@ stateDiagram-v2
 | DR-5 | `ufw`、`sudo -l`、`fail2ban-client` 的输出格式随版本变化 | verify 误报或漏报 | 按平台固定测试；版本变化时测试先失败 | FR-10 |
 | DR-6 | Bash 实现缺陷多 | 维护成本高 | 严格模式、模块化、ShellCheck、生命周期测试；退路是把状态和解析部分换成 Python（第 5 节） | R-9 |
 | DR-7 | Debian 13 的 OpenSSH 10.0 把认证拆到新的 `sshd-auth` 进程，发布说明称部分日志会改由 `sshd-auth` 发出（已核实）。而 Debian 13 的 fail2ban 1.1.0-8 中，sshd 过滤器的进程名只匹配 `sshd` 和 `sshd-session`（已核实）。`journalmatch` 中的 `_SYSTEMD_UNIT=ssh.service` 一项按"或"组合，能收进这些日志（推断）；但过滤器的行首前缀可能匹配不上 | Debian 13 上部分失败登录不被计数，Fail2ban 少封或不封 | 上游没有找到相关问题报告。以 FR-08 的真实触发测试为准；确认存在问题时，改写过滤器参数需要重新评审 FR-08 | FR-08 |
-| DR-8 | Ubuntu 上 fail2ban 属于 universe 仓库。它的修复版本发布在 noble-updates，而不是 noble-security（已核实）；Canonical 只对附加 Ubuntu Pro 的主机承诺 universe 软件包的安全维护（已核实，Ubuntu ESM 页面） | 只装安全更新时，fail2ban 的后续修复不会自动安装 | R-7 的前提已经核实，处理方式见 OI-4 | R-7 |
-| DR-9 | 只装安全来源，会错过 Debian 通过小版本发布修复的低危漏洞（Debian 安全团队把这类问题标为 `no-dsa`，不发安全公告，可能在小版本更新中修复，已核实 Debian 安全追踪器说明） | 低危漏洞的修复滞后 | 见 OI-3 | FR-09 |
+| DR-8 | Ubuntu 上 fail2ban 属于 universe 仓库。它的修复版本发布在 noble-updates，而不是 noble-security（已核实）；Canonical 只对附加 Ubuntu Pro 的主机承诺 universe 软件包的安全维护（已核实，Ubuntu ESM 页面） | 只装安全更新时，fail2ban 的后续修复不会自动安装 | 首版不处理（OI-4，已确认） | R-7 |
+| DR-9 | 只装安全来源，会错过 Debian 通过小版本发布修复的低危漏洞（Debian 安全团队把这类问题标为 `no-dsa`，不发安全公告，可能在小版本更新中修复，已核实 Debian 安全追踪器说明） | 低危漏洞的修复滞后 | 已处理：Debian 同时自动安装稳定版小版本更新（需求 D19） | FR-09 |
 | DR-10 | `nftables.service` 被启用，开机时执行 `flush ruleset` | UFW 和 Fail2ban 的规则被清空 | verify 检查（第 7.6 节） | FR-06、FR-08 |
 
 需求中的 R-2（3X-UI 版本漂移）、R-3（把自己封掉）、R-5（待重启累积）、R-8（云端安全组）仍然有效，处理方式不变。
@@ -365,7 +365,7 @@ stateDiagram-v2
 
 | 里程碑 | 内容 | 退出条件 |
 |---|---|---|
-| M0 | 评审本设计，确定 OD-4、OI-1～OI-4 | 用户确认 |
+| M0 | 评审本设计，确定 OD-4、OI-1～OI-4 | 用户确认（2026-10-13 已完成） |
 | M1 | 只读部分：命令骨架、`preflight`、`verify`、ShellCheck；虚拟机测试框架在 6 组平台上跑通 | 干净镜像上预检通过，verify 如实报告"未加固"；执行前后状态摘要一致 |
 | M2 | 核心应用：管理用户、SSH、UFW、待确认与自动恢复、`confirm` | 生命周期主流程和防锁死负面用例在 6 组平台上通过 |
 | M3 | Fail2ban、自动安全更新、与 3X-UI v3.7.0 共存 | FR-08 的 11 步验证、FR-11 的共存流程通过 |
@@ -374,13 +374,15 @@ stateDiagram-v2
 
 ## 11. 待决事项
 
-| 编号 | 事项 | 建议 | 影响 |
-|---|---|---|---|
-| OD-4 | 确认时限的默认值 | 默认 10 分钟，范围 3～60 分钟（第 7.5 节），置信度中 | FR-05、需求第 6 节 |
-| OI-1 | 面板端口的默认值 | 2053，与用户的隧道配置一致，可以修改 | FR-07 |
-| OI-2 | 命令名 | `vps-hardening`：与仓库同名，一看就懂。这个命令很少输入，不需要像 `dvt` 那样短 | 文档、安装器 |
-| OI-3 | Debian 是否同时自动安装稳定版小版本更新（`label=Debian`） | 建议采用：这是 Debian 的默认做法，能自动拿到 `no-dsa` 类低危修复；代价是会自动装上非安全的稳定版修订。采用需要修改 FR-09 并重新评审；评审前按 FR-09 只装安全来源。置信度：中 | FR-09 |
-| OI-4 | Ubuntu 上 fail2ban 的后续更新 | 首版不处理。可选做法：verify 在 fail2ban 有可用升级时报警告（超出 FR-10 现有范围，需要用户同意）。是否附加 Ubuntu Pro 由用户自行决定，不纳入本工具 | R-7、FR-09 |
+以下五项的建议已由用户于 2026-10-13 确认（需求 U9），目前没有待决事项。
+
+| 编号 | 事项 | 原建议 | 结论 | 影响 |
+|---|---|---|---|---|
+| OD-4 | 确认时限的默认值 | 默认 10 分钟，范围 3～60 分钟（第 7.5 节），置信度中 | 采用（需求 D18） | FR-05、需求第 6 节 |
+| OI-1 | 面板端口的默认值 | 2053，与用户的隧道配置一致，可以修改 | 采用（需求 D20） | FR-07 |
+| OI-2 | 命令名 | `vps-hardening`：与仓库同名，一看就懂。这个命令很少输入，不需要像 `dvt` 那样短 | 采用 | 文档、安装器 |
+| OI-3 | Debian 是否同时自动安装稳定版小版本更新（`label=Debian`） | 采用：这是 Debian 的默认做法，能自动拿到 `no-dsa` 类低危修复；代价是会自动装上非安全的稳定版修订。置信度：中 | 采用，FR-09 已修改（需求 D19） | FR-09 |
+| OI-4 | Ubuntu 上 fail2ban 的后续更新 | 首版不处理；是否附加 Ubuntu Pro 由用户自行决定，不纳入本工具 | 首版不处理。原建议中"verify 在 fail2ban 有可用升级时报警告"是需要另行同意的可选项，这次没有单独确认，暂不纳入 | R-7、FR-09 |
 
 ## 12. 需求追踪
 
@@ -393,7 +395,7 @@ stateDiagram-v2
 | FR-06 | 7.4 UFW |
 | FR-07 | 7.4 面板隧道 |
 | FR-08 | 7.4 Fail2ban；DR-7 |
-| FR-09 | 7.4 自动安全更新；OI-3 |
+| FR-09 | 7.4 自动安全更新；OI-3（需求 D19） |
 | FR-10 | 7.6 |
 | FR-11 | 7.4 面板隧道；8 |
 | FR-12 | 4.4；7.2 |
