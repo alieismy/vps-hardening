@@ -4,7 +4,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: planning — no usa
 
 为 Debian/Ubuntu VPS 提供基础安全加固，包括：SSH 只允许密钥登录、禁止 root 登录、UFW 只开放必要端口、Fail2ban，以及自动安全更新。目标是在不明显增加日常管理负担的前提下缩小暴露面，同时避免把管理员锁在服务器外。
 
-**当前状态：规划中，尚无可用版本。** 本仓库目前只有范围记录和[需求规格说明](docs/requirements.md)（已于 2026-10-13 评审确认），不要在任何 VPS 上运行。
+**当前状态：规划中，尚无可用版本。** 本仓库目前只有范围记录、[需求规格说明](docs/requirements.md)（已于 2026-10-13 评审确认）和[方案设计](docs/solution-design.md)（草案，待评审），不要在任何 VPS 上运行。
 
 ## 已确认的范围（2026-10-10，2026-10-13 补充）
 
@@ -28,9 +28,11 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: planning — no usa
 
 详见[需求规格说明第 11 节](docs/requirements.md#11-待决事项)：
 
-- 防锁死确认时限的默认值，设计阶段给出。
+- 防锁死确认时限的默认值：方案设计建议默认 10 分钟、允许 3～60 分钟，待确认。
 
-下一步：方案设计和验证计划。
+方案设计中的其他待决事项（面板端口默认值、命令名、Debian 是否自动安装小版本更新、Ubuntu 上 fail2ban 的后续更新）见[方案设计第 11 节](docs/solution-design.md#11-待决事项)。
+
+下一步：评审方案设计，然后编写验证计划。
 
 ## 配套仓库
 
