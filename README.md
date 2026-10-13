@@ -13,7 +13,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: planning — no usa
 | SSH 端口 | 保持 22，对所有来源开放 |
 | SSH 认证 | 只允许密钥登录；禁止 root 通过 SSH 登录；日常使用普通 sudo 用户，sudo 需要输入密码 |
 | 防火墙 | 启用 UFW：默认拒绝入站、允许出站、拒绝转发。对所有来源开放 22/tcp、代理入站（如 443/tcp）和订阅端口（如 2096/tcp）；80/tcp 不开放，证书由代理仓库用 Cloudflare API Token 走 DNS-01 签发 |
-| 3X-UI 面板 | 面板端口只允许 `ADMIN_CIDRS` 中的地址访问；管理员 IP 变化时改用 SSH 隧道：`ssh -L 8443:127.0.0.1:<面板端口> user@vps`。建议改为只走 SSH 隧道、`ADMIN_CIDRS` 默认为空，待确认（需求说明 OD-6） |
+| 3X-UI 面板 | 只经 SSH 隧道访问：`ssh -L 8443:127.0.0.1:<面板端口> user@vps`。UFW 不放行面板端口，面板只监听 127.0.0.1（由代理仓库设置），不使用 `ADMIN_CIDRS` 白名单（2026-10-13 起替代原先的白名单方案） |
 | Fail2ban | 纳入，只保护 SSH；配置采用用户现网 3X-UI 方案第 16.1 节的样例，白名单只含回环地址，`maxretry` 默认 6（参数见需求说明 FR-08） |
 | 自动安全更新 | 纳入；不自动重启，需要重启时由验证命令报告 |
 | 目标平台 | 与 vps-tuning 一致：Debian 12/13、Ubuntu 24.04 LTS，x86_64/ARM64 |
@@ -29,7 +29,6 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: planning — no usa
 详见[需求规格说明第 11 节](docs/requirements.md#11-待决事项)：
 
 - 防锁死确认时限的默认值，设计阶段给出。
-- 面板访问方式：建议只走 SSH 隧道，待确认。
 
 需求批准后再做实现方案和验证计划。
 
