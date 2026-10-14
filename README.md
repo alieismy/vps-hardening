@@ -1,10 +1,10 @@
 # VPS Hardening
 
-Baseline security hardening for Debian/Ubuntu VPS. **Status: planning — no usable release yet.**
+Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (milestone M1 done: read-only checks) — no usable release yet.**
 
 为 Debian/Ubuntu VPS 提供基础安全加固，包括：SSH 只允许密钥登录、禁止 root 登录、UFW 只开放必要端口、Fail2ban，以及自动安全更新。目标是在不明显增加日常管理负担的前提下缩小暴露面，同时避免把管理员锁在服务器外。
 
-**当前状态：规划中，尚无可用版本。** 本仓库目前只有范围记录、[需求规格说明](docs/requirements.md)（v1.2，已确认）、[方案设计](docs/solution-design.md)（v1.0，已确认）和[验证计划](docs/verification-plan.md)（v1.0，已确认），不要在任何 VPS 上运行。
+**当前状态：开发中，尚无可用版本。** 已完成里程碑 M1：只读的 `preflight`（预检）和 `verify`（验证），以及在 6 组平台上运行的虚拟机测试（VT-02、VT-03 中涉及 `apply` 的部分随 M2 补测）；加固本身（`apply` 等）尚未实现，不要在任何 VPS 上运行。文档：[需求规格说明](docs/requirements.md)（v1.2，已确认）、[方案设计](docs/solution-design.md)（v1.0，已确认）、[验证计划](docs/verification-plan.md)（v1.0，已确认）、[详细设计](docs/detailed-design.md)（M1 部分，草稿待评审）。
 
 ## 已确认的范围（2026-10-10，2026-10-13 补充）
 
@@ -28,14 +28,14 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: planning — no usa
 
 需求、方案设计和验证计划都已确认（2026-10-13）。剩下一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
 
-下一步：里程碑 M1（只读的预检和验证，以及虚拟机测试框架）。
+下一步：里程碑 M2（核心应用：管理用户、SSH、UFW、待确认与自动恢复、`confirm`）。
 
 ## 配套仓库
 
 | 仓库 | 用途 | 状态 |
 |---|---|---|
 | [vps-tuning](https://github.com/alieismy/vps-tuning) | 网络调优、诊断与测量 | Pre-release |
-| vps-hardening（本仓库） | 基础安全加固 | 规划中 |
+| vps-hardening（本仓库） | 基础安全加固 | 开发中（M1 已完成） |
 | vps-proxy-setup | 代理服务搭建（以 3X-UI 为例） | 规划中，尚未创建 |
 
 建议的执行顺序（见[需求规格说明第 7.3 节](docs/requirements.md#73-与-vps-tuning-的约定)）：加固 → 调优 → 搭建代理 → 调优仓库的严格验证。
