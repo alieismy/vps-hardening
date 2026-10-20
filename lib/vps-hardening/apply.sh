@@ -247,7 +247,7 @@ apply_ssh() {
     sshd_expect "$user" passwordauthentication no
     sshd_expect "$user" kbdinteractiveauthentication no
   done
-  systemctl try-reload-or-restart ssh.service || apply_fail 'sshd 重新加载失败'
+  bounded_change systemctl try-reload-or-restart ssh.service || apply_fail 'sshd 重新加载失败'
   printf 'sshd 已按新配置重新加载\n'
 }
 
@@ -256,9 +256,9 @@ ufw_open_rule() {
   proto="${rest%%/*}"
   family="${rest#*/}"
   case "$family" in
-    both) ufw allow "$port/$proto" comment "$VH_UFW_COMMENT" ;;
-    ipv4) ufw allow proto "$proto" to 0.0.0.0/0 port "$port" comment "$VH_UFW_COMMENT" ;;
-    ipv6) ufw allow proto "$proto" to ::/0 port "$port" comment "$VH_UFW_COMMENT" ;;
+    both) bounded_change ufw allow "$port/$proto" comment "$VH_UFW_COMMENT" ;;
+    ipv4) bounded_change ufw allow proto "$proto" to 0.0.0.0/0 port "$port" comment "$VH_UFW_COMMENT" ;;
+    ipv6) bounded_change ufw allow proto "$proto" to ::/0 port "$port" comment "$VH_UFW_COMMENT" ;;
   esac
 }
 
@@ -272,10 +272,10 @@ ufw_configure() {
       printf 'IPV6=yes\n' >>/etc/default/ufw || return 1
     fi
   fi
-  ufw default deny incoming || return 1
-  ufw default allow outgoing || return 1
-  ufw default deny routed || return 1
-  ufw allow 22/tcp comment "$VH_UFW_COMMENT" || return 1
+  bounded_change ufw default deny incoming || return 1
+  bounded_change ufw default allow outgoing || return 1
+  bounded_change ufw default deny routed || return 1
+  bounded_change ufw allow 22/tcp comment "$VH_UFW_COMMENT" || return 1
   for spec in "${VH_IN_OPEN[@]}"; do
     ufw_open_rule "$spec" || return 1
   done
@@ -286,9 +286,9 @@ apply_ufw() {
   # FR-05: 22/tcp must be allowed before the firewall is enabled.
   ufw_added_rules | ufw_rules_allow_port 22 || apply_fail 'UFW 中没有放行 22/tcp 的规则，不会启用防火墙'
   if ! unit_enabled ufw.service; then
-    systemctl enable --quiet ufw.service || apply_fail '无法设置 ufw.service 开机启动'
+    bounded_change systemctl enable --quiet ufw.service || apply_fail '无法设置 ufw.service 开机启动'
   fi
-  ufw --force enable >>"$VH_LOG_FILE" 2>&1 || apply_fail "UFW 启用失败，详见 $VH_LOG_FILE"
+  bounded_change ufw --force enable >>"$VH_LOG_FILE" 2>&1 || apply_fail "UFW 启用失败，详见 $VH_LOG_FILE"
   ufw_active || apply_fail 'UFW 启用后状态不是 active'
   ufw_status_rules >"$VH_UFW_RULES_FILE"
   printf 'UFW 已启用：%s 条规则\n' "$(wc -l <"$VH_UFW_RULES_FILE")"
@@ -342,8 +342,8 @@ apply_fail2ban() {
   printf '# Managed by vps-hardening (requirements FR-08).\n[Definition]\ndbpurgeage = 30d\n' |
     write_managed "$VH_F2B_LOCAL"
   bounded fail2ban-client -t >>"$VH_LOG_FILE" 2>&1 || apply_fail "Fail2ban 配置检查失败，详见 $VH_LOG_FILE"
-  systemctl enable --quiet fail2ban.service || apply_fail '无法设置 fail2ban.service 开机启动'
-  systemctl restart fail2ban.service || apply_fail 'fail2ban.service 启动失败'
+  bounded_change systemctl enable --quiet fail2ban.service || apply_fail '无法设置 fail2ban.service 开机启动'
+  bounded_change systemctl restart fail2ban.service || apply_fail 'fail2ban.service 启动失败'
   f2b_wait || apply_fail 'fail2ban 启动后 sshd jail 没有运行'
   jails="$(bounded fail2ban-client status 2>/dev/null | sed -n 's/^.*Jail list:[[:space:]]*//p')"
   [ "$jails" = sshd ] || apply_fail "Fail2ban 的 jail 应只有 sshd，实际为：${jails:-（空）}"
@@ -390,7 +390,7 @@ apply_auto_updates() {
     apply_fail 'Unattended-Upgrade::Automatic-Reboot 的生效值不是 false'
   diff <(expected_auto_update_origins | sort -u) <(actual_auto_update_origins | sort -u) >/dev/null ||
     apply_fail '自动更新来源的生效值与 FR-09 不一致'
-  systemctl enable --quiet --now apt-daily.timer apt-daily-upgrade.timer ||
+  bounded_change systemctl enable --quiet --now apt-daily.timer apt-daily-upgrade.timer ||
     apply_fail '无法启用 APT 定时器'
   printf '自动安全更新已启用\n'
 }

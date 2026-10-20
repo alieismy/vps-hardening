@@ -52,7 +52,8 @@ jobs:
         platform: [debian12, debian13, ubuntu2404]
         arch: [amd64, arm64]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-    timeout-minutes: 45
+    # Three guests, two applies and a reboot took up to 36 minutes under arm64 emulation.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install QEMU

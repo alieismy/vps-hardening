@@ -64,7 +64,7 @@ EOF
 start_timer() {
   local unit
   unit="$VH_TIMER_PREFIX-$(date +%s%N)-$$"
-  systemd-run --quiet --unit="$unit" --collect \
+  bounded_change systemd-run --quiet --unit="$unit" --collect \
     --description='vps-hardening: restore the previous configuration unless confirmed' \
     --on-active="$1s" --timer-property=AccuracySec=1s \
     -- "$VH_SELF" _restore timeout "$unit" >/dev/null
@@ -72,7 +72,7 @@ start_timer() {
 }
 
 stop_timers() {
-  systemctl stop "$VH_TIMER_PREFIX-*.timer" >/dev/null 2>&1
+  bounded_change systemctl stop "$VH_TIMER_PREFIX-*.timer" >/dev/null 2>&1
 }
 
 # Step 6 of apply: marker, boot unit, then timer. Each must work before SSH
@@ -88,9 +88,9 @@ arm_restore() {
     boot_unit_content >"$VH_BOOT_UNIT_FILE.new"
     chmod 0644 "$VH_BOOT_UNIT_FILE.new"
     mv -f -- "$VH_BOOT_UNIT_FILE.new" "$VH_BOOT_UNIT_FILE"
-    systemctl daemon-reload
+    bounded_change systemctl daemon-reload
   fi
-  systemctl enable --quiet "$VH_BOOT_UNIT"
+  bounded_change systemctl enable --quiet "$VH_BOOT_UNIT"
   unit_enabled "$VH_BOOT_UNIT" || return 1
   unit="$(start_timer "$timeout_s")"
   systemctl is-active --quiet "$unit.timer" || return 1
@@ -108,7 +108,7 @@ rearm_timer() {
   state_set timer "$unit" "$VH_PENDING_FILE"
   [ "$(state_get timer "$VH_PENDING_FILE")" = "$unit" ] || return 1
   state_set deadline "$(($(date +%s) + timeout_s))" "$VH_PENDING_FILE"
-  systemctl stop "$old.timer" >/dev/null 2>&1 || true
+  bounded_change systemctl stop "$old.timer" >/dev/null 2>&1 || true
 }
 
 # disarm_restore [boot]: stop the timers, disable the boot unit, remove the
@@ -121,7 +121,7 @@ disarm_restore() {
   else
     stop_timers || true
   fi
-  systemctl "${nr[@]}" disable --quiet "$VH_BOOT_UNIT" >/dev/null 2>&1 || errors=$((errors + 1))
+  bounded_change systemctl "${nr[@]}" disable --quiet "$VH_BOOT_UNIT" >/dev/null 2>&1 || errors=$((errors + 1))
   rm -f -- "$VH_PENDING_FILE" || errors=$((errors + 1))
   sync
   [ "$errors" -eq 0 ]
@@ -142,19 +142,19 @@ restore_units() {
       enabled=disabled active=inactive
     fi
     case "$enabled" in
-      enabled) systemctl "${nr[@]}" enable --quiet "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
-      disabled) systemctl "${nr[@]}" disable --quiet "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
+      enabled) bounded_change systemctl "${nr[@]}" enable --quiet "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
+      disabled) bounded_change systemctl "${nr[@]}" disable --quiet "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
     esac
     if [ "$mode" = boot ]; then
       case "$enabled" in
         enabled | static | alias | indirect | generated) ;;
-        *) systemctl --no-block stop "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
+        *) bounded_change systemctl --no-block stop "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
       esac
       continue
     fi
     case "$active" in
-      active) systemctl restart "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
-      inactive | failed) systemctl stop "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
+      active) bounded_change systemctl restart "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
+      inactive | failed) bounded_change systemctl stop "$unit" >/dev/null 2>&1 || errors=$((errors + 1)) ;;
     esac
   done <"$VH_UNITS_FILE"
   [ "$errors" -eq 0 ]
@@ -167,23 +167,28 @@ restore_all() {
   local mode="$1" reason="$2" failed=()
   trap '' INT TERM HUP
   state_set status restoring
+  state_set restore_started_at "$(utc_now)"
+  # One log line per step, so that the log shows where a slow restore spent its time.
   vh_log "restore ($mode): $reason"
   if [ "$mode" = runtime ]; then
     stop_timers || true
     # New hosts start with UFW inactive (FR-02), so restoring means disabling it.
     if have ufw && [ "$(state_get ufw_was_active)" != yes ] && ufw_active; then
-      ufw --force disable >>"$VH_LOG_FILE" 2>&1 || failed+=('UFW 停用')
+      bounded_change ufw --force disable >>"$VH_LOG_FILE" 2>&1 || failed+=('UFW 停用')
     fi
   fi
+  vh_log 'restore: files'
   snapshot_restore >>"$VH_LOG_FILE" 2>&1 || failed+=('文件恢复')
   if [ "$mode" = runtime ]; then
+    vh_log 'restore: sshd'
     sshd_cache_clear
     if bounded /usr/sbin/sshd -t >>"$VH_LOG_FILE" 2>&1; then
-      systemctl try-reload-or-restart ssh.service >>"$VH_LOG_FILE" 2>&1 || failed+=('sshd 重新加载')
+      bounded_change systemctl try-reload-or-restart ssh.service >>"$VH_LOG_FILE" 2>&1 || failed+=('sshd 重新加载')
     else
       failed+=('sshd 配置检查')
     fi
   fi
+  vh_log 'restore: units'
   restore_units "$mode" || failed+=('服务状态')
   if [ "${#failed[@]}" -eq 0 ] && disarm_restore "$mode"; then
     state_set status rolled-back

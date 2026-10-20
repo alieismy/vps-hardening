@@ -383,18 +383,23 @@ check_packages_kept() {
   log "packages installed by apply kept: $(state_value packages_added)"
 }
 
-# VT-20: the restore ran when the confirmation time was up, not earlier.
+# VT-20: the restore started when the confirmation time was up, not earlier.
+# How long it then takes depends on the machine (minutes under emulation),
+# so the duration only has the bound the test driver waits for.
 check_restore_time() {
-  local applied rolled timeout elapsed
+  local applied started rolled timeout begin took
   applied="$(date -d "$(state_value applied_at)" +%s)"
+  started="$(date -d "$(state_value restore_started_at)" +%s)"
   rolled="$(date -d "$(state_value rolled_back_at)" +%s)"
   timeout=$(($(state_value confirm_timeout) * 60))
-  elapsed=$((rolled - applied))
-  printf 'applied_at to rolled_back_at: %ss, confirmation time %ss\n' "$elapsed" "$timeout" |
+  begin=$((started - applied))
+  took=$((rolled - started))
+  printf 'restore started %ss after applied_at and took %ss; confirmation time %ss\n' "$begin" "$took" "$timeout" |
     tee "$phase_dir/restore-time.txt"
-  if [ "$elapsed" -lt $((timeout - 5)) ] || [ "$elapsed" -gt $((timeout + 120)) ]; then
-    fail "restored after ${elapsed}s with a confirmation time of ${timeout}s"
+  if [ "$begin" -lt $((timeout - 5)) ] || [ "$begin" -gt $((timeout + 60)) ]; then
+    fail "the restore started ${begin}s after apply with a confirmation time of ${timeout}s"
   fi
+  [ "$took" -le 600 ] || fail "the restore took ${took}s"
 }
 
 # VT-22: the restore ran at boot and finished before sshd and UFW started.

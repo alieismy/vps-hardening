@@ -82,6 +82,13 @@ bounded() {
   timeout --kill-after=5 30 "$@"
 }
 
+# Commands that change the system get a longer bound (a restart may wait for a
+# slow stop). Bash runs signal traps only after the current command returns,
+# so without a bound a hung command would also hold off the restore.
+bounded_change() {
+  timeout --kill-after=10 120 "$@"
+}
+
 # Private scratch directory, removed on exit. Call in the main shell, never
 # inside $(...), or the trap would fire when the subshell exits.
 VH_TMP=''

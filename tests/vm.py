@@ -119,11 +119,18 @@ class Guest:
         return subprocess.run(self.ctx.ssh + [command], **kwargs)
 
     def login_ok(self, user='root'):
+        return self.login_error(user) is None
+
+    def login_error(self, user='root'):
+        """None when a login as USER works, otherwise why it failed."""
         try:
-            return subprocess.run(self.ctx.ssh_as(user) + ['true'], stdout=subprocess.DEVNULL,
-                                  stderr=subprocess.DEVNULL, timeout=60).returncode == 0
+            result = subprocess.run(self.ctx.ssh_as(user) + ['true'], stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE, timeout=60)
         except subprocess.TimeoutExpired:
-            return False
+            return 'no answer within 60 s'
+        if result.returncode == 0:
+            return None
+        return result.stderr.decode(errors='replace').strip() or f'exit status {result.returncode}'
 
     def must_login(self, user, when):
         """VT-25: a real login with the identity that must work at this point."""
@@ -425,8 +432,9 @@ class Probe:
 
     A probe that fails is retried once a second later: on Debian 12 a new
     connection is reset while sshd re-executes itself on reload, which is not
-    an interruption of the login path. Retries are counted in the evidence.
-    Failures are allowed only in declared outage windows (reboots).
+    an interruption of the login path. Retries are counted in the evidence,
+    with the error of the first attempt. Failures are allowed only in declared
+    outage windows (reboots).
     """
 
     def __init__(self, guest, name):
@@ -436,6 +444,8 @@ class Probe:
         self.windows = []
         self.stopped = threading.Event()
         self.start = time.monotonic()
+        # Offsets in the records count from here; the tool's log uses UTC.
+        self.started_utc = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         self.thread = threading.Thread(target=self.run, daemon=True)
 
     def now(self):
@@ -444,9 +454,10 @@ class Probe:
     def run(self):
         while not self.stopped.is_set():
             began = self.now()
-            first = self.guest.login_ok()
-            ok = first or (time.sleep(1) is None and self.guest.login_ok())
-            self.records.append({'from': began, 'to': self.now(), 'ok': ok, 'retried': not first})
+            error = self.guest.login_error()
+            ok = error is None or (time.sleep(1) is None and self.guest.login_ok())
+            self.records.append({'from': began, 'to': self.now(), 'ok': ok, 'retried': error is not None,
+                                 'error': error})
             self.stopped.wait(PROBE_INTERVAL)
 
     def outage(self, reason):
@@ -467,7 +478,7 @@ class Probe:
         self.stopped.set()
         self.thread.join()
         failures = [r for r in self.records if not r['ok'] and not self.expected(r)]
-        result = {'interval_s': PROBE_INTERVAL, 'probes': len(self.records),
+        result = {'started_utc': self.started_utc, 'interval_s': PROBE_INTERVAL, 'probes': len(self.records),
                   'retried': sum(r['retried'] for r in self.records), 'outages': self.windows,
                   'unexpected_failures': failures, 'records': self.records}
         (self.guest.evidence / f'probe-{self.name}.json').write_text(json.dumps(result, indent=2))
@@ -668,7 +679,8 @@ def recovery(ctx, image):
             check(status == 0 and APPLIED in output, 'VT-20: apply finished with a 3-minute confirmation time')
             guest.must_login('root', 'while pending')
             check(not http_reachable(18080), 'VT-20: UFW drops port 8080 while pending')
-            ctx.timings.measure('timeout.restore', guest.wait_status, 'rolled-back', 600)
+            # The restore starts after 3 minutes; under emulation it can take several more.
+            ctx.timings.measure('timeout.restore', guest.wait_status, 'rolled-back', 900)
             guest.must_login('root', 'after the timeout restore')
             guest.must_login(ctx.user, 'after the timeout restore')
             guest.phase('m2-rolled-back', 'timeout', script='m2.sh')
