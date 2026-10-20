@@ -339,6 +339,30 @@ def probe_study(ctx, guest):
     print('probe study:', json.dumps({k: v for k, v in result.items() if k != 'sshd_log'}), flush=True)
 
 
+def research(ctx, guest):
+    """Throwaway M2 research: DR-11 sessions, DR-4 reload, ufw format, timers."""
+    out = {}
+    script = 'bash /opt/vh-bundle/tests/guest/research.sh '
+    def cmd(argv):
+        r = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600)
+        return r.stdout.decode(errors='replace')
+    out['root_a'] = cmd(ctx.ssh + [script + 'session'])
+    out['root_b'] = cmd(ctx.ssh + [script + 'session'])
+    out['root_tty'] = cmd(ctx.ssh[:1] + ['-tt'] + ctx.ssh[1:] + [script + 'session'])
+    user = 'debian' if ctx.platform.startswith('debian') else 'ubuntu'
+    as_user = ctx.ssh[:-1] + [f'{user}@127.0.0.1']
+    out['user'] = cmd(as_user + [script + 'session'])
+    out['user_sudo'] = cmd(as_user + ['sudo -n ' + script + 'session'])
+    out['user_sudo_su'] = cmd(as_user + ['sudo -n su - root -c "' + script + 'session"'])
+    out['timer'] = cmd(ctx.ssh + [script + 'timer'])
+    out['reload'] = cmd(ctx.ssh + [script + 'reload'])
+    out['ufw'] = cmd(ctx.ssh + [script + 'ufw'])
+    (ctx.evidence / 'research.json').write_text(json.dumps(out, indent=2))
+    for k, v in out.items():
+        print('=====', k, flush=True)
+        print(v, flush=True)
+
+
 def matrix(ctx, image):
     disk = ctx.overlay(image, 'disk.qcow2')
     with Guest(ctx, 'matrix', disk) as guest:
@@ -346,8 +370,7 @@ def matrix(ctx, image):
         guest.upload(ctx.bundle(with_xui=False))
         guest.phase('prepare')
         source_address(ctx, guest)
-        guest.phase('matrix')
-        ctx.timings.measure('matrix.probe-study', probe_study, ctx, guest)
+        research(ctx, guest)
 
 
 def negative(ctx, image):
