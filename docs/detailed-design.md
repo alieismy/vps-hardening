@@ -2,9 +2,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 草稿 v0.1，待评审：只覆盖里程碑 M1 已实现的部分（命令骨架、`preflight`、`verify`、测试框架）。M2～M4 实现时增补 |
-| 日期 | 2026-10-13 |
-| 上游 | [需求规格说明 v1.2](requirements.md)、[方案设计 v1.0](solution-design.md)、[验证计划 v1.0](verification-plan.md)（均已批准） |
+| 状态 | 草稿 v0.2：只覆盖里程碑 M1 已实现的部分（命令骨架、`preflight`、`verify`、测试框架），M2～M4 实现时增补。v0.1 于 2026-10-20 经用户评审，除第 2.4 节的 `--maxretry` 和第 4 节 `ssh.permitrootlogin` 的期望值两处外通过。v0.2 按需求 v1.3（D22、D23）修改第 2.2、2.4、3～7、9 节：除上述两处外，还删除了管理用户和公钥文件参数、sudo 条件检查，新增 root 公钥检查 `root.keys`。修改部分待评审 |
+| 日期 | 2026-10-20（v0.1 为 2026-10-13） |
+| 上游 | [需求规格说明 v1.3](requirements.md)、[方案设计 v1.1](solution-design.md)、[验证计划 v1.1](verification-plan.md)（均待评审） |
 | 下游 | 实现、测试 |
 | 深度 | 命令契约、检查项目录、模块划分、实现约束和测试框架；不重复上游已有的决策理由 |
 
@@ -32,7 +32,7 @@ M1 只实现只读部分（方案设计第 10 节）：
 |---|---|
 | 0 | 检查全部通过（允许有警告和跳过） |
 | 1 | 至少一项不符合 |
-| 2 | 用法或输入错误：未知命令或参数、参数取值不合法、公钥文件无效、`apply` 不在交互终端中运行、命令尚未实现 |
+| 2 | 用法或输入错误：未知命令或参数、参数取值不合法、`apply` 不在交互终端中运行、命令尚未实现 |
 | 3 | 内部错误：命令意外失败。由 ERR 陷阱统一转换，避免被误读为"不符合"（退出码 1） |
 
 ### 2.3 输出格式
@@ -55,14 +55,13 @@ M1 只实现只读部分（方案设计第 10 节）：
 
 | 参数 | 规则 |
 |---|---|
-| `--user` | 必填；`^[a-z][a-z0-9_-]{0,31}$`，不能是 `root` |
-| `--pubkey-file` | 必填，可重复；单个文件不超过 64 KiB。只接受"类型 密钥 [注释]"格式的行，带选项（如 `command=`）的行整体拒绝；含 `PRIVATE KEY` 的文件按私钥拒绝；逐行用 `ssh-keygen -l -E sha256` 解析，按指纹去重，最多 20 把；允许 CRLF 和注释行 |
 | `--panel-port` | 默认 2053（需求 D20）；1～65535，不能是 22 |
 | `--open` | 可重复，最多 16 个；`端口/tcp|udp[/both|ipv4|ipv6]`，地址族默认 `both`；端口不能是 22 或面板端口，同一端口和协议不能重复 |
-| `--maxretry` | 3 或 6，默认 6 |
 | `--confirm-timeout` | 3～60 的整数分钟，默认 10（需求 D18） |
 
 `apply` 先检查标准输入是否为终端（方案设计第 7.1 节），再解析参数。
+
+v0.1 中的 `--user`、`--pubkey-file` 和 `--maxretry` 已删除：root 是管理账户，它的公钥由管理员事先配置，本工具只读检查（`root.keys`，需求 D22）；`maxretry` 固定为 5（D23）。传入这些参数按未知参数处理，退出码 2，不会被静默忽略。
 
 ## 3. preflight 检查项
 
@@ -72,7 +71,7 @@ M1 只实现只读部分（方案设计第 10 节）：
 |---|---|---|
 | `root` | 运行权限 | 不是 root |
 | `platform` | 平台 | 不是 Debian 12/13 或 Ubuntu 24.04（x86_64/aarch64）；PID 1 不是 systemd；运行在容器中 |
-| `inputs.*` | 输入摘要 | `inputs.user-free`：同名账户或用户组已存在。其余各项只回显已校验的输入；没有公开端口时 `inputs.open` 为警告 |
+| `inputs.*` | 输入摘要 | 不判定不符合：只回显已校验的面板端口、公开端口和确认时限；没有公开端口时 `inputs.open` 为警告 |
 | `new-host.xui` | 存量判定 S1 | 存在 `x-ui.service` 或 `/usr/local/x-ui` |
 | `new-host.container` | 存量判定 S4 | 存在 Docker（命令或 `docker.service`）或 Podman |
 | `new-host.ufw` | 存量判定 S2 | UFW 已启用 |
@@ -81,8 +80,7 @@ M1 只实现只读部分（方案设计第 10 节）：
 | `sshd.config` | sshd 配置 | `sshd -t` 失败，或 `sshd -T` 读不出生效配置 |
 | `sshd.include` | 片段能否生效 | 主配置在 `Include /etc/ssh/sshd_config.d/*.conf` 之前已设置受管选项或打开了 `Match` |
 | `sshd.dropin-order` | 片段排序 | 排在 `00-vps-hardening.conf` 之前的片段设置了受管选项或 `Match`，或本工具的片段已存在 |
-| `sshd.key-types` | 公钥算法 | 有公钥的算法不在 `pubkeyacceptedalgorithms` 中（`ssh-rsa` 密钥以 `rsa-sha2-*` 判定） |
-| `sudo.present`、`sudo.group` | 提权条件 | 没有 sudo；没有 `sudo` 组或 `%sudo ALL=(ALL:ALL) ALL` 规则；`sudo` 组免密 |
+| `root.key`、`root.keys` | root 的公钥（需求 FR-01、FR-03） | root 的 `authorized_keys`（按 root 的 `AuthorizedKeysFile` 生效值展开）中没有可用的公钥。可用指同时满足：行首就是密钥类型，不带选项（cloud-init 用 `command=` 前缀禁止 root 登录时，这样的行不算）；能被 `ssh-keygen -l -E sha256` 解析；算法在 `pubkeyacceptedalgorithms` 中（`ssh-rsa` 密钥以 `rsa-sha2-*` 判定）。按指纹去重，每把可用的公钥输出一行 `INFO root.key`（类型和指纹）；有未计入的行时，`root.keys` 注明行数 |
 | `sudo.nopasswd-accounts` | 免密账户 | 只报告（`INFO`）：有 SSH 密钥且免密 sudo 的账户，应用时将被禁止 SSH 登录（需求 D13） |
 | `apt.idle` | 包管理器 | dpkg、apt 或 unattended-upgrades 的锁被持有，或 apt、dpkg 进程在运行 |
 | `apt.candidates` | 软件包来源 | `ufw`、`fail2ban`、`nftables`、`python3-systemd`、`unattended-upgrades` 中有没有候选版本的 |
@@ -98,9 +96,10 @@ M1 只实现只读部分（方案设计第 10 节）：
 |---|---|---|
 | `root`、`platform` | 同 preflight 的门槛 | 已实现 |
 | `state` | 应用记录存在且为"已应用" | 没有记录时为不符合；记录格式在 M2 确定 |
-| `admin.user`、`ssh.admin`、`ssh.dropin`、`ufw.rules`、`ufw.panel`、`f2b.values`、`boundary.panel-listen` | 需要应用记录中的声明值 | 跳过（`boundary.panel-listen` 在未安装 3X-UI 时为 `INFO`） |
+| `ssh.dropin`、`ufw.rules`、`ufw.panel`、`f2b.values`、`boundary.panel-listen` | 需要应用记录中的声明值 | 跳过（`boundary.panel-listen` 在未安装 3X-UI 时为 `INFO`） |
 | `accounts.nopasswd` | 有密钥、免密 sudo、又不在 `DenyUsers` 中的登录账户 | 已实现 |
-| `ssh.permitrootlogin`、`ssh.passwordauthentication`、`ssh.kbdinteractive`、`ssh.pubkey`、`ssh.forwarding`、`ssh.port` | 以 root 身份执行 `sshd -T -C` 的生效值：`no`、`no`、`no`、`yes`、`yes` 或 `local`、`22` | 已实现；以管理用户和被禁用户执行的部分在 M2 补充 |
+| `ssh.permitrootlogin`、`ssh.passwordauthentication`、`ssh.kbdinteractive`、`ssh.pubkey`、`ssh.forwarding`、`ssh.port` | 以 root 身份执行 `sshd -T -C` 的生效值：`without-password` 或 `prohibit-password`（`sshd -T` 用旧名 `without-password` 输出 `prohibit-password`）、`no`、`no`、`yes`、`yes` 或 `local`、`22` | 已实现；以被禁用户执行的部分在 M2 补充 |
+| `root.key`、`root.keys` | 同 preflight：root 至少有一把可用的公钥 | 已实现 |
 | `ssh.listen` | 22 端口在 IPv4 上监听为必需；没有 IPv6 时为警告 | 已实现 |
 | `ufw.installed`、`ufw.active`、`ufw.defaults`、`ufw.ipv6`、`ufw.port80` | 已安装并启用；默认拒绝入站、允许出站、拒绝转发；`IPV6=yes`；没有放行 80 端口的入站规则 | 已实现 |
 | `f2b.installed`、`f2b.service`、`f2b.jails`、`f2b.mainconf` | 已安装；服务启用且运行；jail 只有 `sshd`；`jail.conf`、`fail2ban.conf` 未改动 | 已实现；生效值和配置检查在 M3 补充 |
@@ -121,8 +120,8 @@ M1 只实现只读部分（方案设计第 10 节）：
 | `bin/vps-hardening` | 环境、加载模块、ERR 陷阱、子命令分派、帮助 |
 | `lib/vps-hardening/common.sh` | 常量、退出码、`report` 和汇总、临时目录、通用小函数 |
 | `lib/vps-hardening/platform.sh` | 解析 `/etc/os-release`（按数据解析，不执行）、平台判定、systemd 和容器判断 |
-| `lib/vps-hardening/inputs.sh` | 参数解析和校验、公钥加载 |
-| `lib/vps-hardening/probe.sh` | 只读探测：软件包、单元、sshd 生效配置、账户和密钥、sudo、监听端口、UFW、apt 配置、包管理器锁 |
+| `lib/vps-hardening/inputs.sh` | 参数解析和校验 |
+| `lib/vps-hardening/probe.sh` | 只读探测：软件包、单元、sshd 生效配置、账户和密钥（含 root 的可用公钥）、sudo、监听端口、UFW、apt 配置、包管理器锁 |
 | `lib/vps-hardening/preflight.sh` | preflight 检查 |
 | `lib/vps-hardening/verify.sh` | verify 检查 |
 
@@ -134,7 +133,7 @@ M1 只实现只读部分（方案设计第 10 节）：
 - **sshd 生效值。** 用 `sshd -T -C user=<用户>,host=vps-hardening.invalid,addr=192.0.2.1,laddr=192.0.2.2,lport=22` 按用户求值，结果按用户缓存。地址取自文档保留地址，使 `Match Address` 块按"普通外部来源"求值。
 - **包管理器是否在运行。** 以锁的持有者（`lslocks`）为准，再加 apt、dpkg 进程名。进程名逐个交给 `pgrep -x`：整个模式超过 15 个字符时 pgrep 不匹配任何进程，用 `|` 拼接的模式会静默失效。不能用进程名判断 unattended-upgrades：它的关机辅助进程常驻，进程名截断后与升级进程相同。
 - **ERR 陷阱。** 只在主 shell 中把意外失败转换为退出码 3。`$(...)` 和管道中的命令也会触发陷阱，其中包括预期的非零状态（如查询未安装的单元），所以子 shell 中不处理；真正的失败经退出状态回到主 shell 后再判定。
-- **启发式判定。** `sudo.group` 只识别 sudoers 中的标准写法，`new-host.fail2ban` 以文件存在为准。两者在不确定时都判为不符合或拒绝，宁可误拒，不会误放行。
+- **启发式判定。** `root.keys` 只计入格式明确的公钥行（带选项的行即使实际能登录也不计入），`new-host.fail2ban` 以文件存在为准。两者在不确定时都判为不符合，宁可误拒，不会误放行。
 
 ## 7. 测试框架
 
@@ -171,11 +170,11 @@ M1 只实现只读部分（方案设计第 10 节）：
 
 判定要点：
 
-- VT-01：`preflight` 退出码为 0，前后状态摘要一致；
-- VT-50（未加固）：`verify` 退出码为 1；`state`、`ssh.permitrootlogin`、`ssh.passwordauthentication`、`accounts.nopasswd`、`f2b.installed` 为不符合，Debian 上 `ufw.installed`、Ubuntu 上 `ufw.active` 为不符合；`ssh.pubkey`、`ssh.port`、`nft.service`、`boundary.container`、`boundary.xui-bbr` 为通过；前后摘要一致；所有证据中没有测试密码；
-- VT-02：非 root（`runuser -u nobody`）、不支持的版本（在私有挂载命名空间中覆盖 `/etc/os-release`）、缺少公钥、dpkg 前端锁被占用、有不持锁的 `dpkg` 进程，分别得到对应的不符合项或退出码 2；
+- VT-01：`preflight` 退出码为 0，`root.keys` 通过，前后状态摘要一致；
+- VT-50（未加固）：`verify` 退出码为 1；`state`、`ssh.passwordauthentication`、`accounts.nopasswd`、`f2b.installed` 为不符合，Debian 上 `ufw.installed`、Ubuntu 上 `ufw.active` 为不符合；`ssh.permitrootlogin`（镜像默认已是 `prohibit-password`）、`root.keys`、`ssh.pubkey`、`ssh.port`、`nft.service`、`boundary.container`、`boundary.xui-bbr` 为通过；前后摘要一致；所有证据中没有测试密码；
+- VT-02：非 root（`runuser -u nobody`）、不支持的版本（在私有挂载命名空间中覆盖 `/etc/os-release`）、root 没有可用的公钥（同样在私有挂载命名空间中，用只有注释、只有带 `command=` 选项、只有无法解析的行三种文件覆盖 root 的 `authorized_keys`）、dpkg 前端锁被占用、有不持锁的 `dpkg` 进程，分别得到对应的不符合项或退出码 2；
 - VT-03：S1～S4 各自得到 `new-host.xui`、`new-host.ufw`、`new-host.fail2ban`、`new-host.container` 不符合，并提示"存量主机不在支持范围内"，`preflight` 前后摘要一致；
-- VT-04：第 2.4 节的各类非法输入退出码为 2（已有账户、同名用户组为不符合，退出码 1）；Ed25519 和 RSA 公钥被接受；时限 3 和 60 被接受；标准输入不是终端时 `apply` 被拒绝。
+- VT-04：第 2.4 节的各类非法输入退出码为 2，已删除的参数（`--maxretry`）按未知参数处理；root 同时有 Ed25519 和 RSA 公钥时两把都被识别；时限 3 和 60 被接受；标准输入不是终端时 `apply` 被拒绝。
 
 ### 7.4 状态摘要
 
@@ -256,5 +255,6 @@ M1 只实现只读部分（方案设计第 10 节）：
 
 - VT-02 和 VT-03 中"`apply` 被拒绝且不改变系统"的部分：M1 的 `apply` 在参数校验后即报告"尚未实现"，不执行预检，因此只能证明它不改变系统。`apply` 执行预检并拒绝存量主机，在 M2 中补测。
 - `verify` 中依赖应用记录的检查项在 M1 报告"跳过"，在 M2、M3 中随应用记录补全。
+- `confirm` 用审计会话编号区分新旧 root 会话（方案设计第 7.5 节），这一做法尚未核实（DR-11）。M2 先在 6 组平台上核实，再确定 `confirm` 的判定方法。
 - negative 套件只在 amd64 上运行（验证计划第 3.1 节的"三平台"范围）；arm64 只覆盖 matrix 套件。
 - 所有结论只到 CI 虚拟机层次；真实主机验收在 M5，需要用户另行授权。
