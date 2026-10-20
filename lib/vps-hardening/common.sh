@@ -13,7 +13,6 @@ readonly VH_SSHD_MAIN=/etc/ssh/sshd_config
 readonly VH_SSHD_DROPIN_DIR=/etc/ssh/sshd_config.d
 readonly VH_SSHD_DROPIN_NAME=00-vps-hardening.conf
 readonly VH_PANEL_PORT_DEFAULT=2053
-readonly VH_MAXRETRY_DEFAULT=6
 readonly VH_TIMEOUT_DEFAULT=10
 readonly VH_TIMEOUT_MIN=3
 readonly VH_TIMEOUT_MAX=60

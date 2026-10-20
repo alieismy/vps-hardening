@@ -83,6 +83,63 @@ account_has_keys() {
   return 1
 }
 
+# key_type_accepted TYPE " ALGORITHMS ": an ssh-rsa key works with any RSA signature algorithm.
+key_type_accepted() {
+  case "$1" in
+    ssh-rsa)
+      case "$2" in
+        *' rsa-sha2-512 '* | *' rsa-sha2-256 '* | *' ssh-rsa '*) return 0 ;;
+      esac
+      ;;
+    *)
+      case "$2" in
+        *" $1 "*) return 0 ;;
+      esac
+      ;;
+  esac
+  return 1
+}
+
+# Root's usable keys (FR-03) as "type fingerprint" in VH_ROOT_KEYS, unique by
+# fingerprint. A line counts when it is a plain key that ssh-keygen parses and
+# whose algorithm sshd accepts. Lines with options do not count: cloud-init
+# disables root login with a command= prefix. Other non-comment lines are
+# counted in VH_ROOT_KEYS_SKIPPED. Sets globals, so call it in the main shell.
+VH_ROOT_KEYS=()
+VH_ROOT_KEYS_SKIPPED=0
+scan_root_keys() {
+  local file line type fpr accepted keyfile="$VH_TMP/root-key" seen=' '
+  accepted=" $(sshd_effective root | sshd_value pubkeyacceptedalgorithms | tr ',' ' ') "
+  while IFS= read -r file; do
+    [ -f "$file" ] || continue
+    while IFS= read -r line || [ -n "$line" ]; do
+      line="${line%$'\r'}"
+      line="${line#"${line%%[![:space:]]*}"}"
+      case "$line" in
+        '' | '#'*) continue ;;
+      esac
+      fpr=''
+      if [[ "$line" =~ ^(ssh-[a-z0-9-]+|ecdsa-sha2-[a-z0-9-]+|sk-[a-z0-9@.-]+)[[:space:]]+[A-Za-z0-9+/]+=*([[:space:]].*)?$ ]]; then
+        type="${BASH_REMATCH[1]}"
+        if key_type_accepted "$type" "$accepted"; then
+          printf '%s\n' "$line" >"$keyfile"
+          fpr="$(ssh-keygen -l -E sha256 -f "$keyfile" 2>/dev/null | awk '{print $2}')" || fpr=''
+        fi
+      fi
+      if [ -z "$fpr" ]; then
+        VH_ROOT_KEYS_SKIPPED=$((VH_ROOT_KEYS_SKIPPED + 1))
+        continue
+      fi
+      case "$seen" in
+        *" $fpr "*) continue ;;
+      esac
+      seen="$seen$fpr "
+      VH_ROOT_KEYS+=("$type $fpr")
+    done <"$file"
+  done < <(authorized_keys_files root)
+  rm -f -- "$keyfile"
+}
+
 # True when sudo lets the account run commands without a password.
 account_nopasswd_sudo() {
   local out
