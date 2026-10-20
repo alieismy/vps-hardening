@@ -321,7 +321,10 @@ verify_fail2ban() {
     skip_without_state f2b.files
   fi
 
-  if dpkg --verify fail2ban 2>/dev/null | grep -qE ' /etc/fail2ban/(jail|fail2ban)\.conf$'; then
+  # Captured first: dpkg writes line by line, and with both files changed a
+  # grep -q that stops at the first line fails the pipeline under pipefail.
+  out="$(dpkg --verify fail2ban 2>/dev/null)" || true
+  if grep -qE ' /etc/fail2ban/(jail|fail2ban)\.conf$' <<<"$out"; then
     report FAIL f2b.mainconf 'jail.conf 或 fail2ban.conf 被修改过'
   else
     report PASS f2b.mainconf 'jail.conf 和 fail2ban.conf 保持发行版原样'
