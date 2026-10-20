@@ -15,12 +15,10 @@ readonly KEYS=/opt/vh-keys
 readonly EVIDENCE=/root/vh-evidence
 # Never archived: the 3X-UI installer prints generated panel credentials here.
 readonly PRIVATE=/root/vh-private
-readonly ADMIN=vhadmin
 readonly XUI_INSTALL_SHA256=a7f4fedcea3abe8987508d00f29834b8872e4e4e5059159eb19460d474b37cdc
 readonly XUI_SCRIPT_SHA256=cfabcd4af35a3646c374ea0ccba5178f4c0d3135f699277fc8d8b810158e85c0
 
-GOOD_ARGS=(--user "$ADMIN" --pubkey-file "$KEYS/ed25519.pub" --pubkey-file "$KEYS/rsa.pub"
-  --open 443/tcp --open 2096/tcp)
+GOOD_ARGS=(--open 443/tcp --open 2096/tcp)
 phase_dir=''
 
 log() { printf '[+] %s\n' "$*"; }
@@ -189,7 +187,7 @@ make_keys() {
   ssh-keygen -q -t rsa -b 3072 -N '' -C vh-test-rsa -f "$PRIVATE/rsa"
   install -m 0644 "$PRIVATE/ed25519.pub" "$KEYS/ed25519.pub"
   install -m 0644 "$PRIVATE/rsa.pub" "$KEYS/rsa.pub"
-  install -m 0600 "$PRIVATE/ed25519" "$KEYS/private-key"
+  cat "$KEYS/ed25519.pub" "$KEYS/rsa.pub" >"$KEYS/both.pub"
   printf 'command="true" %s\n' "$(cat "$KEYS/ed25519.pub")" >"$KEYS/options.pub"
   printf 'ssh-ed25519 AAAAnotakey vh-test-invalid\n' >"$KEYS/invalid.pub"
   printf '# only a comment\n\n' >"$KEYS/comments.pub"
@@ -238,6 +236,7 @@ phase_matrix() {
   same_snapshot vt01-before vt01-after
   expect_rc vt01-preflight 0
   expect_clean vt01-preflight
+  expect_report vt01-preflight PASS root.keys
 
   snapshot vt50-before
   capture vt50-verify "$VH" verify
@@ -245,7 +244,7 @@ phase_matrix() {
   same_snapshot vt50-before vt50-after
   expect_rc vt50-verify 1
   expect_clean vt50-verify
-  for id in state ssh.permitrootlogin ssh.passwordauthentication accounts.nopasswd f2b.installed; do
+  for id in state ssh.passwordauthentication accounts.nopasswd f2b.installed; do
     expect_report vt50-verify FAIL "$id"
   done
   # UFW is absent from the Debian images and inactive on the Ubuntu image.
@@ -253,7 +252,8 @@ phase_matrix() {
     debian) expect_report vt50-verify FAIL ufw.installed ;;
     ubuntu) expect_report vt50-verify FAIL ufw.active ;;
   esac
-  for id in ssh.pubkey ssh.port nft.service boundary.container boundary.xui-bbr; do
+  # The images already default to PermitRootLogin prohibit-password.
+  for id in ssh.permitrootlogin root.keys ssh.pubkey ssh.port nft.service boundary.container boundary.xui-bbr; do
     expect_report vt50-verify PASS "$id"
   done
 }
@@ -290,10 +290,21 @@ input_case() {
   expect_clean "$name"
 }
 
+# root_keys_case NAME FILE STATUS TEXT: preflight with FILE in place of root's
+# authorized_keys, visible only in a private mount namespace.
+root_keys_case() {
+  local name="$1"
+  # shellcheck disable=SC2016
+  capture "$name" unshare --mount --propagation private -- \
+    sh -c 'mount --bind "$1" /root/.ssh/authorized_keys && shift && exec "$@"' sh "$2" \
+    "$VH" preflight "${GOOD_ARGS[@]}"
+  expect_rc "$name" "$3"
+  expect_text "$name" "$4"
+  expect_clean "$name"
+}
+
 # VT-02 and VT-04.
 phase_negative() {
-  local user key=(--pubkey-file "$KEYS/ed25519.pub") args=(--user "$ADMIN" --pubkey-file "$KEYS/ed25519.pub")
-  user="$(default_user)"
   settle
   check_profile
   snapshot negative-before
@@ -317,12 +328,12 @@ phase_negative() {
   expect_report vt02-release FAIL platform
   expect_text vt02-release 'Debian GNU/Linux 11'
 
-  capture vt02-nokey "$VH" preflight --user "$ADMIN"
-  expect_rc vt02-nokey 2
-  expect_text vt02-nokey '缺少 --pubkey-file'
-  capture vt02-emptykey "$VH" preflight --user "$ADMIN" --pubkey-file "$KEYS/comments.pub"
-  expect_rc vt02-emptykey 2
-  expect_text vt02-emptykey '没有可用的公钥'
+  root_keys_case vt02-rootkey-none "$KEYS/comments.pub" 1 'root 的 authorized_keys 中没有公钥'
+  expect_report vt02-rootkey-none FAIL root.keys
+  root_keys_case vt02-rootkey-options "$KEYS/options.pub" 1 'root 没有可用的公钥：1 行带选项'
+  expect_report vt02-rootkey-options FAIL root.keys
+  root_keys_case vt02-rootkey-invalid "$KEYS/invalid.pub" 1 'root 没有可用的公钥：1 行'
+  expect_report vt02-rootkey-invalid FAIL root.keys
 
   hold_dpkg_lock
   capture vt02-aptlock "$VH" preflight "${GOOD_ARGS[@]}"
@@ -340,34 +351,24 @@ phase_negative() {
   expect_rc vt02-dpkgproc 1
   expect_report vt02-dpkgproc FAIL apt.idle
 
-  input_case user-root 2 '管理用户不能是 root' preflight --user root "${key[@]}"
-  input_case user-upper 2 '用户名不合法' preflight --user Admin "${key[@]}"
-  input_case user-digit 2 '用户名不合法' preflight --user 1admin "${key[@]}"
-  input_case user-dot 2 '用户名不合法' preflight --user ad.min "${key[@]}"
-  input_case user-long 2 '用户名不合法' preflight --user "a$(printf 'b%.0s' {1..32})" "${key[@]}"
-  input_case user-exists 1 "账户 $user 已存在" preflight --user "$user" "${key[@]}"
-  input_case user-group 1 '已存在同名用户组 adm' preflight --user adm "${key[@]}"
-  input_case key-invalid 2 '无法解析为公钥' preflight --user "$ADMIN" --pubkey-file "$KEYS/invalid.pub"
-  input_case key-private 2 '是私钥' preflight --user "$ADMIN" --pubkey-file "$KEYS/private-key"
-  input_case key-options 2 '不是单纯的公钥' preflight --user "$ADMIN" --pubkey-file "$KEYS/options.pub"
-  input_case key-missing 2 '不存在或不可读' preflight --user "$ADMIN" --pubkey-file /nonexistent.pub
-  input_case panel-22 2 '面板端口不能是 22' preflight "${args[@]}" --panel-port 22
-  input_case panel-zero 2 '面板端口不合法' preflight "${args[@]}" --panel-port 0
-  input_case panel-high 2 '面板端口不合法' preflight "${args[@]}" --panel-port 65536
-  input_case open-panel 2 '与面板端口相同' preflight "${args[@]}" --open 2053/tcp
-  input_case open-22 2 '公开端口不能是 22' preflight "${args[@]}" --open 22/tcp
-  input_case open-zero 2 '公开端口格式不合法' preflight "${args[@]}" --open 0/tcp
-  input_case open-high 2 '公开端口超出范围' preflight "${args[@]}" --open 65536/udp
-  input_case open-noproto 2 '公开端口格式不合法' preflight "${args[@]}" --open 443
-  input_case open-dup 2 '公开端口重复' preflight "${args[@]}" --open 443/tcp --open 443/tcp
-  input_case maxretry 2 '--maxretry 只能是 3 或 6' preflight "${args[@]}" --maxretry 5
-  input_case timeout-2 2 '--confirm-timeout 应为' preflight "${args[@]}" --confirm-timeout 2
-  input_case timeout-61 2 '--confirm-timeout 应为' preflight "${args[@]}" --confirm-timeout 61
-  input_case timeout-3 0 '确认时限：3 分钟' preflight "${args[@]}" --confirm-timeout 3
-  input_case timeout-60 0 '确认时限：60 分钟' preflight "${args[@]}" --confirm-timeout 60
-  input_case keys-both 0 '公钥 2 把' preflight "${GOOD_ARGS[@]}"
-  expect_match vt04-keys-both '^\[INFO\] inputs\.pubkey +ssh-ed25519 SHA256:'
-  expect_match vt04-keys-both '^\[INFO\] inputs\.pubkey +ssh-rsa SHA256:'
+  input_case panel-22 2 '面板端口不能是 22' preflight --panel-port 22
+  input_case panel-zero 2 '面板端口不合法' preflight --panel-port 0
+  input_case panel-high 2 '面板端口不合法' preflight --panel-port 65536
+  input_case open-panel 2 '与面板端口相同' preflight --open 2053/tcp
+  input_case open-22 2 '公开端口不能是 22' preflight --open 22/tcp
+  input_case open-zero 2 '公开端口格式不合法' preflight --open 0/tcp
+  input_case open-high 2 '公开端口超出范围' preflight --open 65536/udp
+  input_case open-noproto 2 '公开端口格式不合法' preflight --open 443
+  input_case open-dup 2 '公开端口重复' preflight --open 443/tcp --open 443/tcp
+  # Options removed by requirements D22 and D23 must not be silently ignored.
+  input_case removed-option 2 '未知参数：--maxretry' preflight --maxretry 5
+  input_case timeout-2 2 '--confirm-timeout 应为' preflight --confirm-timeout 2
+  input_case timeout-61 2 '--confirm-timeout 应为' preflight --confirm-timeout 61
+  input_case timeout-3 0 '确认时限：3 分钟' preflight --confirm-timeout 3
+  input_case timeout-60 0 '确认时限：60 分钟' preflight --confirm-timeout 60
+  root_keys_case vt04-rootkey-both "$KEYS/both.pub" 0 'root 有 2 把可用的公钥'
+  expect_match vt04-rootkey-both '^\[INFO\] root\.key +ssh-ed25519 SHA256:'
+  expect_match vt04-rootkey-both '^\[INFO\] root\.key +ssh-rsa SHA256:'
   input_case not-tty 2 '必须在交互终端中运行' apply "${GOOD_ARGS[@]}"
 
   snapshot negative-after

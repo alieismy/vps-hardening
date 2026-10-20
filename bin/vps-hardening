@@ -54,13 +54,12 @@ usage() {
   ports       变更公开端口（尚未实现，里程碑 M4）
 
 preflight 和 apply 的参数：
-  --user NAME              要创建的管理用户（必填）
-  --pubkey-file FILE       管理员的公钥文件，可重复（必填）
   --panel-port PORT        3X-UI 面板端口，只经 SSH 隧道访问（默认 2053）
   --open PORT/PROTO[/FAM]  公开端口，PROTO 为 tcp 或 udp，FAM 为 both、ipv4 或 ipv6，
                            可重复（例如 --open 443/tcp）
-  --maxretry 3|6           Fail2ban 的 maxretry（默认 6）
   --confirm-timeout MIN    确认时限，3～60 分钟（默认 10）
+
+root 是管理账户，只能用密钥登录；预检要求 root 已有可用的公钥。
 
 其他：
   --help       显示本帮助

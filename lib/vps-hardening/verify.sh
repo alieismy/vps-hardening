@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # Read-only verification (FR-10). Never changes files, services or rules.
 #
-# Checks that need the apply record (admin user, declared ports, file digests)
-# report SKIP until the record exists; apply writes it from milestone M2.
+# Checks that need the apply record (declared ports, file digests) report SKIP
+# until the record exists; apply writes it from milestone M2.
 
 cmd_verify() {
   [ "$#" -eq 0 ] || usage_error "verify 不接受参数：$1"
@@ -48,7 +48,6 @@ verify_state() {
 
 verify_accounts() {
   local accounts user offenders=()
-  skip_without_state admin.user
   accounts="$(nopasswd_key_accounts)"
   for user in $accounts; do
     account_denied_by_sshd "$user" || offenders+=("$user")
@@ -78,14 +77,15 @@ verify_ssh() {
     report FAIL ssh.config "无法读取 sshd 生效配置：$(head -n 1 "$VH_TMP/sshd-T.err")"
     return 0
   fi
-  expect_sshd ssh.permitrootlogin root permitrootlogin no
+  # sshd -T prints prohibit-password under its older name.
+  expect_sshd ssh.permitrootlogin root permitrootlogin without-password prohibit-password
   expect_sshd ssh.passwordauthentication root passwordauthentication no
   expect_sshd ssh.kbdinteractive root kbdinteractiveauthentication no
   expect_sshd ssh.pubkey root pubkeyauthentication yes
   expect_sshd ssh.forwarding root allowtcpforwarding yes local
   expect_sshd ssh.port root port 22
-  skip_without_state ssh.admin
   skip_without_state ssh.dropin
+  check_root_keys
 
   # A dual-stack socket (Ubuntu's ssh.socket) is listed as *.
   addrs=" $(tcp_listen_addresses 22 | paste -sd ' ') "
