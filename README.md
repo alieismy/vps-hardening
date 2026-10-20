@@ -4,7 +4,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (mil
 
 为 Debian/Ubuntu VPS 提供基础安全加固，包括：SSH 只允许密钥登录（root 作为管理账户，只能用密钥登录）、UFW 只开放必要端口、Fail2ban，以及自动安全更新。目标是在不明显增加日常管理负担的前提下缩小暴露面，同时避免把管理员锁在服务器外。
 
-**当前状态：开发中，尚无可用版本。** 已完成里程碑 M1：只读的 `preflight`（预检）和 `verify`（验证），以及在 6 组平台上运行的虚拟机测试（VT-02、VT-03 中涉及 `apply` 的部分随 M2 补测）；加固本身（`apply` 等）尚未实现，不要在任何 VPS 上运行。文档：[需求规格说明](docs/requirements.md)（v1.3，待评审；v1.2 已确认）、[方案设计](docs/solution-design.md)（v1.1，待评审；v1.0 已确认）、[验证计划](docs/verification-plan.md)（v1.1，待评审；v1.0 已确认）、[详细设计](docs/detailed-design.md)（M1 部分，v0.2 的修改部分待评审）。
+**当前状态：开发中，尚无可用版本。** 已完成里程碑 M1：只读的 `preflight`（预检）和 `verify`（验证），以及在 6 组平台上运行的虚拟机测试（VT-02、VT-03 中涉及 `apply` 的部分随 M2 补测）；加固本身（`apply` 等）尚未实现，不要在任何 VPS 上运行。文档：[需求规格说明](docs/requirements.md)（v1.3，已确认）、[方案设计](docs/solution-design.md)（v1.1，已确认）、[验证计划](docs/verification-plan.md)（v1.1，已确认）、[详细设计](docs/detailed-design.md)（M1 部分，v0.2，已确认）。
 
 ## 已确认的范围（2026-10-10，2026-10-13 补充，2026-10-20 修改）
 
@@ -26,9 +26,9 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (mil
 
 ## 待定事项
 
-需求 v1.3、方案设计 v1.1、验证计划 v1.1 和详细设计 v0.2 待评审（2026-10-20：root 只用密钥登录、不建管理用户，Fail2ban 用 `normal` 模式、`maxretry` 取 5，加固前先全量升级并重启）。另有一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
+需求 v1.3、方案设计 v1.1、验证计划 v1.1 和详细设计 v0.2 已确认（2026-10-20：root 只用密钥登录、不建管理用户，Fail2ban 用 `normal` 模式、`maxretry` 取 5，加固前先全量升级并重启）。另有一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
 
-下一步：评审通过后开始里程碑 M2（核心应用：SSH、UFW、待确认与自动恢复、`confirm`）。
+下一步：里程碑 M2（核心应用：SSH、UFW、待确认与自动恢复、`confirm`）。
 
 ## 配套仓库
 
