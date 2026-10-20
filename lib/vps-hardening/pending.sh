@@ -190,7 +190,10 @@ restore_all() {
   fi
   vh_log 'restore: units'
   restore_units "$mode" || failed+=('服务状态')
-  if [ "${#failed[@]}" -eq 0 ] && disarm_restore "$mode"; then
+  if [ "${#failed[@]}" -eq 0 ]; then
+    disarm_restore "$mode" || failed+=('撤除自动恢复')
+  fi
+  if [ "${#failed[@]}" -eq 0 ]; then
     state_set status rolled-back
     state_set rolled_back_at "$(utc_now)"
     state_set rollback_reason "$reason"
