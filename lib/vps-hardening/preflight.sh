@@ -90,11 +90,17 @@ preflight_new_host() {
     report PASS new-host.fail2ban 'Fail2ban 未安装'
   fi
 
-  if [ -e "$VH_STATE_DIR" ]; then
-    report FAIL new-host.state "已存在本工具的状态目录 $VH_STATE_DIR"
-  else
+  if [ ! -e "$VH_STATE_DIR" ]; then
     report PASS new-host.state '本工具没有在这台主机上执行过'
+    return 0
   fi
+  # FR-02: a host whose earlier apply was fully rolled back counts as new.
+  case "$(state_get status)" in
+    rolled-back) report PASS new-host.state "上次应用已完全回滚（$(state_get rollback_reason)）" ;;
+    pending) report FAIL new-host.state '有待确认的变更：请先确认，或等待自动恢复' ;;
+    applied) report FAIL new-host.state '本工具已在这台主机上应用过' ;;
+    *) report FAIL new-host.state "本工具的状态为 $(state_get status | sed 's/^$/未知/')，详见 $VH_LOG_FILE" ;;
+  esac
 }
 
 preflight_sshd() {

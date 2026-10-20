@@ -482,4 +482,5 @@ main() {
   log "phase $phase passed"
 }
 
-main "$@"
+# m2.sh sources this file for its helpers.
+[ "${BASH_SOURCE[0]}" != "$0" ] || main "$@"

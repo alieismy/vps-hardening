@@ -23,6 +23,9 @@ readonly VH_SSHD_MANAGED='permitrootlogin passwordauthentication kbdinteractivea
 # Placeholder connection used to evaluate Match blocks with sshd -T -C.
 readonly VH_SSHD_PROBE_CONN='host=vps-hardening.invalid,addr=192.0.2.1,laddr=192.0.2.2,lport=22'
 
+# Function the ERR trap calls before exiting, set while a failure must undo changes.
+VH_ABORT_HOOK=''
+
 VH_COUNT_PASS=0
 VH_COUNT_FAIL=0
 VH_COUNT_WARN=0

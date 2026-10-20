@@ -13,7 +13,9 @@ permissions:
 
 jobs:
   # Full matrix (verification plan 3.1): VT-01, the unhardened part of VT-50,
-  # the guest-side source address and the sshd probe study (VO-2).
+  # the guest-side source address and the sshd probe study (VO-2), then the
+  # M2 lifecycle on the same guest (VT-10 to VT-15, VT-21, VT-24, VT-25,
+  # VT-62, VT-70, VT-71).
   matrix:
     name: matrix ${{ matrix.platform }} ${{ matrix.arch }}
     strategy:
@@ -40,8 +42,36 @@ jobs:
           path: .tmp/vm/evidence/
           retention-days: 14
 
+  # Automatic restore on the full matrix: on timeout (VT-20, VT-21) and on
+  # reboot while pending (VT-22), with the continuous probe (VT-25).
+  recovery:
+    name: recovery ${{ matrix.platform }} ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [debian12, debian13, ubuntu2404]
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU
+        run: |
+          if [ '${{ matrix.arch }}' = arm64 ]; then qemu='qemu-system-arm qemu-efi-aarch64'; else qemu='qemu-system-x86'; fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $qemu qemu-utils cloud-image-utils
+          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
+      - name: Run the recovery suite
+        run: python3 tests/vm.py --suite recovery --platform '${{ matrix.platform }}' --arch '${{ matrix.arch }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vm-recovery-${{ matrix.platform }}-${{ matrix.arch }}
+          path: .tmp/vm/evidence/
+          retention-days: 14
+
   # Architecture-independent logic on the three platforms (amd64): VT-02,
-  # VT-03 (S1-S4) and VT-04, plus the UFW path check.
+  # VT-03 (S1-S4) and VT-04, plus the UFW path check, and VT-23.
   negative:
     name: negative ${{ matrix.platform }} amd64
     strategy:

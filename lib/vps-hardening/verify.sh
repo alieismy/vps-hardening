@@ -2,7 +2,7 @@
 # Read-only verification (FR-10). Never changes files, services or rules.
 #
 # Checks that need the apply record (declared ports, file digests) report SKIP
-# until the record exists; apply writes it from milestone M2.
+# while there is no applied or pending record.
 
 cmd_verify() {
   [ "$#" -eq 0 ] || usage_error "verify 不接受参数：$1"
@@ -38,12 +38,38 @@ skip_without_state() {
   report SKIP "$1" '没有应用记录，无法核对声明值'
 }
 
+# True when apply finished, confirmed or not: its declared values are on record.
+have_record() {
+  case "$(state_get status)" in
+    applied | pending) return 0 ;;
+  esac
+  return 1
+}
+
+# Digest apply recorded for a managed file.
+recorded_digest() {
+  local key
+  for key in $(seq 0 $((${#VH_MANAGED_FILES[@]} - 1))); do
+    state_get "digest.$key" | awk -v path="$1" '$2 == path { print $1 }'
+  done
+}
+
 verify_state() {
-  if [ -e "$VH_STATE_DIR" ]; then
-    report FAIL state "存在 $VH_STATE_DIR，但这个版本还不能读取应用记录"
-  else
+  local deadline left
+  if [ ! -e "$VH_STATE_DIR" ]; then
     report FAIL state '未应用：没有本工具的应用记录'
+    return 0
   fi
+  case "$(state_get status)" in
+    applied) report PASS state "已应用，确认于 $(state_get confirmed_at)" ;;
+    pending)
+      deadline="$(state_get deadline "$VH_PENDING_FILE")"
+      left=$(((${deadline:-0} - $(date +%s) + 59) / 60))
+      report WARN state "待确认：约 $left 分钟后自动恢复，请从新的 SSH 会话以 root 执行 confirm"
+      ;;
+    rolled-back) report FAIL state "已回滚：$(state_get rollback_reason)" ;;
+    *) report FAIL state "状态为 $(state_get status | sed 's/^$/未知/')，详见 $VH_LOG_FILE" ;;
+  esac
 }
 
 verify_accounts() {
@@ -84,7 +110,11 @@ verify_ssh() {
   expect_sshd ssh.pubkey root pubkeyauthentication yes
   expect_sshd ssh.forwarding root allowtcpforwarding yes local
   expect_sshd ssh.port root port 22
-  skip_without_state ssh.dropin
+  if have_record; then
+    verify_ssh_record
+  else
+    skip_without_state ssh.dropin
+  fi
   check_root_keys
 
   # A dual-stack socket (Ubuntu's ssh.socket) is listed as *.
@@ -104,6 +134,29 @@ verify_ssh() {
   fi
 }
 
+verify_ssh_record() {
+  local dropin="$VH_SSHD_DROPIN_DIR/$VH_SSHD_DROPIN_NAME" digest user value bad
+  digest="$(recorded_digest "$dropin")"
+  if [ -n "$digest" ] && [ "$(file_digest "$dropin")" = "$digest" ]; then
+    report PASS ssh.dropin "$dropin 与应用时一致"
+  else
+    report FAIL ssh.dropin "$dropin 被修改或删除"
+  fi
+  # FR-04: the accounts denied by D13 are evaluated on their own too.
+  for user in $(state_get denied_users); do
+    bad=''
+    sshd_effective "$user" | sshd_values denyusers | grep -qxF -- "$user" || bad='不在 DenyUsers 中'
+    for value in passwordauthentication kbdinteractiveauthentication; do
+      [ "$(sshd_effective "$user" | sshd_value "$value")" = no ] || bad="${bad:+$bad；}$value 不是 no"
+    done
+    if [ -z "$bad" ]; then
+      report PASS ssh.denied "$user 被禁止经 SSH 登录"
+    else
+      report FAIL ssh.denied "$user：$bad"
+    fi
+  done
+}
+
 verify_ufw() {
   local status
 
@@ -117,10 +170,13 @@ verify_ufw() {
     report FAIL ufw.active 'UFW 未启用'
   else
     report PASS ufw.active 'UFW 已启用'
-    if printf '%s\n' "$status" | grep -qx 'Default: deny (incoming), allow (outgoing), deny (routed)'; then
+    # While the kernel does not forward, ufw shows the routed policy as
+    # "disabled"; the configured policy is in /etc/default/ufw either way.
+    if printf '%s\n' "$status" | grep -qxE 'Default: deny \(incoming\), allow \(outgoing\), (deny|disabled) \(routed\)' &&
+      grep -qx 'DEFAULT_FORWARD_POLICY="DROP"' /etc/default/ufw 2>/dev/null; then
       report PASS ufw.defaults '默认拒绝入站、允许出站、拒绝转发'
     else
-      report FAIL ufw.defaults "默认策略不符合：$(printf '%s\n' "$status" | grep '^Default:' || printf '未知')"
+      report FAIL ufw.defaults "默认策略不符合：$(printf '%s\n' "$status" | grep '^Default:' || printf '未知')；$(grep '^DEFAULT_FORWARD_POLICY=' /etc/default/ufw 2>/dev/null || printf 'DEFAULT_FORWARD_POLICY 未设置')"
     fi
   fi
 
@@ -135,8 +191,28 @@ verify_ufw() {
   else
     report PASS ufw.port80 '没有放行 80 端口的规则'
   fi
-  skip_without_state ufw.rules
-  skip_without_state ufw.panel
+  if have_record; then
+    verify_ufw_record
+  else
+    skip_without_state ufw.rules
+    skip_without_state ufw.panel
+  fi
+}
+
+# FR-06: exactly the rules apply wrote, none for the panel port.
+verify_ufw_record() {
+  local panel
+  if [ -f "$VH_UFW_RULES_FILE" ] && diff <(sort "$VH_UFW_RULES_FILE") <(ufw_status_rules | sort) >"$VH_TMP/ufw.diff"; then
+    report PASS ufw.rules "规则与应用时一致（$(wc -l <"$VH_UFW_RULES_FILE") 条，IPv4 和 IPv6 分别计）"
+  else
+    report FAIL ufw.rules "规则与应用时不一致：$(grep -E '^[<>]' "$VH_TMP/ufw.diff" 2>/dev/null | sed 's/^</缺少 /; s/^>/多出 /; s/  */ /g' | paste -sd ';')"
+  fi
+  panel="$(state_get panel_port)"
+  if ufw_added_rules | ufw_rules_allow_port "$panel"; then
+    report FAIL ufw.panel "存在放行面板端口 $panel 的规则（面板只经 SSH 隧道访问）"
+  else
+    report PASS ufw.panel "没有放行面板端口 $panel 的规则"
+  fi
 }
 
 # Reads `ufw show added` rule lines on stdin; true when an inbound allow or
@@ -186,7 +262,11 @@ verify_fail2ban() {
     report FAIL f2b.jails 'fail2ban 服务没有响应'
   fi
   # Effective jail values are checked from milestone M3.
-  skip_without_state f2b.values
+  if have_record; then
+    report SKIP f2b.values '生效值的核对在里程碑 M3 实现'
+  else
+    skip_without_state f2b.values
+  fi
 
   if dpkg --verify fail2ban 2>/dev/null | grep -qE ' /etc/fail2ban/(jail|fail2ban)\.conf$'; then
     report FAIL f2b.mainconf 'jail.conf 或 fail2ban.conf 被修改过'
@@ -289,7 +369,9 @@ verify_boundary() {
     report PASS boundary.xui-bbr '没有 3X-UI 的 BBR 配置'
   fi
 
-  if unit_exists x-ui.service; then
+  if unit_exists x-ui.service && have_record; then
+    report SKIP boundary.panel-listen '面板监听地址的核对在里程碑 M3 实现'
+  elif unit_exists x-ui.service; then
     skip_without_state boundary.panel-listen
   else
     report INFO boundary.panel-listen '未安装 3X-UI'
