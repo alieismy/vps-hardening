@@ -4,7 +4,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (mil
 
 为 Debian/Ubuntu VPS 提供基础安全加固，包括：SSH 只允许密钥登录（root 作为管理账户，只能用密钥登录）、UFW 只开放必要端口、Fail2ban，以及自动安全更新。目标是在不明显增加日常管理负担的前提下缩小暴露面，同时避免把管理员锁在服务器外。
 
-**当前状态：开发中，尚无可用版本。** 已完成里程碑 M1 和 M2：只读的 `preflight`（预检）和 `verify`（验证），以及 `apply`（应用）、`confirm`（确认）和自动恢复，都在 6 组平台的虚拟机测试中通过。尚未完成：Fail2ban 生效值和与 3X-UI 共存的验证（M3），手工回滚、端口变更和发布包（M4），真实主机验收（M5）。目前只在 CI 虚拟机中验证过，不要用于生产 VPS。文档：[需求规格说明](docs/requirements.md)（v1.3，已确认）、[方案设计](docs/solution-design.md)（v1.1，已确认）、[验证计划](docs/verification-plan.md)（v1.1，已确认）、[详细设计](docs/detailed-design.md)（v0.3：M1 部分已确认，M2 部分待评审）。
+**当前状态：开发中，尚无可用版本。** 已完成里程碑 M1 和 M2：只读的 `preflight`（预检）和 `verify`（验证），以及 `apply`（应用）、`confirm`（确认）和自动恢复，都在三个平台的 amd64 虚拟机测试中通过（arm64 作为参考，按需测试）。尚未完成：Fail2ban 生效值和与 3X-UI 共存的验证（M3），手工回滚、端口变更和发布包（M4），真实主机验收（M5）。目前只在 CI 虚拟机中验证过，不要用于生产 VPS。文档：[需求规格说明](docs/requirements.md)（v1.4 草稿待评审，v1.3 已确认）、[方案设计](docs/solution-design.md)（v1.2 草稿待评审，v1.1 已确认）、[验证计划](docs/verification-plan.md)（v1.2 草稿待评审，v1.1 已确认）、[详细设计](docs/detailed-design.md)（v0.3：M1 部分已确认，M2 部分待评审）。
 
 ## 已确认的范围（2026-10-10，2026-10-13 补充，2026-10-20 修改）
 
@@ -16,7 +16,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (mil
 | 3X-UI 面板 | 只经 SSH 隧道访问：`ssh -L 8443:127.0.0.1:<面板端口> root@vps`，面板端口默认 2053。UFW 不放行面板端口，面板只监听 127.0.0.1（由代理仓库设置），不使用 `ADMIN_CIDRS` 白名单（2026-10-13 起替代原先的白名单方案） |
 | Fail2ban | 纳入，只保护 SSH；配置采用用户现网 3X-UI 方案第 16.1 节的样例，白名单只含回环地址；过滤模式为 `normal`，`maxretry` 固定为 5（2026-10-20 修改，见需求说明 FR-08） |
 | 自动安全更新 | 纳入；Debian 同时自动安装稳定版小版本更新（与 Debian 默认一致）；不自动重启，需要重启时由验证命令报告 |
-| 目标平台 | 与 vps-tuning 一致：Debian 12/13、Ubuntu 24.04 LTS，x86_64/ARM64 |
+| 目标平台 | 发行版与 vps-tuning 一致：Debian 12/13、Ubuntu 24.04 LTS。架构为 x86_64；ARM64 作为参考，工具可以运行，测试按需执行（2026-10-20 修改，待评审） |
 | 镜像默认用户 | 如果有免密 sudo，禁止该账户经 SSH 登录 |
 | 适用主机 | 只支持新机，在安装 3X-UI 之前执行；已运行 3X-UI 的存量主机不在范围内 |
 | 交付形态 | 在 VPS 本机运行的单命令工具 `vps-hardening`，提供预检、应用、验证和回滚，不依赖控制端；应用后须在 10 分钟内（可设 3～60 分钟）从新的 SSH 会话确认，否则自动恢复 |
@@ -29,7 +29,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (mil
 尚无发布包和安装脚本（M4），开发版从仓库运行 `bin/vps-hardening`。在新的 VPS 上，以 root 用密钥登录后：
 
 1. 全量升级并重启：`apt update && apt full-upgrade`，然后 `reboot`。本工具不执行这一步（需求 D24）。
-2. 预检：`vps-hardening preflight --open 443/tcp --open 2096/tcp`。root 必须已有可用的公钥。
+2. 预检：`vps-hardening preflight --open 443/tcp --open 2096/tcp`。root 必须已有可用的公钥，一般在服务商管理页面绑定 SSH 密钥即可；本工具只检查、不写入公钥，cloud-init 写给 root、带 `command=` 前缀的公钥不算可用。
 3. 应用：`vps-hardening apply --open 443/tcp --open 2096/tcp`，确认已保留当前会话、服务商控制台可用后输入 `yes`。
 4. 保持当前会话，另开一个终端，用 root 的密钥登录后执行 `vps-hardening confirm`。确认时限默认 10 分钟（`--confirm-timeout` 可设 3～60 分钟）；到期未确认，或在此之前重启，都会自动恢复到应用前的配置。
 5. 之后可随时用 `vps-hardening verify` 只读核对。
@@ -38,7 +38,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (mil
 
 ## 待定事项
 
-需求 v1.3、方案设计 v1.1、验证计划 v1.1 和详细设计 v0.2 已确认（2026-10-20：root 只用密钥登录、不建管理用户，Fail2ban 用 `normal` 模式、`maxretry` 取 5，加固前先全量升级并重启）。详细设计 v0.3 的 M2 部分待评审，其中 Fail2ban 和自动更新的配置写入提前到 M2，偏离方案设计第 10 节，需要确认（[详细设计第 1 节](docs/detailed-design.md#1-范围)）。另有一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
+需求 v1.3、方案设计 v1.1、验证计划 v1.1 和详细设计 v0.2 已确认（2026-10-20：root 只用密钥登录、不建管理用户，Fail2ban 用 `normal` 模式、`maxretry` 取 5，加固前先全量升级并重启）。详细设计 v0.3 的 M2 部分待评审，其中 Fail2ban 和自动更新的配置写入提前到 M2，偏离方案设计第 10 节，需要确认（[详细设计第 1 节](docs/detailed-design.md#1-范围)）。需求 v1.4、方案设计 v1.2、验证计划 v1.2 的草稿待评审：ARM64 改为按需运行的参考（需求 D26）。另有一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
 
 下一步：里程碑 M3（Fail2ban 生效值和 11 步验证、自动更新的 dry-run、与 3X-UI v3.7.0 共存）。
 
