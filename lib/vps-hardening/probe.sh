@@ -33,6 +33,11 @@ sshd_effective() {
   cat -- "$cache"
 }
 
+# Forget cached sshd -T output after the configuration on disk changed.
+sshd_cache_clear() {
+  [ -z "$VH_TMP" ] || rm -f -- "$VH_TMP"/sshd-T.*
+}
+
 # All values of one keyword from sshd -T output on stdin, one per line.
 # Array keywords (denyusers) may appear on several lines or space-separated.
 sshd_values() {
@@ -174,9 +179,15 @@ ufw_active() {
   have ufw && bounded ufw status 2>/dev/null | awk 'NR == 1 { s = $0 } END { exit s == "Status: active" ? 0 : 1 }'
 }
 
-# Lines of `ufw show added`, without the header.
+# Lines of `ufw show added`, without the header. They do not show the address
+# family: a rule limited to 0.0.0.0/0 or ::/0 is listed like one for both.
 ufw_added_rules() {
   bounded ufw show added 2>/dev/null | sed -n 's/^ufw //p'
+}
+
+# Rule lines of `ufw status` (active firewall only), one per address family.
+ufw_status_rules() {
+  bounded ufw status 2>/dev/null | awk 'seen && NF { print } /^--/ { seen = 1 }'
 }
 
 # `apt-config dump` output, cached. Readers consume all of it: an early exit

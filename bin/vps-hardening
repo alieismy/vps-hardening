@@ -14,9 +14,9 @@ readonly VH_VERSION='0.1.0-dev'
 
 # Installed as /usr/local/bin/vps-hardening with modules in
 # /usr/local/lib/vps-hardening; the repository uses the same relative layout.
-vh_self="$(readlink -f -- "${BASH_SOURCE[0]}")"
-readonly VH_LIB_DIR="${vh_self%/*/*}/lib/vps-hardening"
-unset vh_self
+VH_SELF="$(readlink -f -- "${BASH_SOURCE[0]}")"
+readonly VH_SELF
+readonly VH_LIB_DIR="${VH_SELF%/*/*}/lib/vps-hardening"
 
 if [ ! -r "$VH_LIB_DIR/common.sh" ]; then
   printf '[x] 内部错误：找不到模块目录 %s\n' "$VH_LIB_DIR" >&2
@@ -28,14 +28,20 @@ fi
 . "$VH_LIB_DIR/probe.sh"
 . "$VH_LIB_DIR/preflight.sh"
 . "$VH_LIB_DIR/verify.sh"
+. "$VH_LIB_DIR/state.sh"
+. "$VH_LIB_DIR/pending.sh"
+. "$VH_LIB_DIR/apply.sh"
 
 # An unexpected command failure must not look like a FAIL result (exit 1).
 # Only the main shell decides: inside $(...) or a pipeline the trap would also
 # fire for expected non-zero statuses, and a real failure there reaches the
-# main shell through the exit status anyway.
+# main shell through the exit status anyway. Mid-apply, the hook restores first.
 vh_on_error() {
   [ "$BASH_SUBSHELL" -eq 0 ] || return 0
   printf '[x] 内部错误：%s 处的命令以状态 %s 结束：%s\n' "$2" "$1" "$3" >&2
+  if [ -n "$VH_ABORT_HOOK" ]; then
+    "$VH_ABORT_HOOK"
+  fi
   exit "$VH_EXIT_INTERNAL"
 }
 trap 'vh_on_error "$?" "${BASH_SOURCE[0]##*/}:$LINENO" "$BASH_COMMAND"' ERR
@@ -47,8 +53,8 @@ usage() {
 命令：
   preflight   只读预检：检查平台、输入和新机条件，不改变系统
   verify      只读验证：逐项核对加固结果，不改变系统
-  apply       应用加固（尚未实现，里程碑 M2）
-  confirm     确认加固结果（尚未实现，里程碑 M2）
+  apply       应用加固（交互执行），结束后进入待确认
+  confirm     在新的 SSH 会话中以 root 确认加固结果
   status      显示状态（尚未实现，里程碑 M4）
   rollback    手工回滚（尚未实现，里程碑 M4）
   ports       变更公开端口（尚未实现，里程碑 M4）
@@ -60,6 +66,8 @@ preflight 和 apply 的参数：
   --confirm-timeout MIN    确认时限，3～60 分钟（默认 10）
 
 root 是管理账户，只能用密钥登录；预检要求 root 已有可用的公钥。
+加固前请先执行 apt update && apt full-upgrade 并重启。apply 之后须在确认时限内，
+从新的 SSH 会话以 root 执行 confirm；到期未确认或期间重启都会自动恢复。
 
 其他：
   --help       显示本帮助
@@ -85,10 +93,11 @@ main() {
     verify) cmd_verify "$@" ;;
     apply)
       require_tty apply
-      parse_host_options "$@"
-      not_implemented apply M2
+      cmd_apply "$@"
       ;;
-    confirm) not_implemented confirm M2 ;;
+    confirm) cmd_confirm "$@" ;;
+    # Run by the systemd units that apply arms; not for interactive use.
+    _restore) cmd_restore "$@" ;;
     status | rollback | ports) not_implemented "$cmd" M4 ;;
     --version) printf 'vps-hardening %s\n' "$VH_VERSION" ;;
     --help | -h) usage ;;

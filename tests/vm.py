@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""M1 VM tests: run the read-only commands in disposable QEMU guests.
+"""VM tests: run the tool in disposable QEMU guests.
 
 Adapted from vps-tuning's tests/platform-vm.py. Suites:
 
   matrix    one guest: VT-01, the unhardened part of VT-50, the guest-side
-            source address of forwarded connections, and the sshd probe study
-            for VO-2 (docs/verification-plan.md 3.3).
+            source address of forwarded connections and the sshd probe study
+            for VO-2 (docs/verification-plan.md 3.3); then the M2 lifecycle:
+            apply, refused and accepted confirmations, reboot (VT-10 to
+            VT-15, VT-21, VT-24, VT-25, VT-62, VT-70, VT-71).
+  recovery  overlays of one prepared guest: restore on timeout (VT-20,
+            VT-21) and on reboot while pending (VT-22), with VT-25.
   negative  a prepared guest for VT-02 and VT-04, then one overlay disk per
-            existing-host case S1-S4 (VT-03), plus the UFW path check in S2.
+            existing-host case S1-S4 (VT-03), plus the UFW path check in S2,
+            and the failed apply of VT-23.
 """
 import argparse
 import hashlib
@@ -16,9 +21,11 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import socket
 import subprocess
 import tarfile
+import threading
 import time
 import urllib.request
 
@@ -32,7 +39,15 @@ XUI_FILES = {
     'install.sh': 'a7f4fedcea3abe8987508d00f29834b8872e4e4e5059159eb19460d474b37cdc',
     'x-ui.sh': 'cfabcd4af35a3646c374ea0ccba5178f4c0d3135f699277fc8d8b810158e85c0',
 }
-GUEST_SCRIPT = 'bash /opt/vh-bundle/tests/guest/m1.sh '
+VH = '/opt/vh-bundle/bin/vps-hardening'
+# Ports opened in the lifecycle flow; tests/guest/m2.sh lists the UFW rules they give.
+LIFECYCLE_OPEN = '--open 443/tcp --open 2096/tcp/ipv6 --open 8443/udp/ipv4'
+APPLY_PROMPT = '两项都满足请输入 yes'.encode()
+APPLIED = '加固已应用，等待确认'
+# Key logins at least 2 s apart do not trigger Debian 13's penalties (VO-2).
+PROBE_INTERVAL = 3
+# Guest port -> runner port of the forwards above, for the reachability checks.
+HTTP_PORTS = {443: 10443, 2096: 12096, 2053: 12053, 8080: 18080, 80: 10080}
 
 
 def run(argv, **kwargs):
@@ -103,11 +118,25 @@ class Guest:
     def ssh(self, command, **kwargs):
         return subprocess.run(self.ctx.ssh + [command], **kwargs)
 
-    def login_ok(self):
+    def login_ok(self, user='root'):
+        return self.login_error(user) is None
+
+    def login_error(self, user='root'):
+        """None when a login as USER works, otherwise why it failed."""
         try:
-            return self.ssh('true', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60).returncode == 0
+            result = subprocess.run(self.ctx.ssh_as(user) + ['true'], stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE, timeout=60)
         except subprocess.TimeoutExpired:
-            return False
+            return 'no answer within 60 s'
+        if result.returncode == 0:
+            return None
+        return result.stderr.decode(errors='replace').strip() or f'exit status {result.returncode}'
+
+    def must_login(self, user, when):
+        """VT-25: a real login with the identity that must work at this point."""
+        if not self.login_ok(user):
+            raise RuntimeError(f'{user} cannot log in {when}')
+        print('PASS login as', user, when, flush=True)
 
     def wait(self, command='true', timeout=1800):
         deadline = time.monotonic() + timeout
@@ -128,24 +157,97 @@ class Guest:
     def ready(self):
         self.ctx.timings.measure(f'{self.label}.ready', self.wait, 'test -f /root/vh-cloud-ready')
 
+    def boot_id(self):
+        return self.wait('cat /proc/sys/kernel/random/boot_id')
+
+    def wait_boot(self, old_boot_id):
+        """Wait until the guest is back with a new boot ID."""
+        deadline = time.monotonic() + 1800
+        while self.boot_id() == old_boot_id:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f'guest {self.label} did not reboot')
+            time.sleep(5)
+
+    def reboot(self):
+        old = self.boot_id()
+        self.ssh('systemctl reboot', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        self.ctx.timings.measure(f'{self.label}.reboot', self.wait_boot, old)
+
+    def tool_status(self):
+        return self.wait("awk -F= '$1 == \"status\" { print $2 }' /var/lib/vps-hardening/state")
+
+    def wait_status(self, want, timeout):
+        deadline = time.monotonic() + timeout
+        while (status := self.tool_status()) != want:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f'tool status is {status}, expected {want}')
+            time.sleep(10)
+
     def upload(self, bundle):
         with bundle.open('rb') as f:
             run(self.ctx.ssh + ['rm -rf /opt/vh-bundle && install -d -m 0755 /opt/vh-bundle && '
                                 'tar --no-same-owner -xf - -C /opt/vh-bundle'], stdin=f, timeout=120)
 
-    def phase(self, name, timeout=1800):
-        print('START', self.label, name, flush=True)
-        log_path = self.evidence / f'{name}.log'
+    def phase(self, name, *args, script='m1.sh', timeout=1800):
+        words = (name,) + args
+        title = ' '.join(words)
+        print('START', self.label, title, flush=True)
+        log_path = self.evidence / ('-'.join(words) + '.log')
+        command = f'bash /opt/vh-bundle/tests/guest/{script} {title}'
 
         def body():
             with log_path.open('wb') as log:
-                run(self.ctx.ssh + [GUEST_SCRIPT + name], stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
+                run(self.ctx.ssh + [command], stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
         try:
-            self.ctx.timings.measure(f'{self.label}.{name}', body)
+            self.ctx.timings.measure(f'{self.label}.{title}', body)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             print(log_path.read_text(errors='replace'), flush=True)
             raise
-        print('PASS', self.label, name, flush=True)
+        print('PASS', self.label, title, flush=True)
+
+    def command(self, name, command, user='root', timeout=600):
+        """Run one command in a new session; keep its output as evidence."""
+        result = subprocess.run(self.ctx.ssh_as(user) + [command], stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, timeout=timeout)
+        output = result.stdout.decode(errors='replace')
+        (self.evidence / f'{name}.log').write_text(output)
+        print(f'--- {self.label} {name}: exit {result.returncode}\n{output}', flush=True)
+        return result.returncode, output
+
+    def interactive(self, name, command, on_text=None, timeout=1800):
+        """Run COMMAND on a pseudo-terminal in a new root session and type
+        "yes" when apply asks for it, as the administrator would. ON_TEXT maps
+        output text to a function called once when the text appears."""
+        log_path = self.evidence / f'{name}.log'
+        proc = subprocess.Popen(self.ctx.ssh_as('root', tty=True) + [command], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        watchdog = threading.Timer(timeout, proc.kill)
+        watchdog.start()
+        output = bytearray()
+        waiting = dict(on_text or {})
+        answered = False
+        try:
+            with log_path.open('wb') as log:
+                while chunk := proc.stdout.read1(4096):
+                    log.write(chunk)
+                    log.flush()
+                    output += chunk
+                    if not answered and APPLY_PROMPT in output:
+                        proc.stdin.write(b'yes\n')
+                        proc.stdin.flush()
+                        answered = True
+                    for text in [t for t in waiting if t.encode() in output]:
+                        waiting.pop(text)()
+            proc.wait()
+        finally:
+            watchdog.cancel()
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+        text = output.decode(errors='replace')
+        print(f'--- {self.label} {name}: exit {proc.returncode}\n{text}', flush=True)
+        return proc.returncode, text
 
     def collect(self):
         try:
@@ -182,6 +284,8 @@ class Context:
             'platform': self.platform, 'arch': self.arch, 'acceleration': 'kvm' if self.kvm else 'tcg',
             'cpu': self.cpu, 'vcpus': self.vcpus, 'ram_mib': self.ram_mib}, indent=2))
         self.password = secrets.token_urlsafe(18)
+        self.user = 'ubuntu' if self.platform.startswith('ubuntu') else 'debian'
+        self.ssh_opts = []
         self.ssh = []
 
     def image(self):
@@ -211,17 +315,29 @@ class Context:
             'ssh_keys': {'ed25519_private': (self.work / 'host').read_text(),
                          'ed25519_public': (self.work / 'host.pub').read_text().strip()},
             'write_files': [{'path': '/etc/ssh/sshd_config.d/50-cloud-init.conf', 'permissions': '0600',
-                             'content': 'PasswordAuthentication yes\n'}],
-            'runcmd': [['sh', '-c', 'printf "root:%s\\n" "$1" | chpasswd', 'sh', self.password],
+                             'content': 'PasswordAuthentication yes\n'},
+                            # For the guest side of the password logins (VT-13); never archived.
+                            {'path': '/root/vh-private/password', 'permissions': '0600',
+                             'content': self.password}],
+            # The default user gets the same password, so that VT-13 shows its
+            # password login working before apply and failing after.
+            'runcmd': [['sh', '-c', 'u=$(id -nu 1000) && printf "root:%s\\n%s:%s\\n" "$1" "$u" "$1" | chpasswd',
+                        'sh', self.password],
                        ['touch', '/root/vh-cloud-ready']],
         }
         (self.work / 'user-data').write_text('#cloud-config\n' + json.dumps(user_data))
         (self.work / 'meta-data').write_text('instance-id: vh-m1\nlocal-hostname: vh-ci\n')
         run(['cloud-localds', str(self.work / 'seed.img'), str(self.work / 'user-data'), str(self.work / 'meta-data')])
         (self.work / 'known-hosts').write_text(f'[127.0.0.1]:{SSH_PORT} ' + (self.work / 'host.pub').read_text())
-        self.ssh = ['ssh', '-i', str(self.work / 'client'), '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                    '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(self.work / 'known-hosts'),
-                    '-o', 'ConnectTimeout=5', '-o', 'LogLevel=ERROR', '-p', str(SSH_PORT), 'root@127.0.0.1']
+        # Shared by the tool's own tunnel command in VT-15, which brings its key options.
+        self.ssh_opts = ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+                         '-o', 'UserKnownHostsFile=' + str(self.work / 'known-hosts'),
+                         '-o', 'ConnectTimeout=5', '-o', 'LogLevel=ERROR', '-p', str(SSH_PORT)]
+        self.ssh = self.ssh_as('root')
+
+    def ssh_as(self, user, tty=False):
+        return (['ssh', '-i', str(self.work / 'client'), '-o', 'IdentitiesOnly=yes'] + self.ssh_opts +
+                (['-tt'] if tty else []) + [f'{user}@127.0.0.1'])
 
     def bundle(self, with_xui):
         """Tool, guest tests and (for S1) the verified 3X-UI fixture files."""
@@ -256,11 +372,15 @@ class Context:
         return path
 
     def leak_scan(self):
-        """No test password in any tool or guest output (VT-50)."""
-        needle = self.password.encode()
+        """No test password or client private key in any tool or guest output (VT-12, VT-50)."""
+        needles = [self.password.encode()] + [
+            line.encode() for line in (self.work / 'client').read_text().splitlines()
+            if line and not line.startswith('-----')]
         for path in self.evidence.rglob('*'):
-            if path.is_file() and path.name != 'serial.log' and needle in path.read_bytes():
-                raise RuntimeError(f'test password found in {path.relative_to(self.evidence)}')
+            if path.is_file() and path.name != 'serial.log':
+                data = path.read_bytes()
+                if any(needle in data for needle in needles):
+                    raise RuntimeError(f'test secret found in {path.relative_to(self.evidence)}')
 
 
 def ssh_banner(timeout=5):
@@ -282,6 +402,193 @@ def http_reachable(port, timeout=5):
             return s.recv(64).startswith(b'HTTP/')
     except OSError:
         return False
+
+
+def http_status(port, timeout=5):
+    """HTTP status code a server on the runner-side PORT returns, or None."""
+    try:
+        with socket.create_connection(('127.0.0.1', port), timeout=timeout) as s:
+            s.settimeout(timeout)
+            s.sendall(b'GET / HTTP/1.0\r\nHost: vh-test\r\n\r\n')
+            words = s.recv(64).split(b'\r\n')[0].split()
+            return int(words[1]) if len(words) > 1 and words[0].startswith(b'HTTP/') else None
+    except (OSError, ValueError):
+        return None
+
+
+def forwarded_ports():
+    """Which guest HTTP listeners answer through the QEMU forwards (VT-14)."""
+    return {str(port): http_reachable(host) for port, host in HTTP_PORTS.items()}
+
+
+def check(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+    print('PASS', message, flush=True)
+
+
+class Probe:
+    """VT-25: a root key login every PROBE_INTERVAL seconds for a whole flow.
+
+    A probe that fails is retried once a second later: on Debian 12 a new
+    connection is reset while sshd re-executes itself on reload, which is not
+    an interruption of the login path. Retries are counted in the evidence,
+    with the error of the first attempt. Failures are allowed only in declared
+    outage windows (reboots).
+    """
+
+    def __init__(self, guest, name):
+        self.guest = guest
+        self.name = name
+        self.records = []
+        self.windows = []
+        self.stopped = threading.Event()
+        self.start = time.monotonic()
+        # Offsets in the records count from here; the tool's log uses UTC.
+        self.started_utc = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        self.thread = threading.Thread(target=self.run, daemon=True)
+
+    def now(self):
+        return round(time.monotonic() - self.start, 1)
+
+    def run(self):
+        while not self.stopped.is_set():
+            began = self.now()
+            error = self.guest.login_error()
+            ok = error is None or (time.sleep(1) is None and self.guest.login_ok())
+            self.records.append({'from': began, 'to': self.now(), 'ok': ok, 'retried': error is not None,
+                                 'error': error})
+            self.stopped.wait(PROBE_INTERVAL)
+
+    def outage(self, reason):
+        self.windows.append({'reason': reason, 'from': self.now(), 'to': None})
+
+    def outage_over(self):
+        self.windows[-1]['to'] = self.now()
+
+    def expected(self, record):
+        return any(w['from'] <= record['to'] and (w['to'] is None or record['from'] <= w['to'])
+                   for w in self.windows)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, exc_type, *exc):
+        self.stopped.set()
+        self.thread.join()
+        failures = [r for r in self.records if not r['ok'] and not self.expected(r)]
+        result = {'started_utc': self.started_utc, 'interval_s': PROBE_INTERVAL, 'probes': len(self.records),
+                  'retried': sum(r['retried'] for r in self.records), 'outages': self.windows,
+                  'unexpected_failures': failures, 'records': self.records}
+        (self.guest.evidence / f'probe-{self.name}.json').write_text(json.dumps(result, indent=2))
+        print(f'probe {self.name}: {result["probes"]} probes, {result["retried"]} retried, '
+              f'{len(failures)} unexpected failures, outages {self.windows}', flush=True)
+        if exc_type is None and failures:
+            raise RuntimeError(f'VT-25: logins failed outside the outage windows: {failures}')
+        return False
+
+
+class UserSession:
+    """VT-24: a session of the image's default user, opened before apply and
+    kept open, that later tries confirm through sudo."""
+
+    TRIGGER = '/run/vh-user-confirm'
+
+    def __init__(self, ctx, guest):
+        self.guest = guest
+        self.log_path = guest.evidence / 'vt24-user-session.log'
+        script = (f'cat /proc/self/sessionid >/tmp/vh-user-session && '
+                  f'while [ ! -e {self.TRIGGER} ]; do sleep 1; done; '
+                  f'sudo -n {VH} confirm; echo "confirm-rc=$?"')
+        with self.log_path.open('wb') as log:
+            self.proc = subprocess.Popen(ctx.ssh_as(ctx.user, tty=True) + [script], stdin=subprocess.PIPE,
+                                         stdout=log, stderr=subprocess.STDOUT)
+        guest.wait('test -s /tmp/vh-user-session', timeout=300)
+
+    def confirm(self):
+        self.guest.wait(f'touch {self.TRIGGER}')
+        self.proc.wait(timeout=300)
+        self.proc.stdin.close()
+        output = self.log_path.read_text(errors='replace')
+        print(f'--- {self.guest.label} vt24-user-session: exit {self.proc.returncode}\n{output}', flush=True)
+        return output
+
+
+def tunnel(ctx, template):
+    """VT-15: the tunnel command the tool printed, with only its placeholders
+    filled in, plus the test's host key and port options."""
+    command = (template.replace('<私钥>', str(ctx.work / 'client'))
+               .replace('root@<VPS 地址>', 'root@127.0.0.1'))
+    argv = shlex.split(command)
+    check(argv[:2] == ['ssh', '-N'] and argv[-1] == 'root@127.0.0.1', f'tunnel template: {template}')
+    argv = argv[:1] + ctx.ssh_opts + argv[1:]
+    result = {'template': template, 'without_tunnel': http_status(8443)}
+    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        status = None
+        for _ in range(60):
+            if proc.poll() is not None:
+                break
+            status = http_status(8443)
+            if status is not None:
+                break
+            time.sleep(1)
+        result['with_tunnel'] = status
+    finally:
+        proc.terminate()
+        _, err = proc.communicate(timeout=30)
+        result['ssh_stderr'] = err.decode(errors='replace')
+    (ctx.evidence / 'tunnel.json').write_text(json.dumps(result, indent=2))
+    check(result['without_tunnel'] is None, 'VT-15: no panel on local port 8443 without the tunnel')
+    check(result['with_tunnel'] == 200, 'VT-15: the panel answers 200 through the tunnel')
+
+
+def lifecycle(ctx, guest):
+    """The main flow (scenario A of design 7.5) on the matrix guest."""
+    def m2(name, *args):
+        guest.phase(name, *args, script='m2.sh')
+
+    m2('m2-prepare')
+    m2('m2-baseline')
+    m2('m2-listen', '443', '2096', '2053', '8080', '80')
+    m2('m2-before')
+    result = {'ports_before': forwarded_ports()}
+    check(all(result['ports_before'].values()), 'every test port answers before apply (control)')
+    with Probe(guest, 'lifecycle') as probe:
+        session = UserSession(ctx, guest)
+        # VT-24 case 1: confirm in the session that ran apply.
+        status, output = guest.interactive(
+            'vt10-apply', f'{VH} apply {LIFECYCLE_OPEN}; echo "apply-rc=$?"; {VH} confirm; echo "confirm-rc=$?"')
+        check('apply-rc=0' in output and APPLIED in output, 'VT-10: apply finished and awaits confirmation')
+        check('confirm-rc=1' in output and '这是执行 apply 的会话' in output,
+              'VT-24: confirm in the session that ran apply is refused')
+        template = next(line.strip() for line in output.splitlines() if line.strip().startswith('ssh -N -L'))
+        guest.must_login('root', 'while pending')
+        # VT-24 case 2: the default user's session from before apply, through sudo.
+        output = session.confirm()
+        check('confirm-rc=1' in output and '确认必须在以 root 登录的会话中执行' in output,
+              'VT-24: confirm through sudo from the default user is refused')
+        guest.phase('m2-pending', script='m2.sh')
+        # VT-10 and VT-21: confirm from a new root session after the apply session closed.
+        status, output = guest.command('vt10-confirm', f'{VH} confirm')
+        check(status == 0 and '已确认' in output, 'VT-10: confirm from a new root session, then verify passes')
+        guest.must_login('root', 'after confirm')
+        # VT-24 case 3: nothing left to confirm.
+        status, output = guest.command('vt24-confirm-again', f'{VH} confirm')
+        check(status == 1 and '当前没有待确认的变更' in output, 'VT-24: confirm with nothing pending is refused')
+        m2('m2-applied')
+        result['ports_after'] = forwarded_ports()
+        check(result['ports_after'] == {'443': True, '2096': False, '2053': False, '8080': False, '80': False},
+              f'VT-14: through the forwards only 443 answers: {result["ports_after"]}')
+        m2('m2-panel-loopback')
+        tunnel(ctx, template)
+        probe.outage('reboot')
+        guest.reboot()
+        probe.outage_over()
+        guest.must_login('root', 'after the reboot')
+        m2('m2-rebooted')
+    (ctx.evidence / 'lifecycle.json').write_text(json.dumps(result, indent=2))
 
 
 def source_address(ctx, guest):
@@ -348,6 +655,52 @@ def matrix(ctx, image):
         source_address(ctx, guest)
         guest.phase('matrix')
         ctx.timings.measure('matrix.probe-study', probe_study, ctx, guest)
+        ctx.timings.measure('matrix.lifecycle', lifecycle, ctx, guest)
+
+
+def recovery(ctx, image):
+    """Scenarios B (timeout) and C (reboot while pending) of design 7.5."""
+    prepared = ctx.overlay(image, 'prepared.qcow2')
+    with Guest(ctx, 'base', prepared) as guest:
+        guest.ready()
+        guest.upload(ctx.bundle(with_xui=False))
+        guest.phase('prepare')
+        guest.phase('m2-prepare', script='m2.sh')
+        guest.poweroff()
+
+    # VT-20 and VT-21: the apply session ends right after apply; nobody confirms.
+    with Guest(ctx, 'timeout', ctx.overlay(prepared, 'timeout.qcow2')) as guest:
+        guest.ready()
+        guest.phase('m2-baseline', script='m2.sh')
+        guest.phase('m2-listen', '8080', script='m2.sh')
+        check(http_reachable(18080), 'port 8080 answers before apply (control)')
+        with Probe(guest, 'timeout'):
+            status, output = guest.interactive('vt20-apply', f'{VH} apply --open 443/tcp --confirm-timeout 3')
+            check(status == 0 and APPLIED in output, 'VT-20: apply finished with a 3-minute confirmation time')
+            guest.must_login('root', 'while pending')
+            check(not http_reachable(18080), 'VT-20: UFW drops port 8080 while pending')
+            # The restore starts after 3 minutes; under emulation it can take several more.
+            ctx.timings.measure('timeout.restore', guest.wait_status, 'rolled-back', 900)
+            guest.must_login('root', 'after the timeout restore')
+            guest.must_login(ctx.user, 'after the timeout restore')
+            guest.phase('m2-rolled-back', 'timeout', script='m2.sh')
+            check(http_reachable(18080), 'VT-20: port 8080 answers again after the restore')
+
+    # VT-22: reboot from the session that ran apply, while the change is pending.
+    with Guest(ctx, 'reboot', ctx.overlay(prepared, 'reboot.qcow2')) as guest:
+        guest.ready()
+        guest.phase('m2-baseline', script='m2.sh')
+        with Probe(guest, 'reboot') as probe:
+            boot_id = guest.boot_id()
+            status, output = guest.interactive(
+                'vt22-apply', f'{VH} apply --open 443/tcp && systemctl reboot',
+                on_text={APPLIED: lambda: probe.outage('reboot')})
+            check(APPLIED in output, 'VT-22: apply finished, then the same session rebooted')
+            ctx.timings.measure('reboot.boot', guest.wait_boot, boot_id)
+            probe.outage_over()
+            guest.must_login('root', 'after the reboot')
+            guest.must_login(ctx.user, 'after the reboot')
+            guest.phase('m2-rolled-back', 'boot', script='m2.sh')
 
 
 def negative(ctx, image):
@@ -376,17 +729,30 @@ def negative(ctx, image):
                 raise RuntimeError(f'unexpected UFW path result: {result}')
             print('PASS UFW filters forwarded connections:', result, flush=True)
 
+    # VT-23: apply fails after the restore is armed; everything it did is undone.
+    with Guest(ctx, 'vt23', ctx.overlay(prepared, 'vt23.qcow2')) as guest:
+        guest.ready()
+        guest.phase('vt23-setup', script='m2.sh')
+        guest.phase('m2-baseline', script='m2.sh')
+        with Probe(guest, 'vt23'):
+            status, output = guest.interactive('vt23-apply', f'{VH} apply --open 443/tcp')
+            check(status == 1 and '正在恢复应用前的配置' in output and '已恢复到应用前的配置' in output,
+                  'VT-23: apply failed, restored, exit status 1')
+            guest.must_login('root', 'after the failed apply')
+            guest.must_login(ctx.user, 'after the failed apply')
+            guest.phase('m2-rolled-back', 'failure', script='m2.sh')
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--platform', choices=['debian12', 'debian13', 'ubuntu2404'], required=True)
     parser.add_argument('--arch', choices=['amd64', 'arm64'], required=True)
-    parser.add_argument('--suite', choices=['matrix', 'negative'], required=True)
+    parser.add_argument('--suite', choices=['matrix', 'recovery', 'negative'], required=True)
     args = parser.parse_args()
     ctx = Context(args)
     image = ctx.timings.measure('image', ctx.image)
     ctx.seed()
-    (matrix if args.suite == 'matrix' else negative)(ctx, image)
+    {'matrix': matrix, 'recovery': recovery, 'negative': negative}[args.suite](ctx, image)
     ctx.leak_scan()
     (ctx.evidence / 'COMPLETED').write_text(f'PASS {args.suite} {args.platform} {args.arch}\n')
     print('PASS', args.suite, args.platform, args.arch, flush=True)

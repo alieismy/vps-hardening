@@ -49,6 +49,28 @@ capture() {
   sed 's/^/    /' "$phase_dir/$name.out"
 }
 
+# on_tty CMD...: run CMD on a new pseudo-terminal, as apply requires. The only
+# input is end of file, so a confirmation prompt, if reached, gets no answer.
+on_tty() {
+  timeout --kill-after=10 600 python3 -c '
+import os, pty, sys
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(sys.argv[1], sys.argv[1:])
+os.write(fd, b"\x04")
+while True:
+    try:
+        data = os.read(fd, 4096)
+    except OSError:
+        break
+    if not data:
+        break
+    sys.stdout.buffer.write(data)
+sys.stdout.flush()
+sys.exit(os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1]))
+' "$@"
+}
+
 expect_rc() {
   local got
   got="$(cat "$phase_dir/$1.rc")"
@@ -303,6 +325,22 @@ root_keys_case() {
   expect_clean "$name"
 }
 
+# apply_refused NAME ID [FILE TARGET]: apply on a pseudo-terminal, with FILE
+# over TARGET in a private mount namespace if given. Preflight must stop it,
+# with ID failing, before the confirmation prompt (VT-02, VT-03).
+apply_refused() {
+  local name="$1" id="$2" prefix=()
+  if [ "$#" -gt 2 ]; then
+    # shellcheck disable=SC2016
+    prefix=(unshare --mount --propagation private -- sh -c 'mount --bind "$1" "$2" && shift 2 && exec "$@"' sh "$3" "$4")
+  fi
+  capture "$name" on_tty "${prefix[@]}" "$VH" apply "${GOOD_ARGS[@]}"
+  expect_rc "$name" 1
+  expect_report "$name" FAIL "$id"
+  expect_text "$name" '预检有不符合项，未做任何变更'
+  expect_clean "$name"
+}
+
 # VT-02 and VT-04.
 phase_negative() {
   settle
@@ -315,8 +353,9 @@ phase_negative() {
   capture vt02-nonroot-verify runuser -u nobody -- "$VH" verify
   expect_rc vt02-nonroot-verify 1
   expect_report vt02-nonroot-verify FAIL root
-  capture vt02-nonroot-apply runuser -u nobody -- "$VH" apply "${GOOD_ARGS[@]}"
-  expect_rc vt02-nonroot-apply 2
+  capture vt02-nonroot-apply on_tty runuser -u nobody -- "$VH" apply "${GOOD_ARGS[@]}"
+  expect_rc vt02-nonroot-apply 1
+  expect_report vt02-nonroot-apply FAIL root
 
   # The fake os-release is visible only in a private mount namespace.
   printf 'PRETTY_NAME="Debian GNU/Linux 11 (bullseye)"\nID=debian\nVERSION_ID="11"\n' >"$PRIVATE/os-release"
@@ -327,6 +366,7 @@ phase_negative() {
   expect_rc vt02-release 1
   expect_report vt02-release FAIL platform
   expect_text vt02-release 'Debian GNU/Linux 11'
+  apply_refused vt02-release-apply platform "$PRIVATE/os-release" /etc/os-release
 
   root_keys_case vt02-rootkey-none "$KEYS/comments.pub" 1 'root 的 authorized_keys 中没有公钥'
   expect_report vt02-rootkey-none FAIL root.keys
@@ -334,9 +374,11 @@ phase_negative() {
   expect_report vt02-rootkey-options FAIL root.keys
   root_keys_case vt02-rootkey-invalid "$KEYS/invalid.pub" 1 'root 没有可用的公钥：1 行'
   expect_report vt02-rootkey-invalid FAIL root.keys
+  apply_refused vt02-rootkey-apply root.keys "$KEYS/options.pub" /root/.ssh/authorized_keys
 
   hold_dpkg_lock
   capture vt02-aptlock "$VH" preflight "${GOOD_ARGS[@]}"
+  apply_refused vt02-aptlock-apply apt.idle
   release_dpkg_lock
   expect_rc vt02-aptlock 1
   expect_report vt02-aptlock FAIL apt.idle
@@ -375,12 +417,14 @@ phase_negative() {
   same_snapshot negative-before negative-after
 }
 
-# VT-03: preflight on an existing host (S1 to S4) refuses without changes.
+# VT-03: preflight and apply on an existing host (S1 to S4) refuse without changes.
 existing_host_case() {
   local name="vt03-$1"
   settle
   snapshot "$1-before"
   capture "$name" "$VH" preflight "${GOOD_ARGS[@]}"
+  apply_refused "$name-apply" "$2"
+  expect_text "$name-apply" '存量主机不在支持范围内'
   snapshot "$1-after"
   same_snapshot "$1-before" "$1-after"
   expect_rc "$name" 1
@@ -482,4 +526,5 @@ main() {
   log "phase $phase passed"
 }
 
-main "$@"
+# m2.sh sources this file for its helpers.
+[ "${BASH_SOURCE[0]}" != "$0" ] || main "$@"

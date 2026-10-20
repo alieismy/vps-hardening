@@ -23,6 +23,9 @@ readonly VH_SSHD_MANAGED='permitrootlogin passwordauthentication kbdinteractivea
 # Placeholder connection used to evaluate Match blocks with sshd -T -C.
 readonly VH_SSHD_PROBE_CONN='host=vps-hardening.invalid,addr=192.0.2.1,laddr=192.0.2.2,lport=22'
 
+# Function the ERR trap calls before exiting, set while a failure must undo changes.
+VH_ABORT_HOOK=''
+
 VH_COUNT_PASS=0
 VH_COUNT_FAIL=0
 VH_COUNT_WARN=0
@@ -77,6 +80,13 @@ have() {
 # Read-only commands still get a bound so a hung service cannot stall a check.
 bounded() {
   timeout --kill-after=5 30 "$@"
+}
+
+# Commands that change the system get a longer bound (a restart may wait for a
+# slow stop). Bash runs signal traps only after the current command returns,
+# so without a bound a hung command would also hold off the restore.
+bounded_change() {
+  timeout --kill-after=10 120 "$@"
 }
 
 # Private scratch directory, removed on exit. Call in the main shell, never
