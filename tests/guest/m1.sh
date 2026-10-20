@@ -17,6 +17,16 @@ readonly EVIDENCE=/root/vh-evidence
 readonly PRIVATE=/root/vh-private
 readonly XUI_INSTALL_SHA256=a7f4fedcea3abe8987508d00f29834b8872e4e4e5059159eb19460d474b37cdc
 readonly XUI_SCRIPT_SHA256=cfabcd4af35a3646c374ea0ccba5178f4c0d3135f699277fc8d8b810158e85c0
+# VO-1: the release archives x-ui-linux-<arch>.tar.gz of v3.7.0 have the
+# SHA-256 GitHub lists as their asset digest (amd64 0f8dd7baef3458f6591574e2
+# 4814f322cf7f5e1e27f0a594683745e50be84ec5, arm64 3caf1db1e8b10bb1fa1324c945
+# 522690bcf01c533ee75b377268f1c01a3ce896). install.sh deletes the archive
+# after unpacking it, so the panel and Xray binaries taken from those archives
+# are checked instead.
+readonly XUI_BINARIES_AMD64='4738190332c5480ec96fd72e10a21157ee4bcf91c240a9b4b061d14f15092298  /usr/local/x-ui/x-ui
+64d46afb80adea1bf97a0d467e83f4a9ac1ebd0995891e84bca3f1a1d1affb1d  /usr/local/x-ui/bin/xray-linux-amd64'
+readonly XUI_BINARIES_ARM64='c63141e2b9d34fb796a756d6adaee05c7312d507861fefd97e1fdca4df9adaef  /usr/local/x-ui/x-ui
+4b8af237444801bf17b3dc10a1c5c24581fbe3d433eba3d78c6c3a0da1df56fc  /usr/local/x-ui/bin/xray-linux-arm64'
 
 GOOD_ARGS=(--open 443/tcp --open 2096/tcp)
 phase_dir=''
@@ -110,6 +120,10 @@ snapshot() {
       grep -vE '  /etc/x-ui/x-ui\.db(-wal|-shm)?$' || true
     echo '== ssh keys'
     find /root/.ssh /home -xdev -path '*/.ssh/*' -type f -print0 | sort -z | xargs -0 -r sha256sum || true
+    echo '== 3x-ui files'
+    if [ -d /usr/local/x-ui ]; then
+      find /usr/local/x-ui /usr/bin/x-ui -xdev -type f -print0 | sort -z | xargs -0 -r sha256sum || true
+    fi
     echo '== nft'
     if command -v nft >/dev/null; then nft -s list ruleset || echo "nft exit $?"; fi
     for tool in iptables-save ip6tables-save; do
@@ -433,10 +447,9 @@ existing_host_case() {
   expect_clean "$name"
 }
 
-# S1: 3X-UI v3.7.0 installed the way vps-proxy-setup will (verification plan 3.5).
-phase_s1() {
-  local dir="$BUNDLE/fixtures/3x-ui" rc=0
-  settle
+# 3X-UI v3.7.0 installed the way vps-proxy-setup will (verification plan 3.5).
+install_xui_fixture() {
+  local dir="$BUNDLE/fixtures/3x-ui" rc=0 binaries
   printf '%s  %s\n%s  %s\n' "$XUI_INSTALL_SHA256" "$dir/install.sh" "$XUI_SCRIPT_SHA256" "$dir/x-ui.sh" |
     sha256sum -c -
   XUI_NONINTERACTIVE=1 XUI_SSL_MODE=none XUI_ENABLE_FAIL2BAN=false XUI_PANEL_PORT=2053 \
@@ -447,6 +460,13 @@ phase_s1() {
     cat "$phase_dir/xui-install-tail.log"
     fail "3X-UI install.sh exit $rc"
   }
+  case "$(dpkg --print-architecture)" in
+    amd64) binaries="$XUI_BINARIES_AMD64" ;;
+    arm64) binaries="$XUI_BINARIES_ARM64" ;;
+    *) fail "no 3X-UI release digests for $(dpkg --print-architecture)" ;;
+  esac
+  printf '%s\n%s  %s\n' "$binaries" "$XUI_SCRIPT_SHA256" /usr/local/x-ui/x-ui.sh | sha256sum -c - ||
+    fail '3X-UI binaries differ from the v3.7.0 release archive (VO-1)'
   install -m 0755 "$dir/x-ui.sh" /usr/bin/x-ui
   /usr/local/x-ui/x-ui setting -listenIP 127.0.0.1 >/dev/null
   systemctl restart x-ui
@@ -457,6 +477,12 @@ phase_s1() {
   ss -H -ltn 'sport = :2053' | tee "$phase_dir/xui-listen.txt"
   grep -q '127.0.0.1:2053' "$phase_dir/xui-listen.txt" || fail '3X-UI panel is not on 127.0.0.1:2053'
   log "3X-UI fixture ready: $(systemctl is-active x-ui)"
+}
+
+# S1: an existing host with 3X-UI.
+phase_s1() {
+  settle
+  install_xui_fixture
   existing_host_case s1 new-host.xui
 }
 

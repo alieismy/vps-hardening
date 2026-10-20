@@ -102,3 +102,33 @@ jobs:
           name: vm-negative-${{ matrix.platform }}-amd64
           path: .tmp/vm/evidence/
           retention-days: 14
+
+  # M3 on a guest hardened and confirmed as an administrator would: Fail2ban
+  # (VT-30 to VT-35), automatic updates (VT-40), 3X-UI v3.7.0 with verify
+  # before and after a reboot (VT-55, VT-50, VT-71), then one overlay per
+  # drift (VT-51). arm64 runs only when a manual run asks for it.
+  hardened:
+    name: hardened ${{ matrix.platform }} ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [debian12, debian13, ubuntu2404]
+        arch: ${{ fromJSON(github.event.inputs.arm64 == 'true' && '["amd64", "arm64"]' || '["amd64"]') }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU
+        run: |
+          if [ '${{ matrix.arch }}' = arm64 ]; then qemu='qemu-system-arm qemu-efi-aarch64'; else qemu='qemu-system-x86'; fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $qemu qemu-utils cloud-image-utils
+          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
+      - name: Run the hardened suite
+        run: python3 tests/vm.py --suite hardened --platform '${{ matrix.platform }}' --arch '${{ matrix.arch }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vm-hardened-${{ matrix.platform }}-${{ matrix.arch }}
+          path: .tmp/vm/evidence/
+          retention-days: 14

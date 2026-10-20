@@ -13,6 +13,9 @@ Adapted from vps-tuning's tests/platform-vm.py. Suites:
   negative  a prepared guest for VT-02 and VT-04, then one overlay disk per
             existing-host case S1-S4 (VT-03), plus the UFW path check in S2,
             and the failed apply of VT-23.
+  hardened  one guest, hardened and confirmed: Fail2ban (VT-30 to VT-35),
+            automatic updates (VT-40), then 3X-UI v3.7.0 (VT-55, VT-50,
+            VT-71); then one overlay of it per drift (VT-51).
 """
 import argparse
 import hashlib
@@ -42,6 +45,11 @@ XUI_FILES = {
 VH = '/opt/vh-bundle/bin/vps-hardening'
 # Ports opened in the lifecycle flow; tests/guest/m2.sh lists the UFW rules they give.
 LIFECYCLE_OPEN = '--open 443/tcp --open 2096/tcp/ipv6 --open 8443/udp/ipv4'
+# Ports opened in the hardened suite: the inbound and subscription ports of 3X-UI.
+HARDENED_OPEN = '--open 443/tcp --open 2096/tcp'
+# VT-51, one overlay each; tests/guest/m3.sh injects them.
+DRIFTS = ('firewall-install', 'firewall-reinstall', 'iplimit', 'listen-all', 'bbr', 'ufw-rule', 'nftables',
+          'sshd-dropin', 'reboot-required')
 APPLY_PROMPT = '两项都满足请输入 yes'.encode()
 APPLIED = '加固已应用，等待确认'
 # Key logins at least 2 s apart do not trigger Debian 13's penalties (VO-2).
@@ -287,6 +295,8 @@ class Context:
         self.user = 'ubuntu' if self.platform.startswith('ubuntu') else 'debian'
         self.ssh_opts = []
         self.ssh = []
+        # Other values that must not appear in the evidence (the panel's WebBasePath).
+        self.private = []
 
     def image(self):
         spec = json.loads((ROOT / 'tests/platform-images.json').read_text())[self.platform][self.arch]
@@ -375,7 +385,7 @@ class Context:
         """No test password or client private key in any tool or guest output (VT-12, VT-50)."""
         needles = [self.password.encode()] + [
             line.encode() for line in (self.work / 'client').read_text().splitlines()
-            if line and not line.startswith('-----')]
+            if line and not line.startswith('-----')] + [value.encode() for value in self.private]
         for path in self.evidence.rglob('*'):
             if path.is_file() and path.name != 'serial.log':
                 data = path.read_bytes()
@@ -404,16 +414,25 @@ def http_reachable(port, timeout=5):
         return False
 
 
-def http_status(port, timeout=5):
-    """HTTP status code a server on the runner-side PORT returns, or None."""
+def http_get(port, path, timeout=5):
+    """Status code and body PATH returns from a server on the runner-side PORT,
+    or (None, b''). A server that keeps the connection open is read until the timeout."""
+    data = b''
     try:
         with socket.create_connection(('127.0.0.1', port), timeout=timeout) as s:
             s.settimeout(timeout)
-            s.sendall(b'GET / HTTP/1.0\r\nHost: vh-test\r\n\r\n')
-            words = s.recv(64).split(b'\r\n')[0].split()
-            return int(words[1]) if len(words) > 1 and words[0].startswith(b'HTTP/') else None
-    except (OSError, ValueError):
-        return None
+            s.sendall(f'GET {path} HTTP/1.0\r\nHost: vh-test\r\n\r\n'.encode())
+            while len(data) < 1 << 20 and (chunk := s.recv(65536)):
+                data += chunk
+    except OSError:
+        if not data:
+            return None, b''
+    head, _, body = data.partition(b'\r\n\r\n')
+    words = head.split(b'\r\n')[0].split()
+    try:
+        return (int(words[1]) if len(words) > 1 and words[0].startswith(b'HTTP/') else None), body
+    except ValueError:
+        return None, b''
 
 
 def forwarded_ports():
@@ -515,22 +534,24 @@ class UserSession:
         return output
 
 
-def tunnel(ctx, template):
-    """VT-15: the tunnel command the tool printed, with only its placeholders
-    filled in, plus the test's host key and port options."""
+def tunnel(ctx, template, path='/', name='tunnel'):
+    """VT-15 and VT-55: the tunnel command the tool printed, with only its
+    placeholders filled in, plus the test's host key and port options.
+    Returns the status and body PATH gives through the tunnel; the evidence
+    does not name the path."""
     command = (template.replace('<私钥>', str(ctx.work / 'client'))
                .replace('root@<VPS 地址>', 'root@127.0.0.1'))
     argv = shlex.split(command)
     check(argv[:2] == ['ssh', '-N'] and argv[-1] == 'root@127.0.0.1', f'tunnel template: {template}')
     argv = argv[:1] + ctx.ssh_opts + argv[1:]
-    result = {'template': template, 'without_tunnel': http_status(8443)}
+    result = {'template': template, 'without_tunnel': http_get(8443, path)[0]}
     proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
-        status = None
+        status, body = None, b''
         for _ in range(60):
             if proc.poll() is not None:
                 break
-            status = http_status(8443)
+            status, body = http_get(8443, path)
             if status is not None:
                 break
             time.sleep(1)
@@ -539,9 +560,9 @@ def tunnel(ctx, template):
         proc.terminate()
         _, err = proc.communicate(timeout=30)
         result['ssh_stderr'] = err.decode(errors='replace')
-    (ctx.evidence / 'tunnel.json').write_text(json.dumps(result, indent=2))
-    check(result['without_tunnel'] is None, 'VT-15: no panel on local port 8443 without the tunnel')
-    check(result['with_tunnel'] == 200, 'VT-15: the panel answers 200 through the tunnel')
+    (ctx.evidence / f'{name}.json').write_text(json.dumps(result, indent=2))
+    check(result['without_tunnel'] is None, f'{name}: nothing on local port 8443 without the tunnel')
+    return status, body
 
 
 def lifecycle(ctx, guest):
@@ -582,7 +603,8 @@ def lifecycle(ctx, guest):
         check(result['ports_after'] == {'443': True, '2096': False, '2053': False, '8080': False, '80': False},
               f'VT-14: through the forwards only 443 answers: {result["ports_after"]}')
         m2('m2-panel-loopback')
-        tunnel(ctx, template)
+        status, _ = tunnel(ctx, template)
+        check(status == 200, 'VT-15: the panel answers 200 through the tunnel')
         probe.outage('reboot')
         guest.reboot()
         probe.outage_over()
@@ -743,16 +765,61 @@ def negative(ctx, image):
             guest.phase('m2-rolled-back', 'failure', script='m2.sh')
 
 
+def panel(ctx, guest, template):
+    """VT-55: 3X-UI's login page at its WebBasePath, through the tunnel the
+    tool printed. The path is read here and kept out of the evidence."""
+    base = guest.wait("/usr/local/x-ui/x-ui setting -show true | sed -n 's/^webBasePath: //p'")
+    check(base.startswith('/') and base.endswith('/') and len(base) > 2, 'VT-55: the panel has a WebBasePath')
+    ctx.private.append(base)
+    status, body = tunnel(ctx, template, base, 'panel-tunnel')
+    title = body.split(b'<title>', 1)[-1].split(b'</title>', 1)[0][:80].decode(errors='replace')
+    (ctx.evidence / 'panel-tunnel-page.json').write_text(json.dumps({'status': status, 'title': title}, indent=2))
+    check(status == 200 and title == 'Sign in', f'VT-55: the WebBasePath returns the login page ({status}, {title!r})')
+
+
+def hardened(ctx, image):
+    """M3 on a guest hardened and confirmed as an administrator would; then
+    VT-51 on overlays of its disk after VT-55."""
+    disk = ctx.overlay(image, 'disk.qcow2')
+    with Guest(ctx, 'hardened', disk) as guest:
+        def m3(name, *args):
+            guest.phase(name, *args, script='m3.sh')
+        guest.ready()
+        guest.upload(ctx.bundle(with_xui=True))
+        guest.phase('prepare')
+        guest.phase('m2-prepare', script='m2.sh')
+        guest.phase('m2-baseline', script='m2.sh')
+        with Probe(guest, 'hardened') as probe:
+            status, output = guest.interactive('apply', f'{VH} apply {HARDENED_OPEN}')
+            check(status == 0 and APPLIED in output, 'apply finished and awaits confirmation')
+            template = next(line.strip() for line in output.splitlines() if line.strip().startswith('ssh -N -L'))
+            status, output = guest.command('confirm', f'{VH} confirm')
+            check(status == 0 and '已确认' in output, 'confirm from a new root session, then verify passes')
+            for name in ('m3-fail2ban', 'm3-regex', 'm3-ban', 'm3-manual-ban', 'm3-agent', 'm3-updates', 'm3-xui'):
+                m3(name)
+            panel(ctx, guest, template)
+            probe.outage('reboot')
+            guest.reboot()
+            probe.outage_over()
+            guest.must_login('root', 'after the reboot')
+            m3('m3-xui-rebooted')
+        guest.poweroff()
+    for drift in DRIFTS:
+        with Guest(ctx, f'vt51-{drift}', ctx.overlay(disk, f'vt51-{drift}.qcow2')) as guest:
+            guest.ready()
+            guest.phase('m3-drift', drift, script='m3.sh')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--platform', choices=['debian12', 'debian13', 'ubuntu2404'], required=True)
     parser.add_argument('--arch', choices=['amd64', 'arm64'], required=True)
-    parser.add_argument('--suite', choices=['matrix', 'recovery', 'negative'], required=True)
+    parser.add_argument('--suite', choices=['matrix', 'recovery', 'negative', 'hardened'], required=True)
     args = parser.parse_args()
     ctx = Context(args)
     image = ctx.timings.measure('image', ctx.image)
     ctx.seed()
-    {'matrix': matrix, 'recovery': recovery, 'negative': negative}[args.suite](ctx, image)
+    {'matrix': matrix, 'recovery': recovery, 'negative': negative, 'hardened': hardened}[args.suite](ctx, image)
     ctx.leak_scan()
     (ctx.evidence / 'COMPLETED').write_text(f'PASS {args.suite} {args.platform} {args.arch}\n')
     print('PASS', args.suite, args.platform, args.arch, flush=True)
