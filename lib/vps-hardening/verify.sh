@@ -54,6 +54,13 @@ recorded_digest() {
   done
 }
 
+# True when a managed file still has the digest apply recorded.
+same_as_applied() {
+  local digest
+  digest="$(recorded_digest "$1")"
+  [ -n "$digest" ] && [ "$(file_digest "$1")" = "$digest" ]
+}
+
 verify_state() {
   local deadline left
   if [ ! -e "$VH_STATE_DIR" ]; then
@@ -135,9 +142,8 @@ verify_ssh() {
 }
 
 verify_ssh_record() {
-  local dropin="$VH_SSHD_DROPIN_DIR/$VH_SSHD_DROPIN_NAME" digest user value bad
-  digest="$(recorded_digest "$dropin")"
-  if [ -n "$digest" ] && [ "$(file_digest "$dropin")" = "$digest" ]; then
+  local dropin="$VH_SSHD_DROPIN_DIR/$VH_SSHD_DROPIN_NAME" user value bad
+  if same_as_applied "$dropin"; then
     report PASS ssh.dropin "$dropin 与应用时一致"
   else
     report FAIL ssh.dropin "$dropin 被修改或删除"
@@ -236,8 +242,43 @@ ufw_rules_allow_port() {
   '
 }
 
+# FR-08 values as `fail2ban-client get` reports them, as "ARGS|VALUE" after
+# f2b_get: times in seconds, 127.0.0.1/8 as the network 127.0.0.0/8. Only a
+# systemd-backend jail has a journalmatch. The mode and the banaction cannot
+# be read back from the server; f2b.files covers them through the jail file.
+f2b_expected_values() {
+  cat <<'EOF'
+sshd bantime|86400
+sshd findtime|600
+sshd maxretry|5
+sshd bantime.increment|True
+sshd bantime.maxtime|2419200
+sshd bantime.rndtime|600
+sshd ignoreself|True
+sshd ignoreip|127.0.0.0/8 ::1
+sshd usedns|no
+sshd journalmatch|_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session
+sshd actions|nftables
+sshd action nftables port|22
+sshd action nftables protocol|tcp
+dbpurgeage|2592000
+EOF
+}
+
+# f2b_get ARGS...: the value `fail2ban-client get ARGS...` prints, on one line.
+# A value spanning lines has a header line first ("Current match filter:")
+# and may mark list items with "|- " or "`- "; items are sorted and joined.
+f2b_get() {
+  local out
+  out="$(bounded fail2ban-client get "$@" 2>/dev/null)" || return 1
+  if [ "$(wc -l <<<"$out")" -gt 1 ]; then
+    out="$(sed '1d' <<<"$out")"
+  fi
+  sed -E 's/^[|`]- //; s/^([0-9]+)seconds$/\1/' <<<"$out" | sort | paste -sd ' '
+}
+
 verify_fail2ban() {
-  local jails
+  local jails responding=0 out changed
 
   if ! pkg_installed fail2ban; then
     report FAIL f2b.installed 'Fail2ban 未安装'
@@ -251,7 +292,14 @@ verify_fail2ban() {
     report FAIL f2b.service 'fail2ban 服务没有启用或没有运行'
   fi
 
+  if out="$(bounded fail2ban-client -t 2>&1)"; then
+    report PASS f2b.config '配置检查通过（fail2ban-client -t）'
+  else
+    report FAIL f2b.config "配置检查失败：$(grep -m 1 -E 'ERROR|Error|error' <<<"$out" || head -n 1 <<<"$out")"
+  fi
+
   if bounded fail2ban-client ping >/dev/null 2>&1; then
+    responding=1
     jails="$(bounded fail2ban-client status 2>/dev/null | sed -n 's/^.*Jail list:[[:space:]]*//p')"
     if [ "$jails" = sshd ]; then
       report PASS f2b.jails '只有 sshd 一个 jail'
@@ -261,17 +309,64 @@ verify_fail2ban() {
   else
     report FAIL f2b.jails 'fail2ban 服务没有响应'
   fi
-  # Effective jail values are checked from milestone M3.
-  if have_record; then
-    report SKIP f2b.values '生效值的核对在里程碑 M3 实现'
+
+  if [ "$responding" -eq 1 ]; then
+    verify_fail2ban_values
   else
-    skip_without_state f2b.values
+    report FAIL f2b.values 'fail2ban 服务没有响应，无法读取生效值'
+  fi
+  if have_record; then
+    verify_fail2ban_files
+  else
+    skip_without_state f2b.files
   fi
 
-  if dpkg --verify fail2ban 2>/dev/null | grep -qE ' /etc/fail2ban/(jail|fail2ban)\.conf$'; then
+  if ! changed="$(fail2ban_changed_files)"; then
+    report FAIL f2b.mainconf '无法校验 fail2ban 软件包的文件（dpkg --verify 失败）'
+  elif grep -qxE '/etc/fail2ban/(jail|fail2ban)\.conf' <<<"$changed"; then
     report FAIL f2b.mainconf 'jail.conf 或 fail2ban.conf 被修改过'
   else
     report PASS f2b.mainconf 'jail.conf 和 fail2ban.conf 保持发行版原样'
+  fi
+}
+
+# FR-08: the values the server uses, compared with f2b_expected_values.
+verify_fail2ban_values() {
+  local args want got count=0 bad=()
+  while IFS='|' read -r args want; do
+    count=$((count + 1))
+    # shellcheck disable=SC2086 # ARGS is several words.
+    got="$(f2b_get $args)" || got='（读取失败）'
+    [ "$got" = "$want" ] || bad+=("${args#sshd } 为 ${got:-（空）}，应为 $want")
+  done < <(f2b_expected_values)
+  if [ "${#bad[@]}" -gt 0 ]; then
+    report FAIL f2b.values "生效值与 FR-08 不一致：$(join_by '；' "${bad[@]}")"
+  else
+    report PASS f2b.values "生效值与 FR-08 一致（$count 项）"
+  fi
+}
+
+# FR-08: the tool's two files as applied, and no other configuration that
+# could change the jail: files the package did not install, or package files
+# changed (jail.conf and fail2ban.conf are reported by f2b.mainconf).
+verify_fail2ban_files() {
+  local path extra changed bad=()
+  for path in "$VH_F2B_JAIL" "$VH_F2B_LOCAL"; do
+    same_as_applied "$path" || bad+=("$path 被修改或删除")
+  done
+  extra="$(comm -23 <(find /etc/fail2ban ! -type d 2>/dev/null | sort) \
+    <({ dpkg-query -L fail2ban 2>/dev/null; printf '%s\n' "$VH_F2B_JAIL" "$VH_F2B_LOCAL"; } | sort -u) | paste -sd ' ')"
+  [ -z "$extra" ] || bad+=("多出的配置文件：$extra")
+  if changed="$(fail2ban_changed_files)"; then
+    changed="$(awk 'NF && !/^\/etc\/fail2ban\/(jail|fail2ban)\.conf$/' <<<"$changed" | paste -sd ' ')"
+    [ -z "$changed" ] || bad+=("被修改的软件包文件：$changed")
+  else
+    bad+=('无法校验 fail2ban 软件包的文件（dpkg --verify 失败）')
+  fi
+  if [ "${#bad[@]}" -gt 0 ]; then
+    report FAIL f2b.files "$(join_by '；' "${bad[@]}")"
+  else
+    report PASS f2b.files '本工具的两个配置文件与应用时一致，没有其他覆盖配置'
   fi
 }
 
@@ -336,6 +431,14 @@ verify_auto_updates() {
     report FAIL uu.origins "自动更新来源与 FR-09 不一致：$(grep -E '^[<>]' "$VH_TMP/origins.diff" | sed 's/^</缺少/; s/^>/多出/' | tr '\t\n' ' ;')"
   fi
 
+  if ! have_record; then
+    skip_without_state uu.dropin
+  elif same_as_applied "$VH_APT_CONF"; then
+    report PASS uu.dropin "$VH_APT_CONF 与应用时一致"
+  else
+    report FAIL uu.dropin "$VH_APT_CONF 被修改或删除"
+  fi
+
   for timer in apt-daily.timer apt-daily-upgrade.timer; do
     if ! unit_enabled "$timer" || ! unit_active "$timer"; then
       bad+=("$timer")
@@ -369,12 +472,43 @@ verify_boundary() {
     report PASS boundary.xui-bbr '没有 3X-UI 的 BBR 配置'
   fi
 
-  if unit_exists x-ui.service && have_record; then
-    report SKIP boundary.panel-listen '面板监听地址的核对在里程碑 M3 实现'
-  elif unit_exists x-ui.service; then
-    skip_without_state boundary.panel-listen
-  else
+  # The same test for an installed 3X-UI as new-host.xui in preflight.
+  if ! unit_exists x-ui.service && [ ! -e /usr/local/x-ui ]; then
     report INFO boundary.panel-listen '未安装 3X-UI'
+  elif have_record; then
+    verify_panel_listen
+  else
+    skip_without_state boundary.panel-listen
+  fi
+}
+
+# True for a loopback address as ss prints it (127.0.0.1, [::1],
+# [::ffff:127.0.0.1]), also with an interface suffix such as %lo.
+is_loopback_address() {
+  case "${1%%\%*}" in
+    127.* | '[::1]' | '[::ffff:127.'*) return 0 ;;
+  esac
+  return 1
+}
+
+# D16: the declared panel port listens on loopback only (the panel is reached
+# through an SSH tunnel). Without a listener the check cannot decide.
+verify_panel_listen() {
+  local panel addr addrs exposed=()
+  panel="$(state_get panel_port)"
+  addrs="$(tcp_listen_addresses "$panel")"
+  while IFS= read -r addr; do
+    [ -n "$addr" ] || continue
+    is_loopback_address "$addr" || exposed+=("$addr")
+  done <<<"$addrs"
+  if [ "${#exposed[@]}" -gt 0 ]; then
+    report FAIL boundary.panel-listen "面板端口 $panel 在非回环地址上监听：$(join_by '、' "${exposed[@]}")（面板只经 SSH 隧道访问）"
+  elif [ -n "$addrs" ]; then
+    report PASS boundary.panel-listen "面板端口 $panel 只在回环地址上监听"
+  elif unit_active x-ui.service; then
+    report WARN boundary.panel-listen "x-ui 在运行，但面板端口 $panel 上没有监听：面板可能改用了其他端口，无法核对"
+  else
+    report WARN boundary.panel-listen "x-ui 没有运行，无法核对面板端口 $panel 的监听地址"
   fi
 }
 

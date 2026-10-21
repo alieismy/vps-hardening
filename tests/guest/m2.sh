@@ -2,8 +2,9 @@
 # shellcheck source-path=SCRIPTDIR
 # Guest side of the M2 VM tests (docs/verification-plan.md 4.2 and 4.3:
 # VT-10 to VT-15, VT-20 to VT-24, VT-62, VT-70 and the SSH and UFW part of
-# VT-71). tests/vm.py runs apply and confirm over SSH as an administrator
-# would, and one phase of this script per SSH session in between.
+# VT-71), plus VT-50 after hardening and after the reboot and the Fail2ban
+# part of VT-71 (M3). tests/vm.py runs apply and confirm over SSH as an
+# administrator would, and one phase of this script per SSH session in between.
 
 # shellcheck source=m1.sh
 . "${BASH_SOURCE[0]%/*}/m1.sh"
@@ -318,6 +319,30 @@ ufw_sysctl_unchanged() {
   log '/etc/ufw/sysctl.conf as the package shipped it'
 }
 
+# VT-71: jail.conf and fail2ban.conf as the package shipped them. The images
+# have no Fail2ban, so apply installed it and the package is the baseline.
+f2b_mainconf_as_package() {
+  local path want
+  for path in /etc/fail2ban/jail.conf /etc/fail2ban/fail2ban.conf; do
+    want="$(dpkg-query -W -f='${Conffiles}\n' fail2ban | awk -v p="$path" '$1 == p { print $2 }')"
+    if [ -z "$want" ] || [ "$(md5sum <"$path" | awk '{print $1}')" != "$want" ]; then
+      fail "$path differs from the package"
+    fi
+  done
+  log 'jail.conf and fail2ban.conf as the package shipped them'
+}
+
+# VT-50: verify passes and changes nothing (verification plan 4.6).
+verify_passes() {
+  local name="$1"
+  snapshot "$name-before"
+  capture "$name" "$VH" verify
+  snapshot "$name-after"
+  same_snapshot "$name-before" "$name-after"
+  expect_rc "$name" 0
+  expect_clean "$name"
+}
+
 check_ufw_restored() {
   local before now
   before="$(cat "$BASELINE/ufw.txt")"
@@ -491,12 +516,10 @@ phase_m2_applied() {
   cp "$STATE_DIR/state" "$phase_dir/tool-state.txt"
   cp "$STATE_DIR/log" "$phase_dir/tool-log.txt"
 
-  # VT-10: confirmed, nothing left armed, verify passes.
+  # VT-10 and VT-50: confirmed, nothing left armed, verify passes.
   [ "$(state_value status)" = applied ] || fail "status is $(state_value status), expected applied"
   no_restore_armed
-  capture vt10-verify "$VH" verify
-  expect_rc vt10-verify 0
-  expect_clean vt10-verify
+  verify_passes vt10-verify
 
   # VT-11: sudo rules, root's keys and sudoers unchanged.
   same_as_baseline access.txt
@@ -536,6 +559,7 @@ phase_m2_applied() {
   same_as_baseline apt.txt
   same_as_baseline sysctl.txt qdisc.txt
   ufw_sysctl_unchanged
+  f2b_mainconf_as_package
   leak_checks "$(cat "$EVIDENCE/m2-baseline/start")"
 
   # VT-11 and VT-13: the failing logins come last.
@@ -553,9 +577,7 @@ phase_m2_rebooted() {
   [ "$(state_value status)" = applied ] || fail "status is $(state_value status), expected applied"
   no_restore_armed
   wait_fail2ban
-  capture vt10-reboot-verify "$VH" verify
-  expect_rc vt10-reboot-verify 0
-  expect_clean vt10-reboot-verify
+  verify_passes vt10-reboot-verify
   same_as_baseline sysctl.txt qdisc.txt listen22.txt
 }
 
@@ -581,6 +603,7 @@ phase_m2_rolled_back() {
   check_files_restored
   check_units_restored "$mode"
   check_packages_kept
+  f2b_mainconf_as_package
   case "$mode" in
     timeout) check_restore_time ;;
     boot) check_boot_restore ;;
@@ -621,4 +644,5 @@ m2_main() {
   log "phase $phase passed"
 }
 
-m2_main "$@"
+# m3.sh sources this file for its helpers.
+[ "${BASH_SOURCE[0]}" != "$0" ] || m2_main "$@"
