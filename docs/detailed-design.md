@@ -2,13 +2,13 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | v0.3 已批准：增补里程碑 M2（`apply`、`confirm`、自动恢复）的契约、状态记录、测试和运行证据，涉及第 1～9 节；M3、M4 实现时继续增补。第 1 节的范围调整（Fail2ban 和自动更新的写入提前到 M2）偏离方案设计 v1.1 第 10 节，已经评审通过，方案设计 v1.2 第 10 节随之修改。按需求 v1.4（D26），arm64 改为按需运行的参考，M2 的 arm64 结果放在附录 A。增补第 8.6 节：在用户提供的一台测试 VPS 上试运行 M2 开发版，不是 M5 的验收。用户于 2026-10-20 评审通过（需求 U16、D28），包括第 1 节的范围调整和 VT-25 的判定方式。此前的版本：v0.1 于 2026-10-20 经用户评审，除第 2.4 节的 `--maxretry` 和第 4 节 `ssh.permitrootlogin` 的期望值两处外通过；v0.2 按需求 v1.3（D22、D23）修改第 2.2、2.4、3～7、9 节，删除管理用户和公钥文件参数、sudo 条件检查，新增 root 公钥检查 `root.keys`，于同日经用户评审通过（需求 U13、D25） |
+| 状态 | v0.4 草案：增补里程碑 M3 的检查项（第 4 节）、测试（第 7 节）和运行证据（第 8.7～8.9 节），涉及第 1、4、7～9 节。超出 v0.3 第 1 节所列 M3 范围的三个检查项（`f2b.config`、`f2b.files`、`uu.dropin`）已经用户确认（需求 U18、D30）；全文待评审。v0.3 已批准：增补里程碑 M2（`apply`、`confirm`、自动恢复）的契约、状态记录、测试和运行证据，涉及第 1～9 节；M3、M4 实现时继续增补。第 1 节的范围调整（Fail2ban 和自动更新的写入提前到 M2）偏离方案设计 v1.1 第 10 节，已经评审通过，方案设计 v1.2 第 10 节随之修改。按需求 v1.4（D26），arm64 改为按需运行的参考，M2 的 arm64 结果放在附录 A。增补第 8.6 节：在用户提供的一台测试 VPS 上试运行 M2 开发版，不是 M5 的验收。用户于 2026-10-20 评审通过（需求 U16、D28），包括第 1 节的范围调整和 VT-25 的判定方式。此前的版本：v0.1 于 2026-10-20 经用户评审，除第 2.4 节的 `--maxretry` 和第 4 节 `ssh.permitrootlogin` 的期望值两处外通过；v0.2 按需求 v1.3（D22、D23）修改第 2.2、2.4、3～7、9 节，删除管理用户和公钥文件参数、sudo 条件检查，新增 root 公钥检查 `root.keys`，于同日经用户评审通过（需求 U13、D25） |
 | 日期 | 2026-10-20（v0.1 为 2026-10-13） |
-| 上游 | [需求规格说明 v1.4](requirements.md)、[方案设计 v1.2](solution-design.md)、[验证计划 v1.2](verification-plan.md)（均已批准） |
+| 上游 | [需求规格说明 v1.5 草案](requirements.md)（v1.4 已批准）、[方案设计 v1.2](solution-design.md)（已批准）、[验证计划 v1.3 草案](verification-plan.md)（v1.2 已批准） |
 | 下游 | 实现、测试 |
 | 深度 | 命令契约、检查项目录、模块划分、实现约束和测试框架；不重复上游已有的决策理由 |
 
-**证据状态。** 第 2～6 节描述的是仓库中的实现，第 7 节描述的是测试框架。运行证据见第 8 节：第 8.1～8.5 节来自 CI 虚拟机；第 8.6 节来自一台测试 VPS 上的试运行，只有一台主机，不能代替真实主机验收（M5）。
+**证据状态。** 第 2～6 节描述的是仓库中的实现，第 7 节描述的是测试框架。运行证据见第 8 节：第 8.1～8.5、8.7 节来自 CI 虚拟机；第 8.6、8.8 节来自一台测试 VPS，只有一台主机，不能代替真实主机验收（M5）。
 
 ## 1. 范围
 
@@ -31,6 +31,15 @@ M2 实现应用和确认（第 2.5～2.8 节）：
 - VT-23 用屏蔽 `fail2ban.service` 的方式注入失败，需要 `apply` 在布置自动恢复后操作这个服务。
 
 M3 仍负责：`f2b.values` 和 `boundary.panel-listen` 两个检查项（M2 中报告"跳过"）、FR-08 的 11 步验证（VT-30～VT-35）、VT-40、VT-51、VT-55，以及与 3X-UI 共存的验证。
+
+M3 实现（v0.4）：
+
+- `verify` 实现 `f2b.values` 和 `boundary.panel-listen`，另增加 `f2b.config`、`f2b.files`、`uu.dropin` 三项（第 4 节）；
+- 修复 M1 遗留的 `f2b.mainconf` 漏报（第 8.7 节）；
+- 新的 hardened 测试套件覆盖 VT-30～VT-35、VT-40、VT-50（加固后、重启后、安装 3X-UI 后）、VT-51、VT-55 和 VT-71 的其余部分（第 7 节）；
+- `apply`、`confirm` 和自动恢复没有改动。
+
+**范围补充（已确认，需求 D30）。** `f2b.config`、`f2b.files`、`uu.dropin` 不在上面列给 M3 的范围内。增加的依据：`f2b.config` 对应方案设计第 7.6 节 Fail2ban 区域的"配置检查通过"，此前没有实现；另两项兑现受管文件首行注释中"verify reports any change"的说明，并覆盖 `f2b.values` 读不回的过滤模式（第 4 节）。三项都是只读检查，不改变 `apply` 的行为。
 
 ## 2. 命令契约
 
@@ -312,19 +321,32 @@ WantedBy=sysinit.target
 | `ssh.denied` | 每个被禁账户：以它的身份执行 `sshd -T -C`，它在 `DenyUsers` 中，密码和键盘交互认证都是 `no` | M2 新增；没有被禁账户时不输出 |
 | `ufw.rules` | `ufw status` 的规则行排序后与应用时的记录完全一致，多出或缺少规则都不符合；IPv4、IPv6 规则分别计 | M2 已实现；没有应用记录时跳过 |
 | `ufw.panel` | 没有放行面板端口的规则，判定方法与 `ufw.port80` 相同 | M2 已实现；没有应用记录时跳过 |
-| `f2b.values`、`boundary.panel-listen` | 需要应用记录中的声明值 | M3 实现；目前都报告跳过（`boundary.panel-listen` 在未安装 3X-UI 时为 `INFO`） |
+| `uu.dropin` | 本工具的 APT 配置 `/etc/apt/apt.conf.d/52vps-hardening` 的 SHA-256 等于应用时的记录 | M3 新增；没有应用记录时跳过 |
+| `boundary.panel-listen` | 安装了 3X-UI 时（判定同 `new-host.xui`），应用时声明的面板端口上的 TCP 监听地址都是回环地址（`127.0.0.0/8`、`::1`、`::ffff:127.0.0.0/104`）；有非回环地址时不符合；端口上没有监听时为警告，无法核对 | M3 实现；未安装 3X-UI 时为 `INFO`，没有应用记录时跳过 |
 | `accounts.nopasswd` | 有密钥、免密 sudo、又不在 `DenyUsers` 中的登录账户 | 已实现 |
 | `ssh.permitrootlogin`、`ssh.passwordauthentication`、`ssh.kbdinteractive`、`ssh.pubkey`、`ssh.forwarding`、`ssh.port` | 以 root 身份执行 `sshd -T -C` 的生效值：`without-password` 或 `prohibit-password`（`sshd -T` 用旧名 `without-password` 输出 `prohibit-password`）、`no`、`no`、`yes`、`yes` 或 `local`、`22` | 已实现；被禁账户另由 `ssh.denied` 检查 |
 | `root.key`、`root.keys` | 同 preflight：root 至少有一把可用的公钥 | 已实现 |
 | `ssh.listen` | 22 端口在 IPv4 上监听为必需；没有 IPv6 时为警告 | 已实现 |
 | `ufw.installed`、`ufw.active`、`ufw.defaults`、`ufw.ipv6`、`ufw.port80` | 已安装并启用；默认拒绝入站、允许出站、拒绝转发；`IPV6=yes`；没有放行 80 端口的入站规则。转发策略：`ufw status verbose` 显示 `deny (routed)` 或 `disabled (routed)`，并且 `/etc/default/ufw` 中为 `DEFAULT_FORWARD_POLICY="DROP"`。内核没有开启转发时，ufw 把转发策略显示为 `disabled`（第 8.4 节） | 已实现；转发策略的判定在 M2 修改 |
-| `f2b.installed`、`f2b.service`、`f2b.jails`、`f2b.mainconf` | 已安装；服务启用且运行；jail 只有 `sshd`；`jail.conf`、`fail2ban.conf` 未改动 | 已实现；生效值和配置检查在 M3 补充 |
+| `f2b.installed`、`f2b.service`、`f2b.jails`、`f2b.mainconf` | 已安装；服务启用且运行；jail 只有 `sshd`；`jail.conf`、`fail2ban.conf` 未改动 | 已实现 |
+| `f2b.config` | `fail2ban-client -t` 成功 | M3 新增 |
+| `f2b.values` | 服务有响应时，读取 14 项生效值，逐项等于 FR-08（见下文）；服务没有响应时不符合 | M3 实现；期望值都是常量，不需要应用记录 |
+| `f2b.files` | 本工具的 `jail.d/99-vps-hardening.local` 和 `fail2ban.local` 的 SHA-256 等于应用时的记录；`/etc/fail2ban` 下没有软件包和本工具以外的文件；`dpkg --verify fail2ban` 没有报告 `jail.conf`、`fail2ban.conf` 以外的改动（这两个文件由 `f2b.mainconf` 报告） | M3 新增；没有应用记录时跳过 |
 | `nft.service` | `nftables.service` 未启用 | 已实现 |
 | `uu.installed`、`uu.periodic`、`uu.reboot`、`uu.origins`、`uu.timers` | 已安装；两个 `APT::Periodic` 值为 1；不自动重启；来源列表与 FR-09 一致；两个 APT 定时器启用且运行 | 已实现 |
 | `boundary.container`、`boundary.xui-bbr` | 没有 Docker 或 Podman；没有 `/etc/sysctl.d/99-bbr-x-ui.conf` | 已实现 |
 | `reboot.required` | 存在 `/var/run/reboot-required` | 警告 |
 
 `ufw.rules` 用 `ufw status` 而不用 `ufw show added`：后者丢失地址族，只放行 IPv4 的 `proto udp to 0.0.0.0/0 port 8443` 显示为 `ufw allow 8443/udp`，与两个地址族都放行的规则无法区分（第 8.4 节）。`ufw status` 只在 UFW 启用时列出规则，未启用时 `ufw.rules` 与 `ufw.active` 一起报告不符合。
+
+Fail2ban 各项的输出顺序为 `f2b.installed`、`f2b.service`、`f2b.config`、`f2b.jails`、`f2b.values`、`f2b.files`、`f2b.mainconf`。`f2b.values` 的读取和比较：
+
+- 14 项：`sshd` 的 `bantime`、`findtime`、`maxretry`、`bantime.increment`、`bantime.maxtime`、`bantime.rndtime`、`ignoreself`、`ignoreip`、`usedns`、`journalmatch`、`actions`，动作 `nftables` 的 `port` 和 `protocol`，以及全局的 `dbpurgeage`。每项用 `fail2ban-client get` 读取，有 30 秒超时。
+- 规整：输出多于一行时去掉第一行的标题（例如 `Current match filter:`），去掉列表项前缀 `|- ` 和 `` `- ``，排序后用空格连接；`dbpurgeage` 的 `2592000seconds` 取数字。时间按秒比较（`1d` 为 86400，`4w` 为 2419200）；布尔值为 `True`；`ignoreip` 按服务器规整后的网络比较（`127.0.0.1/8` 显示为 `127.0.0.0/8`）。
+- 读不回的两项：过滤模式 `mode=normal` 和 `banaction`。`banaction = nftables` 体现为动作名 `nftables` 和它的端口、协议，已在 14 项中；过滤模式只写在 jail 文件中，由 `f2b.files` 的摘要覆盖。
+- 期望值都是 FR-08 的常量，所以 `f2b.values` 不需要应用记录（v0.3 写的是"需要应用记录中的声明值"，实现时确认只有 `boundary.panel-listen` 需要，它取记录中的面板端口）。
+
+`f2b.files`、`uu.dropin` 与 M2 的 `ssh.dropin` 用同一个摘要判定。SSH 片段、jail 文件和 APT 配置的首行注释都写着"verify reports any change"，M2 只对 SSH 片段兑现了这一点；`f2b.config` 对应方案设计第 7.6 节 Fail2ban 区域的"配置检查通过"。这三项超出 v0.3 第 1 节列给 M3 的范围，已经用户确认（第 1 节）。
 
 `uu.origins` 的期望集合（从 `apt-config dump` 读取，`${distro_*}` 占位符原样比较）：
 
@@ -366,10 +388,11 @@ WantedBy=sysinit.target
 | `tests/vm.py` | 运行器侧：下载并校验官方云镜像，生成 cloud-init 种子，启动 QEMU，按阶段在客体中执行测试，收集证据。改编自 vps-tuning 的 `tests/platform-vm.py` |
 | `tests/guest/m1.sh` | 客体侧：M1 各阶段的准备、用例和判定，以及 `apply` 被预检拒绝的用例 |
 | `tests/guest/m2.sh` | 客体侧：M2 的状态记录、第二来源、登录和端口检查、恢复后的核对；复用 `m1.sh` 的函数 |
+| `tests/guest/m3.sh` | 客体侧：M3 的 Fail2ban、自动更新、3X-UI 共存和漂移用例；复用 `m2.sh` 的函数 |
 | `tests/platform-images.json` | 镜像 URL 和摘要，与 vps-tuning 同源 |
 | `tests/static.sh` | 不需要虚拟机的检查：shell 和 Python 语法、LF 行尾、通用秘密特征 |
 | `.github/workflows/static.yml` | 运行 `tests/static.sh` 和 ShellCheck 0.11.0（固定容器镜像）。ShellCheck 只报告命令行列出的文件，不报告经 `-x` 跟随的文件，所以列出全部模块 |
-| `.github/workflows/vm.yml` | matrix、recovery 和 negative 三组作业，证据作为构件保存 14 天。拉取请求和推送只运行 amd64；手动触发并选中 `arm64` 时，matrix 和 recovery 另在 arm64 上运行（需求 D26） |
+| `.github/workflows/vm.yml` | matrix、recovery、negative 和 hardened 四组作业，证据作为构件保存 14 天。拉取请求和推送只运行 amd64；手动触发并选中 `arm64` 时，matrix、recovery 和 hardened 另在 arm64 上运行（需求 D26） |
 
 ### 7.2 客体初始状态
 
@@ -395,6 +418,14 @@ M2 的测试在此基础上增加以下内容，都只为测试服务：
 - **自动更新。** `apply` 会 `enable --now` 两个 APT 定时器。为免测试期间真的执行升级（升级可能重启 sshd，打断持续探测），基线阶段在 `/run` 下给 `apt-daily-upgrade.service` 加 drop-in，把 `ExecStart` 换成 `/bin/true`；重启后重新放置。不用屏蔽（mask）：触发的服务被屏蔽时，定时器无法启动，`apply` 的这一步会失败。
 - **交互。** `apply` 经 `ssh -tt` 在伪终端中运行；测试驱动看到确认提示后输入 `yes`，与管理员的操作相同。工具中没有任何测试开关。
 
+M3 的测试（hardened 套件）在 M2 的基础上再增加以下内容：
+
+- **更多第二来源地址。** 每个用例一个地址，使 Fail2ban 的封禁和 Debian 13 sshd 的惩罚不会延续到下一个用例：`.6` VT-31；`.7` VT-33 的封禁；`.8` VT-33 的递增封禁；`.9` VT-34 的 ssh-agent 和 `IdentitiesOnly` 登录；`.10` VT-34 的认证前断开。VT-32 手工封禁 `203.0.113.123`（文档保留地址，不发出流量）。
+- **失败样本。** 用不存在的用户名 `vh-nouser-<序号>` 和一把 Ed25519 密钥登录，与扫描器的客户端相同。相邻两次至少间隔 6 秒：Debian 13 sshd 的 `authfail` 惩罚为 5 秒，累积到 15 秒才执行（第 8.2 节），所以每次都能到达 sshd。尝试没有得到认证失败的结果时（被惩罚拒绝或连接出错），重试，每个样本最多尝试 3 次；来源已被封禁时，这次尝试算作完成。每次尝试的时间和结果写入证据。
+- **APT 定时器保持运行。** `apply` 启用的两个定时器在 M3 中不停止（`verify` 要求它们运行）；需要包管理器的步骤（安装 3X-UI、dry-run）之前等待它空闲。M2 基线中 `apt-daily-upgrade.service` 的空操作替换仍然有效，重启后重新放置。
+- **3X-UI 夹具。** 按验证计划第 3.5 节在确认之后安装（`XUI_PANEL_PORT=2053`，监听改为 `127.0.0.1`）。`install.sh` 解压后会删除发布包，所以 VO-1 在解压后的文件上核对：`/usr/local/x-ui/x-ui` 和 `/usr/local/x-ui/bin/xray-linux-<架构>` 的 SHA-256 等于从发布包中取得的值（验证计划第 3.5 节），`/usr/local/x-ui/x-ui.sh` 等于 tag 中的 `x-ui.sh`。负向套件的 S1 使用同一个安装函数。
+- **面板的 WebBasePath。** 由测试驱动在客体中读取（`x-ui setting -show true`），只用于经隧道访问；它被加入泄露扫描的标记，不写入证据。
+
 ### 7.3 套件与用例
 
 | 套件 | 平台 | 内容 |
@@ -402,6 +433,7 @@ M2 的测试在此基础上增加以下内容，都只为测试服务：
 | matrix | 三平台 amd64；arm64 按需（参考） | 准备；核实转发连接在客体中的来源地址；VT-01；VT-50 的未加固部分；sshd 探测研究。然后在同一客体上执行 M2 的主流程：应用 → 三种被拒绝的确认 → 从新会话确认 → 核对 → 隧道 → 重启后核对 |
 | recovery | 三平台 amd64；arm64 按需（参考） | 准备好的磁盘为底，两个覆盖层：确认超时（时限 3 分钟，应用后不确认）；待确认期间从应用会话重启 |
 | negative | 三平台 amd64 | 准备；VT-02、VT-04；关机后以准备好的磁盘为底，S1～S4 各用一个覆盖层磁盘启动（VT-03）；S2 中检查 UFW 是否过滤转发连接；再用一个覆盖层执行 VT-23 |
+| hardened | 三平台 amd64；arm64 按需（参考） | 准备，记录基线；`apply --open 443/tcp --open 2096/tcp`（3X-UI 的入站和订阅端口），从新会话确认；VT-30、VT-31、VT-33 和 VT-35、VT-32、VT-34、VT-40；安装 3X-UI（VT-55 第一部分、VT-50、VT-71）；经隧道打开面板；重启后核对（VT-55 第二部分）。以上全程持续探测（VT-25）。关机后以这块磁盘为底，9 个覆盖层各注入一项漂移（VT-51） |
 
 M1 用例的判定要点：
 
@@ -430,6 +462,32 @@ M2 用例的判定要点（验证计划第 4.2、4.3 节）：
 - VT-70：APT 源列表和密钥环的摘要与基线一致。
 - VT-71（SSH 和 UFW 部分）：vps-tuning 管理的 17 项 sysctl（取自 vps-tuning `v0.2.0-rc.4` 的 `PROFILE_SYSCTL_KEYS`）和 qdisc 与基线一致；`/etc/ufw/sysctl.conf` 不变，UFW 由 `apply` 安装时等于软件包的版本。
 
+M3 用例的判定要点（验证计划第 4.4～4.7 节）：
+
+- VT-30：`fail2ban-client -t` 退出码为 0；服务启用并运行；`ping` 返回 `pong`；`status sshd` 中的 `Journal matches` 等于 FR-08 的 `journalmatch`；jail 列表只有 `sshd`；14 项 `get` 的原始输出与预期文本逐字一致（与 `verify` 的规整逻辑相互独立）；`jail.conf`、`fail2ban.conf` 的摘要等于软件包记录的摘要；17 项 sysctl、qdisc 与基线一致，`/etc/ufw/sysctl.conf` 不变。随后的 `verify` 退出码为 0、前后摘要一致，`f2b.config`、`f2b.jails`、`f2b.values`、`f2b.files`、`f2b.mainconf`、`uu.dropin` 都通过。
+- VT-31：从 `.6` 做 1 次失败样本；按 jail 计数的增量，样本数的两倍仍低于 `maxretry` 时再做第 2 次，所以这个来源不会被封禁。判定：journal 中有与样本数相同的 `Invalid user` 记录；`fail2ban-regex -o ip --journalmatch <FR-08 的值> systemd-journal 'sshd[mode=normal]'` 中该来源的匹配数不少于样本数，并且等于 jail 计数的增量；来源没有被封禁。每个样本被匹配几次取决于 sshd 的日志行数，所以"匹配数与样本数一致"按"每个样本都被匹配，且匹配数与 jail 的计数一致"操作化。
+- VT-33：`.7` 在不超过 5 次失败后被封禁；封禁时长在 86400～87000 秒之间（首次封禁不加随机时长，第 8.8 节）；该地址在 `inet f2b-table` 中；它的登录在连接阶段就被拒绝；测试驱动和 `.2` 的 root 登录不受影响。递增：运行期把 `bantime` 设为 20 秒，`.8` 第一次封禁为 20 秒，到期解封后再次触发，第二次封禁在 40～640 秒之间（`bantime.increment` 加倍，`bantime.rndtime` 最多加 600 秒）；之后 `reload sshd`，`bantime` 回到 86400。
+- VT-35：VT-33 期间所有提到 `.7` 的 journal 记录都在 FR-08 的 `journalmatch` 范围内（`_SYSTEMD_UNIT=ssh.service`，或 `_COMM` 为 `sshd`、`sshd-session`）；三个平台都归档各记录的 `_COMM` 和 `SYSLOG_IDENTIFIER`。
+- VT-32：`banip` 后该地址在 `inet f2b-table` 中，`unbanip` 后消失；中途中断（向执行封禁的进程发送 TERM）时，清理逻辑解封；全程 `.2` 的 root 密钥登录成功。
+- VT-34：ssh-agent 中依次有 3 把错误的 Ed25519 密钥和正确的 RSA 密钥，从 `.9` 以 root 登录 6 次；`IdentitiesOnly=yes` 登录 6 次；从 `.10` 6 轮"读到版本信息就断开"加一次键盘交互认证被拒（服务器不提供这种方式，在认证前断开）。三组的计数增量都为 0，两个来源都没有被封禁；归档 sshd 的惩罚日志。
+- VT-40：`apt-config dump` 中三个值符合要求；两个 APT 定时器启用并运行；`unattended-upgrade --dry-run --debug`（限时 15 分钟）退出码为 0，`Allowed origins are:` 列出的来源集合等于 D19：Debian 为 `label=Debian`、两项 `Debian-Security`（展开后的形式），Ubuntu 为 `<代号>-security` 和两项 ESM 安全来源。
+- VT-55、VT-50、VT-71（安装 3X-UI 后）：安装前后，root 和默认用户的 `sshd -T`、UFW、受管文件、受管单元、Fail2ban 的 6 项生效值、17 项 sysctl 和 qdisc 都不变；`verify` 退出码为 0，没有不符合、警告和跳过，`boundary.panel-listen` 通过，前后摘要（含 3X-UI 的文件）一致。经 `apply` 输出的隧道命令访问 WebBasePath，返回 HTTP 200 和标题为 `Sign in` 的登录页。重启后 boot ID 改变，`verify` 的判定相同。
+- VT-51：每项漂移注入后，`verify` 的不符合项集合和警告项集合与下表完全一致（多报、少报都算失败），前后摘要一致，没有内部错误：
+
+| 漂移 | 注入方式 | 期望 |
+|---|---|---|
+| `firewall-install` | 3X-UI 菜单：防火墙 → 安装防火墙 | 退出码 0，没有不符合项；UFW 不变，菜单输出 `Firewall is already active`（第 9 节） |
+| `firewall-reinstall` | 菜单：防火墙 → 停用防火墙，再安装防火墙 | `ufw.panel`、`ufw.port80`、`ufw.rules` |
+| `iplimit` | 菜单：IP Limit → 安装 | `f2b.files`、`f2b.jails`、`f2b.mainconf` |
+| `listen-all` | `x-ui setting -listenIP 0.0.0.0` 并重启 x-ui | `boundary.panel-listen` |
+| `bbr` | 菜单：BBR → 启用 | `boundary.xui-bbr` |
+| `ufw-rule` | `ufw allow 8080/tcp` | `ufw.rules` |
+| `nftables` | `systemctl enable nftables.service` | `nft.service` |
+| `sshd-dropin` | 在 SSH 片段末尾追加一行注释 | `ssh.dropin` |
+| `reboot-required` | 创建 `/var/run/reboot-required` | 退出码 0，只有警告 `reboot.required` |
+
+  菜单经标准输入应答，使用 tag 中已校验的 `x-ui.sh`（验证计划第 3.5 节）；菜单在输入意外时会递归调用自身，所以每次限时 300 秒。
+
 ### 7.4 状态摘要
 
 每个用例前后各采集一次，逐行比较：
@@ -439,7 +497,8 @@ M2 用例的判定要点（验证计划第 4.2、4.3 节）：
 - `nft -s list ruleset`，以及去掉注释和计数器的 `iptables-save`、`ip6tables-save`；
 - `ufw status verbose`；
 - 全部单元文件的启用状态（不含会话 scope），以及相关服务和定时器的启用、运行状态；
-- 软件包列表；工具状态目录是否存在。
+- 软件包列表；工具状态目录是否存在；
+- 安装了 3X-UI 时，`/usr/local/x-ui` 下各文件和 `/usr/bin/x-ui` 的 SHA-256（M3 新增）。
 
 排除项只有两类，都由其他进程在测试期间改变：
 
@@ -458,7 +517,7 @@ M2 用例的判定要点（验证计划第 4.2、4.3 节）：
 
 来源：GitHub Actions 运行 `39389558685`（v0.2 的代码，commit `e3de443`，2026-10-20），9 个作业全部通过；只改动文档的复核运行 `39391825013`（commit `4925946`）同样全部通过，VT-01～VT-04、VT-50 的结果一致。v0.1 的代码对应运行 `38438964687`（commit `63dda79`，2026-10-13）和代码未变的复核运行 `38503522626`（commit `7ef6e0f`），同样全部通过。证据构件 `vm-matrix-*`、`vm-negative-*` 保留 14 天。按验证计划第 6 节逐项核对了构件，不以 CI 状态为准。证据层次为"虚拟机生命周期"，不代表真实主机。除注明的以外，第 8.1 节的结果来自运行 `39389558685`。
 
-第 8.1～8.3 节是 M1 的证据，第 8.4～8.6 节是 M2 的证据。按需求 D26，arm64 只作参考：第 8.1、8.2 节按当时的需求记录了 M1 的 arm64 结果，保持原样；M2 起 arm64 的结果放在附录 A。
+第 8.1～8.3 节是 M1 的证据，第 8.4～8.6 节是 M2 的证据，第 8.7～8.9 节是 M3 的证据。按需求 D26，arm64 只作参考：第 8.1、8.2 节按当时的需求记录了 M1 的 arm64 结果，保持原样；M2 起 arm64 的结果放在附录 A。
 
 ### 8.1 结果
 
@@ -614,19 +673,80 @@ M2 用例的判定要点（验证计划第 4.2、4.3 节）：
 - 试运行结束后，用户确认仍能从平时使用的客户端用自己的密钥登录（需求 U16）。
 - 置信度：三个场景的功能结论为高，与 CI 的结论一致（第 8.5 节），但只覆盖这一台主机，不能据此推出 Debian 12、Ubuntu 24.04 或其他服务商主机上的结果。
 
+### 8.7 M3 运行结果
+
+来源：GitHub Actions 运行 `39467916087`（commit `b9e8b3d`，2026-10-20），12 个 amd64 作业全部通过；同一 commit 的静态检查运行 `39467915956` 通过。第一轮运行 `39464754834`（commit `7f9f634`）中，9 个 M1、M2 的作业通过，3 个 hardened 作业都在 VT-51 失败，原因和修复见本节末尾。证据构件 `vm-hardened-*` 等保留 14 天，逐个用例核对，不以 CI 状态为准。证据层次为"虚拟机生命周期"，不代表真实主机。arm64 没有运行（第 9 节）。
+
+| 套件 | 平台 | 作业时长 | 结果 |
+|---|---|---|---|
+| matrix | Debian 12 / 13、Ubuntu 24.04，amd64 | 3 分 57 秒～4 分 14 秒 | 通过 |
+| recovery | 同上 | 5 分 24 秒～5 分 34 秒 | 通过 |
+| negative | 同上 | 3 分 23 秒～4 分 7 秒 | 通过 |
+| hardened | 同上 | 9 分 12 秒～10 分 26 秒 | 通过 |
+
+被测的软件包版本：
+
+| 平台 | fail2ban | openssh-server | ufw | unattended-upgrades |
+|---|---|---|---|---|
+| Debian 12 | 1.0.2-2 | `1:9.2p1-2+deb12u10` | 0.36.2-1 | 2.9.1+nmu3 |
+| Debian 13 | 1.1.0-8 | `1:10.0p1-7+deb13u4` | 0.36.2-9 | 2.12 |
+| Ubuntu 24.04 | 1.0.2-3ubuntu0.1 | `1:9.6p1-3ubuntu13.19` | 0.36.2-6 | 2.9.1+nmu4ubuntu1 |
+
+- M1、M2 的套件：判定与第 8.5 节相同，全部满足。确认后的 `verify` 为 37 项通过、0 项不符合、警告和跳过（M2 为 33 项通过、1 项跳过）：`f2b.values` 由跳过变为通过，另增加 `f2b.config`、`f2b.files`、`uu.dropin`。未加固主机上的 VT-50，新增的 `uu.dropin` 和原有的 `ssh.dropin` 因没有应用记录而跳过，不符合项与 M1 相同。
+- hardened 套件，三个平台的结果相同（不同之处注明）：
+  - VT-30：各项满足，`verify` 为 37 项通过。14 项 `get` 的原始输出在 fail2ban 1.0.2 和 1.1.0 上逐字相同，第 4 节的规整规则对两个版本都成立。
+  - VT-31：样本 2 个，jail 计数增加 2，`fail2ban-regex` 对该来源匹配 2 次，来源没有被封禁。每次尝试 sshd 记录两行（`Invalid user …` 和 `Connection closed by invalid user … [preauth]`），普通模式只计第一行。
+  - VT-33：`.7` 每次失败计数加 1，第 5 次后被封禁，封禁时长正好 86400 秒；该地址在 `inet f2b-table` 中，它的登录被拒绝，`.2` 的 root 登录正常。递增部分：第一次封禁 20 秒；到期后，同一来源 3 次失败就再次被封，每次失败计数加 2，这是 Fail2ban 对封禁过的来源加重计数（需求第 10.1 节）；第二次封禁为 54、188、254 秒（Debian 12、13、Ubuntu 24.04；第一轮为 197、377、313 秒），都在 40～640 秒之间；`reload` 之后 `bantime` 回到 86400。
+  - VT-35：VT-33 中提到 `.7` 的 journal 记录共 10 条（5 次尝试，各两行）。Debian 13 上都来自 `sshd-session`，Debian 12 和 Ubuntu 24.04 上都来自 `sshd`，没有 `sshd-auth`，都在 `journalmatch` 范围内。FR-08 不需要修改。
+  - VT-32：封禁、解封和中途中断三种情况都满足，全程 `.2` 能登录。
+  - VT-34：三组的计数增量都是 0，两个来源都没有被封禁；Debian 13 上 sshd 没有惩罚记录。需求 R-3 的证据状态随之更新。
+  - VT-40：dry-run 列出的允许来源等于 D19 的集合（Debian 12 为 `bookworm`，Debian 13 为 `trixie`，Ubuntu 为 `noble` 的三项），退出码为 0，用时 15～42 秒。
+  - VT-55、VT-50、VT-71：3X-UI 的两个二进制文件与发布包一致（VO-1）；安装前后 SSH、UFW、Fail2ban、受管文件和单元、sysctl、qdisc 都不变；`verify` 为 38 项通过（多出 `boundary.panel-listen`），没有不符合、警告和跳过；经隧道访问 WebBasePath 返回 HTTP 200 和登录页；重启后 boot ID 改变，`verify` 结果相同。
+  - VT-51：9 项漂移的结果都与第 7.3 节的表一致。"安装防火墙"的菜单输出 `Firewall is already active`，UFW 不变，`verify` 退出码为 0。
+  - VT-25：每个作业探测 98～111 次，只在重启窗口内各有 1 次两次都失败，窗口外没有失败。
+  - 泄露扫描：三个作业都没有发现测试密码、客户端私钥和面板的 WebBasePath。
+- 置信度：功能结论为高，三个平台、两次运行一致（第一轮只缺 VT-51 的后 6 项）；第二次封禁的时长含随机部分，只核对了范围。
+
+第一轮运行发现并已修复的问题：
+
+| 问题 | 影响 | 修复 |
+|---|---|---|
+| `f2b.mainconf` 用 `dpkg --verify fail2ban \| grep -q` 判定。dpkg 逐行输出，两个文件都被改动时，`grep -q` 读到第一行就退出，dpkg 写第二行时因 SIGPIPE 失败，`pipefail` 下整个条件为假，检查通过 | M1 起就存在，违反第 6 节"读取端不提前退出"的约束。VT-51 的 IP Limit 漂移同时改动这两个文件（状态摘要显示两者的摘要都变了），三个平台上 `f2b.mainconf` 都误报通过；只改一个文件时不受影响，所以 M1、M2 的测试没有发现。测试 VPS 上复现：30 次中漏报 28 次（第 8.8 节） | 先把 `dpkg --verify` 的输出读完，再匹配（commit `b9e8b3d`）。其他用 `grep -q` 读管道的地方，写入端是 awk 或 `printf`，输出很短、一次写出，或者只输出一行（`find -quit`），不受影响 |
+
+### 8.8 测试 VPS 上的 M3 核对
+
+来源：2026-10-20，第 8.6 节的同一台测试 VPS，处于 M2 主流程确认后的"已应用"状态；用户同意在 M3 中使用这台主机（需求 U17）。软件版本：Debian 13.7，fail2ban 1.1.0-8，openssh-server `1:10.0p1-7+deb13u4`，dpkg 1.22.22，systemd 257。除第 8.9 节的演练外只做只读查询；需要改动配置文件的核对，都在私有挂载命名空间（`unshare -m`）中用绑定挂载覆盖，主机上的文件不变。M3 开发版复制到 `/root` 下的临时目录运行，不覆盖已安装的版本。Fail2ban 的封禁只来自互联网上的扫描来源，测试没有从管理员的出口制造失败（验证计划第 5 节，需求 R-3）。
+
+| 项目 | 结果 |
+|---|---|
+| `fail2ban-client get` 的输出格式 | 第 4 节 `f2b.values` 的规整规则依据这里的输出确定：多行的值带标题行，列表项带 `|- `、`` `- `` 前缀，`dbpurgeage` 带 `seconds` 后缀，`ignoreip` 中的 `127.0.0.1/8` 显示为 `127.0.0.0/8`。fail2ban 1.0.2（Debian 12、Ubuntu 24.04）的输出由 VT-30 逐字比较，结果相同（第 8.7 节） |
+| M3 开发版的 `verify` | 36 项通过，0 项不符合、警告和跳过，退出码为 0；运行前后 `/etc` 的摘要一致 |
+| `f2b.mainconf` 的漏报（第 8.7 节） | 同时覆盖 `jail.conf` 和 `fail2ban.conf`：修复前的写法 30 次中漏报 28 次，修复后 5 次都报告不符合；撤除覆盖后 36 项全部通过。`dpkg --verify` 在文件被改动时退出码仍为 0，所以问题只出在管道提前结束 |
+| sshd 日志的进程字段（VT-35 的补充） | 2026-10-20 以来：`_COMM=sshd` 130 条，`sshd-session` 2984 条，`sshd-auth` 0 条。认证失败的记录都来自 `sshd-session`，在 FR-08 的 `journalmatch` 范围内 |
+| 封禁时长（只读查询 Fail2ban 数据库） | 本工具的配置下，2 个扫描来源的首次封禁都正好是 86400 秒：首次封禁不加随机时长。被封过一次的来源再次被封 172847.6 秒，即 86400 × 2 加 47.6 秒的随机时长，符合 `bantime.increment` 和 `bantime.rndtime` |
+| 安装软件包到写入配置之间 | 第 8.6 节场景 A 中，`apply` 于 15:32:33 安装 fail2ban。软件包的安装脚本随即启动服务，发行版默认的 sshd jail 运行到 15:32:43 本工具的配置生效为止，约 5 秒；它按 journal 中最近 10 分钟的失败记录，把 2 个扫描来源各封禁 600 秒（默认的 `bantime`） |
+
+- 最后一项是 M2 实现中没有注意到的过渡状态。影响很小：默认 jail 同样只读 sshd 的认证失败，过滤模式也是 `normal`，只会封禁 10 分钟内已有 5 次失败的来源；管理员用密钥登录，不会在这 10 分钟内累积失败。M3 不修改，记录在第 9 节。
+- 置信度：输出格式、修复前后的对比和封禁时长为高，都是直接观察；只覆盖 Debian 13 这一个平台。
+
 ## 9. 已知限制与后续
 
 - 已在 M2 解决的 M1 遗留项：
   - VT-02 和 VT-03 中"`apply` 被拒绝且不改变系统"的部分，已在 M2 补测（第 7.3 节）；
   - `confirm` 用审计会话编号区分新旧 root 会话的做法已核实（第 8.4 节，DR-11）。
-- `verify` 中的 `f2b.values` 和 `boundary.panel-listen` 仍报告"跳过"，在 M3 实现。
+- 已在 M3 解决的 M2 遗留项：`f2b.values` 和 `boundary.panel-listen` 已实现（第 4 节）；FR-09 的 dry-run 验证已完成（VT-40，第 8.7 节）。
+- 3X-UI 的"安装防火墙"菜单在 UFW 已启用时不做任何改动，与需求 v1.4 第 7.2 节和 FR-10 验收的描述不符。VT-51 改用"停用后再安装"作为这项漂移，单独"安装防火墙"作为对照保留；需求 v1.5 据此更正（D29，已经用户确认，D30）。
+- `boundary.panel-listen` 只核对应用时声明的面板端口。管理员之后在面板中改了端口时，这一项报告警告（端口上没有监听），不能判断新端口的监听地址；端口变更由 FR-14（M4）处理。
+- `f2b.files` 把 `/etc/fail2ban` 下软件包和本工具以外的文件都判为不符合，包括管理员自己加的、与 sshd 无关的配置。这与 FR-02"不接管存量 Fail2ban 配置"的边界一致：只支持本工具写入的配置。
+- `apply` 安装 fail2ban 软件包后，发行版默认的 sshd jail 会在本工具写入配置前运行几秒，期间可能按最近 10 分钟的失败记录封禁来源 10 分钟（第 8.8 节）。管理员只用密钥登录时不受影响，所以不修改。
+- VT-34 只覆盖测试中的三种客户端行为（多密钥的 ssh-agent、`IdentitiesOnly`、认证前断开），不能证明任何客户端配置都不会被计为失败。被封过的来源再次失败时计数加重（需求第 10.1 节），管理出口一旦被封，30 天内更容易再次被封。
 - NFR-03 的幂等行为（已应用且没有漂移时再次 `apply`，退出码为 0）在 M4 实现。M2 中，已应用的主机上再次执行 `apply` 被预检拒绝，退出码为 1。
 - 应用在布置自动恢复之前被强制中断（例如断电）时，状态停在"应用中"，预检会拒绝再次应用。这时还没有改动任何配置，最多装了一部分软件包，需要管理员检查 `dpkg` 状态后手工删除状态目录。M4 实现 `rollback` 时一并处理这种情况。布置之后的中断由开机兜底单元处理。
 - sshd 重新加载的瞬间新建的 SSH 连接可能失败：研究中 Debian 12 上被重置，VT-23 中 Debian 12、13 上等待版本信息超时（第 8.4、8.5 节）。重试即可，不影响已建立的会话。M2 的测试用"失败后 1 秒重试一次"区分这种情况与登录路径中断（VT-25）。测试 VPS 上另有几次连接约 6 秒后被断开、重试即成功，原因未查明（第 8.6 节）。
 - 恢复后保留已安装的软件包（方案设计第 4.4 节）。开机恢复只恢复单元的启用状态，所以应用前启用、但当时没有运行的服务，开机后会运行。真实的新机上，受管单元一般不处于这种状态；测试环境中的两个 APT 定时器正是这种状态（第 7.2 节：测试在运行期停止了它们），开机恢复后照常运行，所以 VT-22 只比较启用状态。
 - `confirm` 的检查防的是误操作，不防有意绕过的 root（方案设计第 7.5 节）。
-- 测试中 `apt-daily-upgrade.service` 被替换为空操作（第 7.2 节），因此没有覆盖真正的无人值守升级；FR-09 的 dry-run 验证在 M3（VT-40）。
-- arm64 只作参考（需求 D26）：按需手动运行，只覆盖 matrix 和 recovery 套件，结果见附录 A；negative 套件只在 amd64 上运行（验证计划第 3.1 节的"三平台"范围）。
+- 测试中 `apt-daily-upgrade.service` 被替换为空操作（第 7.2 节），因此没有覆盖真正的无人值守升级；FR-09 只有 dry-run 的证据（VT-40）。
+- arm64 只作参考（需求 D26）：按需手动运行，覆盖 matrix、recovery 和 hardened 套件，结果见附录 A；negative 套件只在 amd64 上运行（验证计划第 3.1 节的"三平台"范围）。hardened 套件还没有在 arm64 上运行过：TCG 下 M2 的主流程就要 14～19 分钟，加上 M3 的用例和 9 个覆盖层，可能超过 60 分钟的作业上限（推断，未测量）。
 - 除第 8.6 节在一台测试 VPS 上的试运行外，结论只到 CI 虚拟机层次；真实主机验收在 M5，需要用户另行授权。
 
 ## 附录 A arm64 参考结果
