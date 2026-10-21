@@ -2,10 +2,10 @@ name: vm
 
 on:
   pull_request:
-    paths: ['bin/**', 'lib/**', 'tests/**', '.github/workflows/vm.yml']
+    paths: ['bin/**', 'lib/**', 'tests/**', 'install.sh', '.github/workflows/vm.yml']
   push:
     branches: [master]
-    paths: ['bin/**', 'lib/**', 'tests/**', '.github/workflows/vm.yml']
+    paths: ['bin/**', 'lib/**', 'tests/**', 'install.sh', '.github/workflows/vm.yml']
   workflow_dispatch:
     inputs:
       arm64:
