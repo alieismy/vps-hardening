@@ -238,8 +238,19 @@ apt_candidate() {
   bounded apt-cache policy -- "$1" 2>/dev/null | awk '$1 == "Candidate:" && !seen { print $2; seen = 1 }'
 }
 
+# Fail2ban package files that dpkg reports as changed, one path per line.
+# dpkg --verify exits 0 even when files differ; non-zero means it could not
+# check (1: not installed, 2: a read error, output possibly cut short), and
+# this returns 1. The output is captured whole: dpkg writes line by line, and
+# a reader that stops early fails the pipeline under pipefail.
+fail2ban_changed_files() {
+  local out
+  out="$(dpkg --verify fail2ban 2>/dev/null)" || return 1
+  awk 'NF { print $NF }' <<<"$out"
+}
+
 fail2ban_has_custom_config() {
-  local entry
+  local entry changed
   [ -d /etc/fail2ban ] || return 1
   if find /etc/fail2ban -name '*.local' -print -quit 2>/dev/null | grep -q .; then
     return 0
@@ -249,5 +260,8 @@ fail2ban_has_custom_config() {
     [ "$entry" = /etc/fail2ban/jail.d/defaults-debian.conf ] && continue
     return 0
   done
-  pkg_installed fail2ban && [ -n "$(dpkg --verify fail2ban 2>/dev/null)" ]
+  pkg_installed fail2ban || return 1
+  # A package that cannot be checked counts as changed (detailed design 6).
+  changed="$(fail2ban_changed_files)" || return 0
+  [ -n "$changed" ]
 }

@@ -278,7 +278,7 @@ f2b_get() {
 }
 
 verify_fail2ban() {
-  local jails responding=0 out
+  local jails responding=0 out changed
 
   if ! pkg_installed fail2ban; then
     report FAIL f2b.installed 'Fail2ban 未安装'
@@ -321,10 +321,9 @@ verify_fail2ban() {
     skip_without_state f2b.files
   fi
 
-  # Captured first: dpkg writes line by line, and with both files changed a
-  # grep -q that stops at the first line fails the pipeline under pipefail.
-  out="$(dpkg --verify fail2ban 2>/dev/null)" || true
-  if grep -qE ' /etc/fail2ban/(jail|fail2ban)\.conf$' <<<"$out"; then
+  if ! changed="$(fail2ban_changed_files)"; then
+    report FAIL f2b.mainconf '无法校验 fail2ban 软件包的文件（dpkg --verify 失败）'
+  elif grep -qxE '/etc/fail2ban/(jail|fail2ban)\.conf' <<<"$changed"; then
     report FAIL f2b.mainconf 'jail.conf 或 fail2ban.conf 被修改过'
   else
     report PASS f2b.mainconf 'jail.conf 和 fail2ban.conf 保持发行版原样'
@@ -358,9 +357,12 @@ verify_fail2ban_files() {
   extra="$(comm -23 <(find /etc/fail2ban ! -type d 2>/dev/null | sort) \
     <({ dpkg-query -L fail2ban 2>/dev/null; printf '%s\n' "$VH_F2B_JAIL" "$VH_F2B_LOCAL"; } | sort -u) | paste -sd ' ')"
   [ -z "$extra" ] || bad+=("多出的配置文件：$extra")
-  changed="$(dpkg --verify fail2ban 2>/dev/null | awk '{ print $NF }' |
-    grep -vxE '/etc/fail2ban/(jail|fail2ban)\.conf' | paste -sd ' ')" || true
-  [ -z "$changed" ] || bad+=("被修改的软件包文件：$changed")
+  if changed="$(fail2ban_changed_files)"; then
+    changed="$(awk 'NF && !/^\/etc\/fail2ban\/(jail|fail2ban)\.conf$/' <<<"$changed" | paste -sd ' ')"
+    [ -z "$changed" ] || bad+=("被修改的软件包文件：$changed")
+  else
+    bad+=('无法校验 fail2ban 软件包的文件（dpkg --verify 失败）')
+  fi
   if [ "${#bad[@]}" -gt 0 ]; then
     report FAIL f2b.files "$(join_by '；' "${bad[@]}")"
   else
