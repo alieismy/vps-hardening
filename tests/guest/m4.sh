@@ -70,12 +70,13 @@ phase_m4_setup() {
   log 'ready'
 }
 
-# VT-61: 3X-UI's files and service before the rollback. The database and the
-# Xray configuration the panel writes while it runs are left out.
+# VT-61: 3X-UI's files and service before the rollback. The database, the
+# metrics file and the Xray configuration the panel writes while it runs are
+# left out.
 xui_files() {
   find /usr/local/x-ui /usr/bin/x-ui /etc/x-ui /etc/systemd/system/x-ui.service /etc/systemd/system/x-ui.service.d \
     -xdev -type f -print0 2>/dev/null | sort -z | xargs -0 -r sha256sum |
-    grep -vE '  (/etc/x-ui/x-ui\.db(-wal|-shm)?|/usr/local/x-ui/bin/config\.json)$' || true
+    grep -vE '  (/etc/x-ui/(x-ui\.db(-wal|-shm)?|system_metrics\.gob)|/usr/local/x-ui/bin/config\.json)$' || true
 }
 
 phase_m4_xui_record() {

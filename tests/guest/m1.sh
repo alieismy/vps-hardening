@@ -110,8 +110,9 @@ expect_clean() {
 
 # Everything a read-only command must leave untouched (verification plan 4).
 # Excluded, because other processes change them during a test: rule counters
-# (the test's own SSH traffic) and the content of the 3X-UI database, which the
-# running panel writes on its own.
+# (the test's own SSH traffic) and the content of the 3X-UI database and of its
+# metrics file, which the running panel writes on its own (the metrics file
+# every minute).
 snapshot() {
   local out="$phase_dir/snap-$1.txt" unit tool
   {
@@ -119,7 +120,7 @@ snapshot() {
     find /etc -xdev -printf '%M %u:%g %p -> %l\n' | sort || true
     echo '== /etc content'
     find /etc -xdev -type f -print0 | sort -z | xargs -0 -r sha256sum |
-      grep -vE '  /etc/x-ui/x-ui\.db(-wal|-shm)?$' || true
+      grep -vE '  /etc/x-ui/(x-ui\.db(-wal|-shm)?|system_metrics\.gob)$' || true
     echo '== ssh keys'
     find /root/.ssh /home -xdev -path '*/.ssh/*' -type f -print0 | sort -z | xargs -0 -r sha256sum || true
     echo '== 3x-ui files'
