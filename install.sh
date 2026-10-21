@@ -94,8 +94,9 @@ file_sha256() {
 manifest_valid() {
   local name
   [ "$(awk 'NF' "$1" | wc -l)" -eq "${#assets[@]}" ] || return 1
+  # No regex interval: mawk on Debian 12 (1.3.4 20200120) does not support {64}.
   for name in "${assets[@]}"; do
-    [ "$(awk -v name="$name" '$2 == name && $1 ~ /^[0-9a-f]{64}$/ && NF == 2 { n++ } END { print n + 0 }' "$1")" -eq 1 ] ||
+    [ "$(awk -v name="$name" '$2 == name && length($1) == 64 && $1 !~ /[^0-9a-f]/ && NF == 2 { n++ } END { print n + 0 }' "$1")" -eq 1 ] ||
       return 1
   done
 }
