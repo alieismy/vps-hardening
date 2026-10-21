@@ -64,7 +64,7 @@ apply_again() {
     printf '\n已应用，全部通过，未做任何变更。\n'
     exit "$VH_EXIT_OK"
   fi
-  printf '\n已应用，但有不符合项，未做任何变更。请先处理漂移，或执行 vps-hardening rollback 后重新应用。\n'
+  printf '\n已应用，但有不符合项，未做任何变更。请按上面的不符合项处理，或执行 vps-hardening rollback 后重新应用。\n'
   exit "$VH_EXIT_FAIL"
 }
 
