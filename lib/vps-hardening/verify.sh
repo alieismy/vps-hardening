@@ -7,6 +7,12 @@
 cmd_verify() {
   [ "$#" -eq 0 ] || usage_error "verify 不接受参数：$1"
   vh_tmp_init
+  run_verify_checks
+  finish_checks
+}
+
+# Also run by apply on an applied host (NFR-03).
+run_verify_checks() {
   if verify_gate; then
     verify_state
     verify_accounts
@@ -18,7 +24,6 @@ cmd_verify() {
     verify_boundary
     verify_reboot
   fi
-  finish_checks
 }
 
 verify_gate() {
@@ -38,10 +43,11 @@ skip_without_state() {
   report SKIP "$1" '没有应用记录，无法核对声明值'
 }
 
-# True when apply finished, confirmed or not: its declared values are on record.
+# True when apply finished, confirmed or not: its declared values are on
+# record. During a port change the record holds the new ports.
 have_record() {
   case "$(state_get status)" in
-    applied | pending) return 0 ;;
+    applied | pending | ports-pending) return 0 ;;
   esac
   return 1
 }
@@ -61,8 +67,14 @@ same_as_applied() {
   [ -n "$digest" ] && [ "$(file_digest "$1")" = "$digest" ]
 }
 
+# Minutes left until the automatic restore, rounded up.
+minutes_left() {
+  local deadline
+  deadline="$(state_get deadline "$VH_PENDING_FILE")"
+  printf '%s\n' "$(((${deadline:-0} - $(date +%s) + 59) / 60))"
+}
+
 verify_state() {
-  local deadline left
   if [ ! -e "$VH_STATE_DIR" ]; then
     report FAIL state '未应用：没有本工具的应用记录'
     return 0
@@ -70,9 +82,10 @@ verify_state() {
   case "$(state_get status)" in
     applied) report PASS state "已应用，确认于 $(state_get confirmed_at)" ;;
     pending)
-      deadline="$(state_get deadline "$VH_PENDING_FILE")"
-      left=$(((${deadline:-0} - $(date +%s) + 59) / 60))
-      report WARN state "待确认：约 $left 分钟后自动恢复，请从新的 SSH 会话以 root 执行 confirm"
+      report WARN state "待确认：约 $(minutes_left) 分钟后自动恢复，请从新的 SSH 会话以 root 执行 confirm"
+      ;;
+    ports-pending)
+      report WARN state "端口变更待确认：约 $(minutes_left) 分钟后恢复原端口，请从新的 SSH 会话以 root 执行 confirm"
       ;;
     rolled-back) report FAIL state "已回滚：$(state_get rollback_reason)" ;;
     *) report FAIL state "状态为 $(state_get status | sed 's/^$/未知/')，详见 $VH_LOG_FILE" ;;

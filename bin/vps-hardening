@@ -2,7 +2,7 @@
 # shellcheck source-path=SCRIPTDIR/../lib/vps-hardening
 # vps-hardening: baseline security hardening for a new Debian/Ubuntu VPS.
 # See docs/solution-design.md for the command set and docs/detailed-design.md
-# for the contract of the commands implemented so far.
+# for the contracts of the commands.
 
 set -Eeuo pipefail
 umask 077
@@ -31,6 +31,9 @@ fi
 . "$VH_LIB_DIR/state.sh"
 . "$VH_LIB_DIR/pending.sh"
 . "$VH_LIB_DIR/apply.sh"
+. "$VH_LIB_DIR/status.sh"
+. "$VH_LIB_DIR/rollback.sh"
+. "$VH_LIB_DIR/ports.sh"
 
 # An unexpected command failure must not look like a FAIL result (exit 1).
 # Only the main shell decides: inside $(...) or a pipeline the trap would also
@@ -53,11 +56,11 @@ usage() {
 命令：
   preflight   只读预检：检查平台、输入和新机条件，不改变系统
   verify      只读验证：逐项核对加固结果，不改变系统
-  apply       应用加固（交互执行），结束后进入待确认
-  confirm     在新的 SSH 会话中以 root 确认加固结果
-  status      显示状态（尚未实现，里程碑 M4）
-  rollback    手工回滚（尚未实现，里程碑 M4）
-  ports       变更公开端口（尚未实现，里程碑 M4）
+  apply       应用加固（交互执行），结束后进入待确认；已应用时只核对，不做变更
+  confirm     在新的 SSH 会话中以 root 确认 apply 或 ports 的结果
+  status      显示状态、变更记录、确认截止时间和面板隧道提示（只读）
+  rollback    手工回滚到应用前的配置（交互执行）
+  ports       增减公开端口（交互执行），结束后进入待确认
 
 preflight 和 apply 的参数：
   --panel-port PORT        3X-UI 面板端口，只经 SSH 隧道访问（默认 2053）
@@ -65,9 +68,15 @@ preflight 和 apply 的参数：
                            可重复（例如 --open 443/tcp）
   --confirm-timeout MIN    确认时限，3～60 分钟（默认 10）
 
+ports 的参数（--add 和 --remove 至少一个，先撤销后增加）：
+  --add PORT/PROTO[/FAM]     增加公开端口，可重复
+  --remove PORT/PROTO[/FAM]  撤销已声明的公开端口，可重复
+  --confirm-timeout MIN      确认时限，3～60 分钟（默认 10）
+
 root 是管理账户，只能用密钥登录；预检要求 root 已有可用的公钥。
-加固前请先执行 apt update && apt full-upgrade 并重启。apply 之后须在确认时限内，
-从新的 SSH 会话以 root 执行 confirm；到期未确认或期间重启都会自动恢复。
+加固前请先执行 apt update && apt full-upgrade 并重启。apply 和 ports 之后须在
+确认时限内，从新的 SSH 会话以 root 执行 confirm；到期未确认或期间重启都会自动恢复。
+rollback 恢复本工具修改过的文件、UFW 和服务状态，本工具安装的软件包保留。
 
 其他：
   --help       显示本帮助
@@ -81,10 +90,6 @@ require_tty() {
   [ -t 0 ] || usage_error "$1 必须在交互终端中运行"
 }
 
-not_implemented() {
-  usage_error "$1 尚未实现（计划在里程碑 $2 实现）"
-}
-
 main() {
   local cmd="${1-}"
   [ "$#" -eq 0 ] || shift
@@ -96,9 +101,17 @@ main() {
       cmd_apply "$@"
       ;;
     confirm) cmd_confirm "$@" ;;
-    # Run by the systemd units that apply arms; not for interactive use.
+    status) cmd_status "$@" ;;
+    rollback)
+      require_tty rollback
+      cmd_rollback "$@"
+      ;;
+    ports)
+      require_tty ports
+      cmd_ports "$@"
+      ;;
+    # Run by the systemd units that apply and ports arm; not for interactive use.
     _restore) cmd_restore "$@" ;;
-    status | rollback | ports) not_implemented "$cmd" M4 ;;
     --version) printf 'vps-hardening %s\n' "$VH_VERSION" ;;
     --help | -h) usage ;;
     '') usage >&2; exit "$VH_EXIT_USAGE" ;;

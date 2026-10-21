@@ -581,7 +581,8 @@ phase_m2_rebooted() {
   same_as_baseline sysctl.txt qdisc.txt listen22.txt
 }
 
-# m2-rolled-back MODE: VT-20 (timeout), VT-22 (boot) and VT-23 (failure).
+# m2-rolled-back MODE: VT-20 (timeout), VT-22 (boot), VT-23 (failure), and
+# VT-60 and VT-61 (manual, the rollback command).
 phase_m2_rolled_back() {
   local mode="${1-}" reason user
   user="$(default_user)"
@@ -589,6 +590,7 @@ phase_m2_rolled_back() {
     timeout) reason='确认超时' ;;
     boot) reason='待确认期间重启' ;;
     failure) reason='应用失败' ;;
+    manual) reason='手工回滚' ;;
     *) fail "unknown restore mode: $mode" ;;
   esac
   cloud-init status --wait >/dev/null 2>&1 || true
