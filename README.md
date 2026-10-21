@@ -4,7 +4,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (mil
 
 为 Debian/Ubuntu VPS 提供基础安全加固，包括：SSH 只允许密钥登录（root 作为管理账户，只能用密钥登录）、UFW 只开放必要端口、Fail2ban，以及自动安全更新。目标是在不明显增加日常管理负担的前提下缩小暴露面，同时避免把管理员锁在服务器外。
 
-**当前状态：开发中，尚无可用版本。** 已完成里程碑 M1～M3：只读的 `preflight`（预检）和 `verify`（验证），`apply`（应用）、`confirm`（确认）和自动恢复，以及 Fail2ban 生效值、自动更新和与 3X-UI v3.7.0 共存的验证，都在三个平台的 amd64 虚拟机测试中通过（arm64 作为参考，按需测试）。尚未完成：手工回滚、端口变更和发布包（M4），真实主机验收（M5）。目前只在 CI 虚拟机和一台测试 VPS 上验证过（[详细设计第 8.6 节](docs/detailed-design.md#86-测试-vps-上的试运行)、[第 8.8 节](docs/detailed-design.md#88-测试-vps-上的-m3-核对)、[第 8.9 节](docs/detailed-design.md#89-测试-vps-上的-d27-顺序演练)），不要用于生产 VPS。文档：[需求规格说明](docs/requirements.md)（v1.5 草案）、[方案设计](docs/solution-design.md)（v1.2）、[验证计划](docs/verification-plan.md)（v1.3 草案）、[详细设计](docs/detailed-design.md)（v0.4 草案，覆盖 M1～M3）；草案待评审，此前的版本已确认。
+**当前状态：开发中，尚无可用版本。** 已完成里程碑 M1～M3：只读的 `preflight`（预检）和 `verify`（验证），`apply`（应用）、`confirm`（确认）和自动恢复，以及 Fail2ban 生效值、自动更新和与 3X-UI v3.7.0 共存的验证，都在三个平台的 amd64 虚拟机测试中通过（arm64 作为参考，按需测试）。尚未完成：手工回滚、端口变更和发布包（M4），真实主机验收（M5）。目前只在 CI 虚拟机和一台测试 VPS 上验证过（[详细设计第 8.6 节](docs/detailed-design.md#86-测试-vps-上的试运行)、[第 8.8 节](docs/detailed-design.md#88-测试-vps-上的-m3-核对)、[第 8.9 节](docs/detailed-design.md#89-测试-vps-上的-d27-顺序演练)），不要用于生产 VPS。文档：[需求规格说明](docs/requirements.md)（v1.5）、[方案设计](docs/solution-design.md)（v1.2）、[验证计划](docs/verification-plan.md)（v1.3）、[详细设计](docs/detailed-design.md)（v0.4，覆盖 M1～M3），均已确认。
 
 ## 已确认的范围（2026-10-10，2026-10-13 补充，2026-10-20 修改）
 
@@ -38,7 +38,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (mil
 
 ## 待定事项
 
-M3 的文档待评审：需求 v1.5 草案、验证计划 v1.3 草案（VT-51 的漂移清单、VO-1 的摘要）、详细设计 v0.4 草案（M3 的检查项、测试和运行证据）。其中三项已经确认（需求 D30）：3X-UI 的"安装防火墙"在 UFW 已启用时不做任何改动，据此更正需求第 7.2 节和 FR-10 的验收（D29）；增加 `f2b.config`、`f2b.files`、`uu.dropin` 三个检查项；Fail2ban 对封禁过的来源加重计数（需求第 10.1 节、R-3）。
+需求 v1.5、验证计划 v1.3 和详细设计 v0.4 已确认（2026-10-20，需求 D31）。这一轮确认的内容：3X-UI 的"安装防火墙"在 UFW 已启用时不做任何改动，据此更正需求第 7.2 节和 FR-10 的验收（需求 D29）；增加 `f2b.config`、`f2b.files`、`uu.dropin` 三个检查项；Fail2ban 对封禁过的来源加重计数（需求第 10.1 节、R-3）。这三项由需求 D30 确认。
 
 需求 v1.4、方案设计 v1.2、验证计划 v1.2 和详细设计 v0.3 已确认（2026-10-20，需求 D28）。这一轮确认的内容：ARM64 改为按需运行的参考（需求 D26）；加固、调优和 3X-UI 的执行顺序（需求 D27）；Fail2ban 和自动更新的配置写入提前到 M2（[详细设计第 1 节](docs/detailed-design.md#1-范围)）；连续探测失败后重试一次，两次都失败才算中断（VT-25）。此前确认的 root 只用密钥登录、Fail2ban 参数等见上方的范围表。另有一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
 
