@@ -67,6 +67,15 @@ same_as_applied() {
   [ -n "$digest" ] && [ "$(file_digest "$1")" = "$digest" ]
 }
 
+# The UFW user rules files that differ from the record. UFW loads every line of
+# them, but `ufw status` lists only the rules it wrote with a tuple comment.
+ufw_user_files_changed() {
+  local path
+  for path in "${VH_PORT_FILES[@]}"; do
+    same_as_applied "$path" || printf '%s\n' "$path"
+  done
+}
+
 # Minutes left until the automatic restore, rounded up.
 minutes_left() {
   local deadline
@@ -221,6 +230,7 @@ verify_ufw() {
     verify_ufw_record
   else
     skip_without_state ufw.rules
+    skip_without_state ufw.userrules
     skip_without_state ufw.panel
   fi
 }
@@ -230,13 +240,19 @@ verify_ufw() {
 # UFW before apply must not count as declared. During a port change the record
 # holds the new ports.
 verify_ufw_record() {
-  local panel open=()
+  local panel open=() changed=()
   read -r -a open <<<"$(state_get open)"
   expected_rule_tokens 22/tcp/both "${open[@]}" >"$VH_TMP/ufw.expected"
   if diff "$VH_TMP/ufw.expected" <(ufw_status_rules | ufw_rule_tokens) >"$VH_TMP/ufw.diff"; then
     report PASS ufw.rules "规则与声明一致（$(wc -l <"$VH_TMP/ufw.expected") 条，IPv4 和 IPv6 分别计）"
   else
     report FAIL ufw.rules "规则与声明不一致：$(grep -E '^[<>]' "$VH_TMP/ufw.diff" 2>/dev/null | sed 's/^</缺少 /; s/^>/多出 /' | paste -sd ';')"
+  fi
+  mapfile -t changed < <(ufw_user_files_changed)
+  if [ "${#changed[@]}" -gt 0 ]; then
+    report FAIL ufw.userrules "$(join_by '、' "${changed[@]}") 与记录不一致：直接写入的规则不显示在 ufw status 中"
+  else
+    report PASS ufw.userrules 'user.rules 和 user6.rules 与记录一致'
   fi
   panel="$(state_get panel_port)"
   if ufw_added_rules | ufw_rules_allow_port "$panel"; then

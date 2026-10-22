@@ -55,7 +55,7 @@ LIFECYCLE_OPEN = '--open 443/tcp --open 2096/tcp/ipv6 --open 8443/udp/ipv4'
 HARDENED_OPEN = '--open 443/tcp --open 2096/tcp'
 # VT-51, one overlay each; tests/guest/m3.sh injects them.
 DRIFTS = ('firewall-install', 'firewall-reinstall', 'iplimit', 'listen-all', 'bbr', 'ufw-rule', 'nftables',
-          'sshd-dropin', 'sshd-match', 'ufw-framework', 'reboot-required')
+          'sshd-dropin', 'sshd-match', 'ufw-framework', 'ufw-userrules', 'reboot-required')
 APPLY_PROMPT = '两项都满足请输入 yes'.encode()
 APPLIED = '加固已应用，等待确认'
 PORTS_CHANGED = '端口变更已生效，等待确认'
@@ -905,7 +905,8 @@ def vt64(ctx, guest):
     m4('m4-unchanged', 'other', 'm4-record')
     m4('m4-ufw-drift')
     status, output = guest.interactive('vt64-apply-drift', f'{VH} apply {HARDENED_OPEN}; echo "apply-rc=$?"')
-    check('apply-rc=1' in output and '[FAIL] ufw.rules' in output, 'VT-64: apply on a drifted host is refused')
+    check('apply-rc=1' in output and '[FAIL] ufw.rules' in output and '[FAIL] ufw.userrules' in output,
+          'VT-64: apply on a drifted host is refused')
     m4('m4-unchanged', 'drift', 'm4-ufw-drift')
 
 

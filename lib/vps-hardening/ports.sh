@@ -80,6 +80,7 @@ ports_compute() {
 
 # The change starts from the declared rules, with 22/tcp allowed.
 ports_checks() {
+  local changed=()
   if ufw_active; then
     report PASS ports.ufw 'UFW 已启用'
   else
@@ -89,6 +90,15 @@ ports_checks() {
     report PASS ports.rules 'UFW 规则与声明一致'
   else
     report FAIL ports.rules 'UFW 规则与声明不一致：请先用 verify 查看并处理差异'
+  fi
+  # ufw rewrites both files from the rules it lists, so a change would drop a
+  # line written there directly and record the result, while the line stays
+  # loaded until UFW next starts.
+  mapfile -t changed < <(ufw_user_files_changed)
+  if [ "${#changed[@]}" -gt 0 ]; then
+    report FAIL ports.userrules "$(join_by '、' "${changed[@]}") 与记录不一致：请先用 verify 查看并处理差异"
+  else
+    report PASS ports.userrules 'user.rules 和 user6.rules 与记录一致'
   fi
   if ufw_added_rules | ufw_rules_allow_port 22; then
     report PASS ports.ssh 'UFW 放行 22/tcp'

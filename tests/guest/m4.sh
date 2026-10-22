@@ -127,10 +127,19 @@ phase_m4_ports_refused() {
   capture remove-undeclared on_tty "$VH" ports --remove 8080/tcp
   expect_rc remove-undeclared 2
   expect_text remove-undeclared '不是已声明的公开端口'
+  # A line written straight into a rules file: the change would rewrite the
+  # file without it while the line stays loaded.
+  cp -p /etc/ufw/user6.rules "$PRIVATE/user6.rules"
+  sed -i '/^COMMIT$/i -A ufw6-user-input -p tcp --dport 8081 -j ACCEPT' /etc/ufw/user6.rules
+  capture userrules on_tty "$VH" ports --add 8443/tcp
+  cp -p "$PRIVATE/user6.rules" /etc/ufw/user6.rules
+  expect_rc userrules 1
+  expect_report userrules FAIL ports.userrules
+  expect_report userrules PASS ports.rules
   capture cancelled on_tty "$VH" ports --add 8443/tcp
   expect_rc cancelled 1
   expect_text cancelled '已取消，未做任何变更'
-  for name in no-tty add-ssh add-panel add-http add-declared remove-undeclared cancelled; do
+  for name in no-tty add-ssh add-panel add-http add-declared remove-undeclared userrules cancelled; do
     expect_clean "$name"
   done
   tool_record >"$phase_dir/record-after.txt"
