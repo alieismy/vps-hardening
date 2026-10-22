@@ -1,10 +1,10 @@
 # VPS Hardening
 
-Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (milestones M1–M3 done: read-only checks, apply with automatic restore, Fail2ban values and coexistence with 3X-UI; M4 — status, rollback, port changes and the release installer — implemented and passing in CI VMs, under review; tested in CI VMs and on one test VPS) — no usable release yet.**
+Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (milestones M1–M3 done: read-only checks, apply with automatic restore, Fail2ban values and coexistence with 3X-UI; M4 — status, rollback, port changes and the release installer — implemented and passing in CI VMs, under review together with fixes for gaps found in the requirements review; tested in CI VMs and on one test VPS) — no usable release yet.**
 
 为 Debian/Ubuntu VPS 提供基础安全加固，包括：SSH 只允许密钥登录（root 作为管理账户，只能用密钥登录）、UFW 只开放必要端口、Fail2ban，以及自动安全更新。目标是在不明显增加日常管理负担的前提下缩小暴露面，同时避免把管理员锁在服务器外。
 
-**当前状态：开发中，尚无可用版本。** 已完成里程碑 M1～M3：只读的 `preflight`（预检）和 `verify`（验证），`apply`（应用）、`confirm`（确认）和自动恢复，以及 Fail2ban 生效值、自动更新和与 3X-UI 共存的验证。M4 已实现，待评审：`status`（状态）、`rollback`（手工回滚）、`ports`（端口变更）、已应用的主机上再次 `apply` 只做核对，以及发行版安装脚本；3X-UI 共存基线改为 v3.10.2。以上都在三个平台的 amd64 虚拟机测试中通过（arm64 作为参考，按需测试）。尚未完成：发布预发行版（M4 的最后一步）、真实主机验收（M5）。目前只在 CI 虚拟机和一台测试 VPS 上验证过（[详细设计第 8.6 节](docs/detailed-design.md#86-测试-vps-上的试运行)、[第 8.8 节](docs/detailed-design.md#88-测试-vps-上的-m3-核对)、[第 8.9 节](docs/detailed-design.md#89-测试-vps-上的-d27-顺序演练)、[第 8.11 节](docs/detailed-design.md#811-测试-vps-上的-m4-核对)），不要用于生产 VPS。文档：[需求规格说明](docs/requirements.md)（v1.6 草案）、[方案设计](docs/solution-design.md)（v1.3 草案）、[验证计划](docs/verification-plan.md)（v1.4 草案）、[详细设计](docs/detailed-design.md)（v0.5 草案，覆盖 M1～M4），待评审；上一版（需求 v1.5、方案设计 v1.2、验证计划 v1.3、详细设计 v0.4）已确认。
+**当前状态：开发中，尚无可用版本。** 已完成里程碑 M1～M3：只读的 `preflight`（预检）和 `verify`（验证），`apply`（应用）、`confirm`（确认）和自动恢复，以及 Fail2ban 生效值、自动更新和与 3X-UI 共存的验证。M4 已实现，待评审：`status`（状态）、`rollback`（手工回滚）、`ports`（端口变更）、已应用的主机上再次 `apply` 只做核对，以及发行版安装脚本；3X-UI 共存基线改为 v3.10.2。评审需求时发现的三处缺口已修复，同样待评审：sshd 配置中的 `Match` 块、`ufw status` 不显示的规则、规则的基线（需求 D34～D36）。以上都在三个平台的 amd64 虚拟机测试中通过（arm64 作为参考，按需测试）。尚未完成：发布预发行版（M4 的最后一步）、真实主机验收（M5）。目前只在 CI 虚拟机和一台测试 VPS 上验证过（[详细设计第 8.6 节](docs/detailed-design.md#86-测试-vps-上的试运行)、[第 8.8 节](docs/detailed-design.md#88-测试-vps-上的-m3-核对)、[第 8.9 节](docs/detailed-design.md#89-测试-vps-上的-d27-顺序演练)、[第 8.11 节](docs/detailed-design.md#811-测试-vps-上的-m4-核对)），不要用于生产 VPS。文档：[需求规格说明](docs/requirements.md)（v1.7 草案）、[方案设计](docs/solution-design.md)（v1.4 草案）、[验证计划](docs/verification-plan.md)（v1.5 草案）、[详细设计](docs/detailed-design.md)（v0.6 草案，覆盖 M1～M4 和修复），待评审；上一版（需求 v1.5、方案设计 v1.2、验证计划 v1.3、详细设计 v0.4）已确认。
 
 ## 已确认的范围（2026-10-10，2026-10-13 补充，2026-10-20、2026-10-21 修改）
 
@@ -39,13 +39,16 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: in development (mil
 
 ## 待定事项
 
-需求 v1.6、方案设计 v1.3、验证计划 v1.4 和详细设计 v0.5 为草案，待评审。这一轮的内容：3X-UI 共存基线由 v3.7.0 改为 v3.10.2（需求 D32，用户于 2026-10-21 选定；测试 VPS 上先卸载 3.7.0 再安装，需求 D33）；M4 的命令契约、测试和运行证据（[详细设计第 8.10～8.12 节](docs/detailed-design.md#810-m4-运行结果)）。
+需求 v1.7、方案设计 v1.4、验证计划 v1.5 和详细设计 v0.6 为草案，待评审。这一轮的内容：
+
+- 3X-UI 共存基线由 v3.7.0 改为 v3.10.2（需求 D32，用户于 2026-10-21 选定；测试 VPS 上先卸载 3.7.0 再安装，需求 D33）；M4 的命令契约、测试和运行证据（[详细设计第 8.10～8.12 节](docs/detailed-design.md#810-m4-运行结果)）。需求 v1.6 草案只就这两项决定评审（需求 U21）。
+- 修复（需求 D34～D36，用户于 2026-10-22 决定）：评审需求 v1.6 草案时发现三处自 M2 起就有的缺口。修复后，预检和 `verify` 拒绝 sshd 配置中的 `Match` 块；UFW 未启用时，预检也拒绝已添加的规则和被改动的 before/after 框架文件，`verify` 另外比较框架文件；规则改为与声明比较；80/tcp 在输入阶段就拒绝（[详细设计第 1 节](docs/detailed-design.md#1-范围)、[第 8.13 节](docs/detailed-design.md#813-修复的运行结果)）。
 
 需求 v1.5、验证计划 v1.3 和详细设计 v0.4 已确认（2026-10-20，需求 D31）。这一轮确认的内容：3X-UI 的"安装防火墙"在 UFW 已启用时不做任何改动，据此更正需求第 7.2 节和 FR-10 的验收（需求 D29）；增加 `f2b.config`、`f2b.files`、`uu.dropin` 三个检查项；Fail2ban 对封禁过的来源加重计数（需求第 10.1 节、R-3）。这三项由需求 D30 确认。
 
 需求 v1.4、方案设计 v1.2、验证计划 v1.2 和详细设计 v0.3 已确认（2026-10-20，需求 D28）。这一轮确认的内容：ARM64 改为按需运行的参考（需求 D26）；加固、调优和 3X-UI 的执行顺序（需求 D27）；Fail2ban 和自动更新的配置写入提前到 M2（[详细设计第 1 节](docs/detailed-design.md#1-范围)）；连续探测失败后重试一次，两次都失败才算中断（VT-25）。此前确认的 root 只用密钥登录、Fail2ban 参数等见上方的范围表。另有一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
 
-下一步：评审上述文档和 M4 的拉取请求；合并后发布第一个预发行版，并从公开地址回验安装脚本（VT-72 的公开部分）。之后是真实主机验收（M5）。
+下一步：评审上述文档、M4 的拉取请求（#10）和修复的拉取请求（#11）；两者合并后发布第一个预发行版，并从公开地址回验安装脚本（VT-72 的公开部分）。之后是真实主机验收（M5）。
 
 ## 配套仓库
 
