@@ -23,6 +23,7 @@ readonly LIB_PARENT=/usr/local/lib
 readonly LIB_DIR="$LIB_PARENT/vps-hardening"
 readonly LOCK_FILE=/run/vps-hardening.lock
 readonly PENDING_FILE=/var/lib/vps-hardening/pending
+readonly STATE_FILE=/var/lib/vps-hardening/state
 
 # Release assets, flat. The first is the command; the rest are its modules.
 assets=(
@@ -222,7 +223,12 @@ main() {
   got="$("$BIN_PATH" --version)" || die '安装后无法运行 vps-hardening --version'
   [ "$got" = "vps-hardening $INSTALLER_VERSION" ] || die "安装后的版本为 $got"
   info "安装完成：$BIN_PATH（模块在 $LIB_DIR），版本 $INSTALLER_VERSION"
-  info '安装没有执行 preflight 或 apply。下一步：vps-hardening preflight --open <公开端口>'
+  # On a host the tool has applied, preflight would only refuse.
+  if grep -qx 'status=applied' "$STATE_FILE" 2>/dev/null; then
+    info '安装没有改变已应用的配置。下一步：vps-hardening verify 核对配置，vps-hardening status 查看记录'
+  else
+    info '安装没有执行 preflight 或 apply。下一步：vps-hardening preflight --open <公开端口>'
+  fi
 }
 
 main "$@"

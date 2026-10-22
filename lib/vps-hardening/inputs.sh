@@ -74,10 +74,11 @@ split_port_spec() {
   is_port "$VH_SPEC_PORT" || usage_error "公开端口超出范围：$1"
 }
 
-# check_public_port PANEL: the port in VH_SPEC_PORT may be opened (FR-14, D16).
+# check_public_port PANEL: the port in VH_SPEC_PORT may be opened (FR-14, D14, D16).
 check_public_port() {
   [ "$VH_SPEC_PORT" -ne 22 ] || usage_error '公开端口不能是 22：SSH 端口总是放行'
   [ "$VH_SPEC_PORT" -ne "$1" ] || usage_error "公开端口 $VH_SPEC_PORT 与面板端口相同；面板只经 SSH 隧道访问，不能开放"
+  [ "$VH_SPEC_PORT/$VH_SPEC_PROTO" != 80/tcp ] || usage_error '公开端口不能是 80/tcp：证书用 DNS-01 签发，80/tcp 不开放（D14）'
 }
 
 validate_timeout() {

@@ -54,7 +54,7 @@ preflight_inputs() {
 }
 
 preflight_new_host() {
-  local found=()
+  local found=() rules changed=()
 
   if unit_exists x-ui.service || [ -e /usr/local/x-ui ]; then
     report FAIL new-host.xui '已安装 3X-UI（存在 x-ui.service 或 /usr/local/x-ui）：存量主机不在支持范围内（D6）'
@@ -74,12 +74,26 @@ preflight_new_host() {
     report PASS new-host.container '没有安装 Docker 或 Podman'
   fi
 
+  # `ufw allow` also works while UFW is inactive; such rules would take effect
+  # with apply's `ufw enable`, outside the declaration.
   if ufw_active; then
     report FAIL new-host.ufw 'UFW 已启用：存量主机不在支持范围内（D6）'
-  elif have ufw; then
-    report PASS new-host.ufw 'UFW 已安装但未启用'
-  else
+  elif ! have ufw; then
     report PASS new-host.ufw 'UFW 未安装'
+  else
+    if ! rules="$(ufw_added_rules)"; then
+      report FAIL new-host.ufw '无法读取 UFW 已添加的规则（ufw show added）'
+    elif [ -n "$rules" ]; then
+      report FAIL new-host.ufw "UFW 未启用，但已有 $(printf '%s\n' "$rules" | wc -l) 条规则（ufw show added）：存量主机不在支持范围内（D6）"
+    else
+      report PASS new-host.ufw 'UFW 已安装但未启用，没有已添加的规则'
+    fi
+    mapfile -t changed < <(ufw_framework_changed)
+    if [ "${#changed[@]}" -gt 0 ]; then
+      report FAIL new-host.ufw-framework "$(join_by '、' "${changed[@]}") 与软件包的原始文件不同，其中的规则不显示在 ufw status 中：存量主机不在支持范围内（D6）"
+    else
+      report PASS new-host.ufw-framework 'UFW 的 before/after 文件与软件包的原始文件相同'
+    fi
   fi
 
   if fail2ban_has_custom_config; then
@@ -143,6 +157,7 @@ preflight_sshd() {
     report PASS sshd.dropin-order "$VH_SSHD_DROPIN_NAME 将先于其他片段生效"
   fi
 
+  check_sshd_match sshd.match
   check_root_keys
 }
 
@@ -189,6 +204,68 @@ sshd_file_sets_managed() {
     /^[[:space:]]*(#|$)/ { next }
     { key = tolower($1); if (key == "match" || index(managed, " " key " ") > 0) { hit = 1; exit } }
     END { exit hit ? 0 : 1 }
+  ' "$1"
+}
+
+# check_sshd_match ID: sshd -T evaluates one placeholder connection, so it
+# cannot vouch for a Match block that other connections meet, such as one by
+# source address. No active Match is supported anywhere in the config (FR-04).
+check_sshd_match() {
+  local file found=()
+  while IFS= read -r file; do
+    if awk '
+      /^[[:space:]]*(#|$)/ { next }
+      { key = tolower($1); sub(/=.*/, "", key); if (key == "match") { hit = 1; exit } }
+      END { exit hit ? 0 : 1 }
+    ' "$file"; then
+      found+=("$file")
+    fi
+  done < <(sshd_config_files)
+  if [ "${#found[@]}" -gt 0 ]; then
+    report FAIL "$1" "$(join_by '、' "${found[@]}") 中有 Match 块：sshd -T 只能按一个连接求值，无法确认它对所有来源都只允许密钥登录，不支持（FR-04）"
+  else
+    report PASS "$1" 'sshd 配置中没有 Match 块'
+  fi
+}
+
+# The main sshd config and, recursively, every file an Include names. sshd
+# resolves a relative Include under /etc/ssh.
+sshd_config_files() {
+  local queue=("$VH_SSHD_MAIN") listed=' ' file pattern path
+  while [ "${#queue[@]}" -gt 0 ]; do
+    file="${queue[0]}"
+    queue=("${queue[@]:1}")
+    case "$listed" in
+      *" $file "*) continue ;;
+    esac
+    listed="$listed$file "
+    printf '%s\n' "$file"
+    while IFS= read -r pattern; do
+      [[ "$pattern" == /* ]] || pattern="${VH_SSHD_MAIN%/*}/$pattern"
+      while IFS= read -r path; do
+        if [ -f "$path" ]; then
+          queue+=("$path")
+        fi
+      done < <(compgen -G "$pattern")
+    done < <(sshd_includes "$file")
+  done
+}
+
+# The arguments of the Include lines of one sshd config file, one per line.
+sshd_includes() {
+  awk '
+    /^[[:space:]]*(#|$)/ { next }
+    {
+      line = $0
+      sub(/^[[:space:]]+/, "", line)
+      if (tolower(line) !~ /^include([[:space:]]|=)/) next
+      sub(/^[^[:space:]=]+[[:space:]]*=?[[:space:]]*/, "", line)
+      n = split(line, args, /[[:space:]]+/)
+      for (i = 1; i <= n; i++) {
+        gsub(/"/, "", args[i])
+        if (args[i] != "") print args[i]
+      }
+    }
   ' "$1"
 }
 

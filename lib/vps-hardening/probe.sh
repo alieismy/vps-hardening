@@ -190,6 +190,15 @@ ufw_status_rules() {
   bounded ufw status 2>/dev/null | awk 'seen && NF { print } /^--/ { seen = 1 }'
 }
 
+# The UFW files whose rules `ufw status` does not show and that differ from
+# the package's originals in /usr/share/ufw (FR-06), one per line.
+ufw_framework_changed() {
+  local name
+  for name in "${VH_UFW_FRAMEWORK[@]}"; do
+    cmp -s -- "/etc/ufw/$name" "/usr/share/ufw/$name" || printf '/etc/ufw/%s\n' "$name"
+  done
+}
+
 # `apt-config dump` output, cached. Readers consume all of it: an early exit
 # would kill apt-config with SIGPIPE and fail the pipeline under pipefail.
 apt_config_dump() {

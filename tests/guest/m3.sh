@@ -513,6 +513,17 @@ phase_m3_drift() {
       printf '# drift\n' >>/etc/ssh/sshd_config.d/00-vps-hardening.conf
       want_fail='ssh.dropin'
       ;;
+    sshd-match)
+      # Passwords for one source range; sshd -T for the placeholder connection
+      # still says no, so ssh.passwordauthentication alone would pass (FR-04).
+      printf 'Match Address 198.51.100.0/24\n    PasswordAuthentication yes\n' >/etc/ssh/sshd_config.d/99-match.conf
+      want_fail='ssh.match'
+      ;;
+    ufw-framework)
+      # A rule `ufw status` does not show; the next UFW reload loads it (FR-06).
+      sed -i '/^COMMIT$/i -A ufw6-before-input -p tcp --dport 8081 -j ACCEPT' /etc/ufw/before6.rules
+      want_fail='ufw.framework'
+      ;;
     reboot-required)
       touch /var/run/reboot-required
       want_rc=0
