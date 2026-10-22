@@ -47,6 +47,8 @@ temp_dir=''
 stage_dir=''
 old_dir=''
 bin_tmp=''
+old_bin=''
+swapping=0
 
 info() { printf '[vps-hardening-install] %s\n' "$*"; }
 die() {
@@ -59,13 +61,42 @@ usage_die() {
   exit 2
 }
 
-# A failure between the two renames puts the previous modules back.
+# Put back the command and modules from before this run; 1 if a step fails.
+# Whether a rename happened is read from the files, not from a variable, so a
+# signal right after a rename is handled the same way.
+restore_previous() {
+  if [ ! -e "$bin_tmp" ]; then
+    if [ -n "$old_bin" ]; then
+      mv -f -- "$old_bin" "$BIN_PATH" || return 1
+    else
+      rm -f -- "$BIN_PATH" || return 1
+    fi
+  fi
+  if [ ! -e "$stage_dir" ]; then
+    rm -rf -- "$LIB_DIR" || return 1
+  fi
+  if [ -n "$old_dir" ] && [ -d "$old_dir" ]; then
+    mv -T -- "$old_dir" "$LIB_DIR" || return 1
+  fi
+}
+
+# Until the new files are in place and run, a failure or signal puts the
+# previous ones back; the install either completes or changes nothing.
 cleanup() {
-  if [ -n "$old_dir" ] && [ -d "$old_dir" ] && [ ! -e "$LIB_DIR" ]; then
-    mv -- "$old_dir" "$LIB_DIR" || true
+  trap '' INT TERM HUP
+  if [ "$swapping" -eq 1 ]; then
+    if restore_previous; then
+      info '安装未完成，已恢复为安装前的状态'
+    else
+      printf '[vps-hardening-install][x] %s\n' "安装未完成，恢复安装前的文件时出错；安装前的模块和入口保留在 ${old_dir:-（无）}、${old_bin:-（无）}" >&2
+      old_dir=''
+      old_bin=''
+    fi
   fi
   [ -z "$stage_dir" ] || rm -rf -- "$stage_dir"
   [ -z "$bin_tmp" ] || rm -f -- "$bin_tmp"
+  [ -z "$old_dir" ] || rm -rf -- "$old_dir"
+  [ -z "$old_bin" ] || rm -f -- "$old_bin"
   [ -z "$temp_dir" ] || rm -rf -- "$temp_dir"
 }
 
@@ -123,14 +154,18 @@ parse_args() {
   done
 }
 
-# True when the installed files are exactly this release.
+# True when the installed files are exactly this release, with the owners and
+# modes this script gives them.
 already_installed() {
   local name
   [ -f "$BIN_PATH" ] && [ ! -L "$BIN_PATH" ] && [ -d "$LIB_DIR" ] && [ ! -L "$LIB_DIR" ] || return 1
+  [ "$(stat -c '%u:%g:%a' -- "$BIN_PATH")" = '0:0:755' ] || return 1
+  [ "$(stat -c '%u:%g:%a' -- "$LIB_DIR")" = '0:0:755' ] || return 1
   [ "$(file_sha256 "$BIN_PATH")" = "$(manifest_digest "$temp_dir/SHA256SUMS" vps-hardening)" ] || return 1
   [ "$(find "$LIB_DIR" -mindepth 1 | wc -l)" -eq $((${#assets[@]} - 1)) ] || return 1
   for name in "${assets[@]:1}"; do
     [ -f "$LIB_DIR/$name" ] && [ ! -L "$LIB_DIR/$name" ] || return 1
+    [ "$(stat -c '%u:%g:%a' -- "$LIB_DIR/$name")" = '0:0:644' ] || return 1
     [ "$(file_sha256 "$LIB_DIR/$name")" = "$(manifest_digest "$temp_dir/SHA256SUMS" "$name")" ] || return 1
   done
 }
@@ -139,7 +174,7 @@ main() {
   local command name base got
   parse_args "$@"
   [ "$(id -u)" -eq 0 ] || die '需要 root 权限：请在 root shell 中运行'
-  for command in awk curl find flock grep install mktemp mv rm sha256sum wc; do
+  for command in awk cp curl find flock grep install mktemp mv rm sha256sum stat sync wc; do
     [ -n "$source_dir" ] && [ "$command" = curl ] && continue
     command -v "$command" >/dev/null 2>&1 || die "缺少命令：$command"
   done
@@ -206,22 +241,27 @@ main() {
   bin_tmp="/usr/local/bin/.vps-hardening.new.$$"
   install -o root -g root -m 0755 "$temp_dir/assets/vps-hardening" "$bin_tmp"
 
+  if [ -e "$BIN_PATH" ]; then
+    old_bin="/usr/local/bin/.vps-hardening.old.$$"
+    cp -a -- "$BIN_PATH" "$old_bin"
+  fi
+  swapping=1
   if [ -d "$LIB_DIR" ]; then
     old_dir="$LIB_PARENT/.vps-hardening.old.$$"
     mv -T -- "$LIB_DIR" "$old_dir"
   fi
   mv -T -- "$stage_dir" "$LIB_DIR"
-  stage_dir=''
   mv -f -- "$bin_tmp" "$BIN_PATH"
-  bin_tmp=''
-  sync
-  if [ -n "$old_dir" ]; then
-    rm -rf -- "$old_dir"
-    old_dir=''
-  fi
-
   got="$("$BIN_PATH" --version)" || die '安装后无法运行 vps-hardening --version'
   [ "$got" = "vps-hardening $INSTALLER_VERSION" ] || die "安装后的版本为 $got"
+  sync
+  swapping=0
+  stage_dir=''
+  bin_tmp=''
+  [ -z "$old_dir" ] || rm -rf -- "$old_dir"
+  [ -z "$old_bin" ] || rm -f -- "$old_bin"
+  old_dir=''
+  old_bin=''
   info "安装完成：$BIN_PATH（模块在 $LIB_DIR），版本 $INSTALLER_VERSION"
   # On a host the tool has applied, preflight would only refuse.
   if grep -qx 'status=applied' "$STATE_FILE" 2>/dev/null; then
