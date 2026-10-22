@@ -182,15 +182,106 @@ check_root_keys() {
   fi
 }
 
+# awk functions that split an sshd config line as sshd does, so that a quoted
+# keyword or a quoted or escaped Include path is read the same way. They
+# follow load_server_config() and process_server_config_line_depth() in
+# servconf.c and strdelim_internal() and argv_split() in misc.c, which are the
+# same in OpenSSH 9.2p1, 9.6p1 and 10.0p2. "\047" is a single quote.
+readonly VH_SSHD_AWK='
+# The keyword of a line, lowercased, or "" for a blank or comment line or one
+# that sshd ignores. Leaves the rest of the line in sshd_rest.
+function sshd_keyword(line,    key) {
+  sub(/^[ \t\r]+/, "", line)
+  sub(/[ \t\r\n\f]+$/, "", line)
+  sshd_rest = line
+  key = sshd_delim()
+  if (key == "") key = sshd_delim()
+  if (substr(key, 1, 1) == "#") key = ""
+  return tolower(key)
+}
+
+# strdelim(): the next word of sshd_rest, ended by a blank, a "=" or a double
+# quote. A double-quoted part joins the word; an unclosed one gives "". Skips
+# the blanks after the word, and one "=" unless the word ended at one.
+function sshd_delim(    s, i, c, word) {
+  s = sshd_rest
+  i = match(s, /[ \t\r\n"=]/)
+  if (i == 0) { sshd_rest = ""; return s }
+  c = substr(s, i, 1)
+  word = substr(s, 1, i - 1)
+  s = substr(s, i + 1)
+  if (c == "\"") {
+    i = index(s, "\"")
+    if (i == 0) { sshd_rest = ""; return "" }
+    word = word substr(s, 1, i - 1)
+    s = substr(s, i + 1)
+    sub(/^[ \t\r\n]+/, "", s)
+  } else {
+    sub(/^[ \t\r\n]+/, "", s)
+    if (c != "=" && substr(s, 1, 1) == "=") {
+      s = substr(s, 2)
+      sub(/^[ \t\r\n]+/, "", s)
+    }
+  }
+  sshd_rest = s
+  return word
+}
+
+# argv_split(): the arguments of s into args[1..n]; returns n, or -1 for an
+# unclosed quote. Blanks separate arguments and single or double quotes group
+# them. A backslash escapes a quote, a backslash or, outside quotes, a space,
+# and stays otherwise. A "#" that starts an argument ends the line.
+function sshd_args(s, args,    n, i, len, c, d, q, arg) {
+  n = 0
+  len = length(s)
+  i = 1
+  while (i <= len) {
+    c = substr(s, i, 1)
+    if (c == " " || c == "\t") { i++; continue }
+    if (c == "#") break
+    q = ""
+    arg = ""
+    for (; i <= len; i++) {
+      c = substr(s, i, 1)
+      if (c == "\\") {
+        d = substr(s, i + 1, 1)
+        if (d == "\047" || d == "\"" || d == "\\" || (q == "" && d == " ")) {
+          i++
+          arg = arg d
+        } else {
+          arg = arg c
+        }
+      } else if (q == "" && (c == " " || c == "\t")) {
+        break
+      } else if (q == "" && (c == "\"" || c == "\047")) {
+        q = c
+      } else if (q != "" && c == q) {
+        q = ""
+      } else {
+        arg = arg c
+      }
+    }
+    args[++n] = arg
+    if (i > len) {
+      if (q != "") return -1
+      break
+    }
+    i++
+  }
+  return n
+}
+'
+
 # The main config must reach the drop-in Include before setting any managed
 # keyword or opening a Match block, because sshd keeps the first value.
 sshd_include_first() {
-  awk -v managed=" $VH_SSHD_MANAGED " -v dir="$VH_SSHD_DROPIN_DIR/" '
-    /^[[:space:]]*(#|$)/ { next }
+  awk -v managed=" $VH_SSHD_MANAGED " -v dir="$VH_SSHD_DROPIN_DIR/" "$VH_SSHD_AWK"'
     {
-      key = tolower($1)
+      key = sshd_keyword($0)
+      if (key == "") next
       if (key == "include") {
-        for (i = 2; i <= NF; i++) if (index($i, dir) == 1) { found = 1; exit }
+        n = sshd_args(sshd_rest, args)
+        for (i = 1; i <= n; i++) if (index(args[i], dir) == 1) { found = 1; exit }
         next
       }
       if (key == "match" || index(managed, " " key " ") > 0) { exit }
@@ -200,9 +291,11 @@ sshd_include_first() {
 }
 
 sshd_file_sets_managed() {
-  awk -v managed=" $VH_SSHD_MANAGED " '
-    /^[[:space:]]*(#|$)/ { next }
-    { key = tolower($1); if (key == "match" || index(managed, " " key " ") > 0) { hit = 1; exit } }
+  awk -v managed=" $VH_SSHD_MANAGED " "$VH_SSHD_AWK"'
+    {
+      key = sshd_keyword($0)
+      if (key != "" && (key == "match" || index(managed, " " key " ") > 0)) { hit = 1; exit }
+    }
     END { exit hit ? 0 : 1 }
   ' "$1"
 }
@@ -213,9 +306,8 @@ sshd_file_sets_managed() {
 check_sshd_match() {
   local file found=()
   while IFS= read -r file; do
-    if awk '
-      /^[[:space:]]*(#|$)/ { next }
-      { key = tolower($1); sub(/=.*/, "", key); if (key == "match") { hit = 1; exit } }
+    if awk "$VH_SSHD_AWK"'
+      sshd_keyword($0) == "match" { hit = 1; exit }
       END { exit hit ? 0 : 1 }
     ' "$file"; then
       found+=("$file")
@@ -229,16 +321,17 @@ check_sshd_match() {
 }
 
 # The main sshd config and, recursively, every file an Include names. sshd
-# resolves a relative Include under /etc/ssh.
+# resolves a relative Include under /etc/ssh. Paths may contain blanks but not
+# newlines, since each Include argument comes from one line.
 sshd_config_files() {
-  local queue=("$VH_SSHD_MAIN") listed=' ' file pattern path
+  local queue=("$VH_SSHD_MAIN") listed=$'\n' file pattern path
   while [ "${#queue[@]}" -gt 0 ]; do
     file="${queue[0]}"
     queue=("${queue[@]:1}")
     case "$listed" in
-      *" $file "*) continue ;;
+      *$'\n'"$file"$'\n'*) continue ;;
     esac
-    listed="$listed$file "
+    listed="$listed$file"$'\n'
     printf '%s\n' "$file"
     while IFS= read -r pattern; do
       [[ "$pattern" == /* ]] || pattern="${VH_SSHD_MAIN%/*}/$pattern"
@@ -253,18 +346,10 @@ sshd_config_files() {
 
 # The arguments of the Include lines of one sshd config file, one per line.
 sshd_includes() {
-  awk '
-    /^[[:space:]]*(#|$)/ { next }
-    {
-      line = $0
-      sub(/^[[:space:]]+/, "", line)
-      if (tolower(line) !~ /^include([[:space:]]|=)/) next
-      sub(/^[^[:space:]=]+[[:space:]]*=?[[:space:]]*/, "", line)
-      n = split(line, args, /[[:space:]]+/)
-      for (i = 1; i <= n; i++) {
-        gsub(/"/, "", args[i])
-        if (args[i] != "") print args[i]
-      }
+  awk "$VH_SSHD_AWK"'
+    sshd_keyword($0) == "include" {
+      n = sshd_args(sshd_rest, args)
+      for (i = 1; i <= n; i++) if (args[i] != "") print args[i]
     }
   ' "$1"
 }

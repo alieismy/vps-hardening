@@ -234,6 +234,33 @@ installed_record() {
   find /usr/local/bin /usr/local/lib -maxdepth 1 -name '.vps-hardening*'
 }
 
+# fake_mv: a test double for mv, first on the installer's PATH. With
+# VH_TEST_FAULT set, the rename of the staged modules ("lib-") or of the new
+# command ("bin-") fails ("-fail") or is followed by SIGTERM to the installer
+# ("-term"). Every other call goes to mv.
+fake_mv() {
+  [ ! -e /usr/local/sbin/mv ] || fail '/usr/local/sbin/mv exists'
+  install -d -m 0755 /usr/local/sbin
+  cat >/usr/local/sbin/mv <<'EOF'
+#!/bin/sh
+case "${VH_TEST_FAULT-}" in
+  lib-*) pattern='/.vps-hardening.stage.' ;;
+  bin-*) pattern='/.vps-hardening.new.' ;;
+  *) exec /bin/mv "$@" ;;
+esac
+case "$*" in
+  *"$pattern"*) ;;
+  *) exec /bin/mv "$@" ;;
+esac
+case "$VH_TEST_FAULT" in
+  *-fail) exit 1 ;;
+esac
+/bin/mv "$@" || exit
+kill -TERM "$PPID"
+EOF
+  chmod 0755 /usr/local/sbin/mv
+}
+
 # expect_install NAME RC TEXT ARGS...: the installer copy exits with RC and says TEXT.
 expect_install() {
   local name="$1" rc="$2" text="$3"
@@ -263,6 +290,13 @@ phase_m4_installer() {
   expect_install unbound 1 '没有绑定发行版' "$BUNDLE/install.sh" --source-dir "$rel"
   expect_install relative 2 '必须是绝对路径' "$inst" --source-dir vh-release
   [ ! -e "$INSTALLED_BIN" ] || fail 'a refused install left files'
+  # An install that does not complete puts back what was there: here nothing.
+  fake_mv
+  VH_TEST_FAULT=bin-fail expect_install fault-fresh 1 '已恢复为安装前的状态' "$inst" --source-dir "$rel"
+  rm /usr/local/sbin/mv
+  [ ! -e "$INSTALLED_BIN" ] && [ ! -e "$INSTALLED_LIB" ] || fail 'an incomplete install left files'
+  [ -z "$(find /usr/local/bin /usr/local/lib -maxdepth 1 -name '.vps-hardening*')" ] ||
+    fail 'an incomplete install left staging files'
 
   expect_install install 0 '安装完成' "$inst" --source-dir "$rel"
   expect_text install '下一步：vps-hardening preflight'
@@ -286,6 +320,17 @@ phase_m4_installer() {
   expect_clean installed-preflight
 
   expect_install again 0 '未做变更' "$inst" --source-dir "$rel"
+  # The same contents with another mode or owner are installed again.
+  for name in mode-module mode-dir owner-command; do
+    case "$name" in
+      mode-module) chmod 0600 "$INSTALLED_LIB/common.sh" ;;
+      mode-dir) chmod 0700 "$INSTALLED_LIB" ;;
+      owner-command) chown 65534:65534 "$INSTALLED_BIN" ;;
+    esac
+    expect_install "$name" 0 '安装完成' "$inst" --source-dir "$rel"
+    installed_record >"$phase_dir/installed-$name.txt"
+    diff -u "$phase_dir/installed.txt" "$phase_dir/installed-$name.txt" || fail "$name: the release was not installed again"
+  done
 
   # Tampered asset, tampered manifest, missing asset: refused, nothing changed.
   cp -a "$rel" "$rel-asset"
@@ -312,9 +357,21 @@ phase_m4_installer() {
   installed_record >"$phase_dir/installed-after.txt"
   diff -u "$phase_dir/installed.txt" "$phase_dir/installed-after.txt" || fail 'a refused install changed the installed files'
 
+  # A replacement that fails or is interrupted at either rename, or after the
+  # command is replaced, puts the previous copy back as it was.
+  printf '# local change\n' >>"$INSTALLED_LIB/status.sh"
+  installed_record >"$phase_dir/installed-changed.txt"
+  fake_mv
+  for name in lib-fail lib-term bin-fail bin-term; do
+    VH_TEST_FAULT="$name" expect_install "fault-$name" 1 '已恢复为安装前的状态' "$inst" --source-dir "$rel"
+    installed_record >"$phase_dir/installed-fault-$name.txt"
+    diff -u "$phase_dir/installed-changed.txt" "$phase_dir/installed-fault-$name.txt" ||
+      fail "fault-$name: the previous copy was not put back"
+  done
+  rm /usr/local/sbin/mv
+
   # Replacing a different installed copy puts the release back. On an applied
   # host the closing hint points to verify, not preflight.
-  printf '# local change\n' >>"$INSTALLED_LIB/status.sh"
   install -d -m 0700 "$STATE_DIR"
   printf 'status=applied\n' >"$STATE_DIR/state"
   expect_install replace 0 '安装完成' "$inst" --source-dir "$rel"
@@ -322,10 +379,11 @@ phase_m4_installer() {
   rm -rf "$STATE_DIR"
   installed_record >"$phase_dir/installed-replaced.txt"
   diff -u "$phase_dir/installed.txt" "$phase_dir/installed-replaced.txt" || fail 'the replaced install differs'
-  for name in unbound relative install again tampered-asset tampered-manifest missing-asset pending locked replace; do
+  for name in unbound relative fault-fresh install again mode-module mode-dir owner-command tampered-asset \
+    tampered-manifest missing-asset pending locked fault-lib-fail fault-lib-term fault-bin-fail fault-bin-term replace; do
     expect_clean "$name"
   done
-  log 'installer: verified install, no-op reinstall, replacement; tampered, missing, pending and locked refused'
+  log 'installer: verified install, no-op reinstall, reinstall for modes and owners, replacement; tampered, missing, pending and locked refused; incomplete installs put back'
 }
 
 m4_main() {

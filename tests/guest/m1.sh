@@ -359,6 +359,36 @@ match_files() {
     tee -a "$PRIVATE/sshd_config" >"$PRIVATE/sshd_config.d/99-match.conf"
 }
 
+# quoted_files: two more copies of the main sshd config, written with sshd's
+# quoting rules. In the first the drop-in Include is quoted, and two Includes
+# name files with a Match block under a directory with a blank, one quoted and
+# one with the blank escaped. The second opens a Match block with a quoted
+# keyword. sshd reads all of these the same as the plain forms. Passwords are
+# already on before hardening (50-cloud-init.conf), so each block also sets
+# its own MaxAuthTries as a marker that shows whether sshd applied it.
+quoted_files() {
+  local dir="$PRIVATE/match dir"
+  rm -rf "$dir"
+  install -d -m 0755 "$dir"
+  printf 'Match Address 198.51.100.0/25\n    PasswordAuthentication yes\n    MaxAuthTries 2\n' >"$dir/10-quoted.conf"
+  printf 'Match Address 198.51.100.128/25\n    PasswordAuthentication yes\n    MaxAuthTries 3\n' >"$dir/20-escaped.conf"
+  sed 's|^Include /etc/ssh/sshd_config\.d/\*\.conf$|Include "/etc/ssh/sshd_config.d/*.conf"|' \
+    /etc/ssh/sshd_config >"$PRIVATE/sshd_config-quoted"
+  grep -qxF 'Include "/etc/ssh/sshd_config.d/*.conf"' "$PRIVATE/sshd_config-quoted" ||
+    fail 'could not quote the drop-in Include'
+  printf 'Include "%s/10-quoted.conf"\nInclude %s/20-escaped.conf\n' "$dir" "${dir// /\\ }" >>"$PRIVATE/sshd_config-quoted"
+  cp /etc/ssh/sshd_config "$PRIVATE/sshd_config-keyword"
+  printf '"Match" Address 198.51.100.0/24\n    PasswordAuthentication yes\n    MaxAuthTries 4\n' >>"$PRIVATE/sshd_config-keyword"
+}
+
+# sshd_max_auth_tries FILE ADDR: MaxAuthTries as sshd evaluates it for a
+# connection from ADDR, with FILE over the main sshd config.
+sshd_max_auth_tries() {
+  local out
+  out="$(bound "$1" /etc/ssh/sshd_config /usr/sbin/sshd -T -C "user=root,host=vps-hardening.invalid,addr=$2,laddr=192.0.2.2,lport=22")" &&
+    awk '$1 == "maxauthtries" { print $2 }' <<<"$out"
+}
+
 # apply_refused NAME ID [FILE TARGET]: apply on a pseudo-terminal, with FILE
 # over TARGET in a private mount namespace if given. Preflight must stop it,
 # with ID failing, before the confirmation prompt (VT-02, VT-03).
@@ -461,6 +491,26 @@ phase_negative() {
   expect_report vt02-match PASS sshd.include
   expect_clean vt02-match
   apply_refused vt02-match-apply sshd.match "$PRIVATE/sshd_config.d" /etc/ssh/sshd_config.d
+
+  # sshd applies each block to its own range and not to the placeholder
+  # connection. Only the two included files have a Match block; the quoted
+  # drop-in Include still comes first.
+  quoted_files
+  [ "$(sshd_max_auth_tries "$PRIVATE/sshd_config-quoted" 198.51.100.1)" = 2 ] || fail 'sshd does not read the quoted Include'
+  [ "$(sshd_max_auth_tries "$PRIVATE/sshd_config-quoted" 198.51.100.129)" = 3 ] || fail 'sshd does not read the escaped Include'
+  [ "$(sshd_max_auth_tries "$PRIVATE/sshd_config-keyword" 198.51.100.1)" = 4 ] || fail 'sshd does not read the quoted keyword'
+  tries="$(sshd_max_auth_tries "$PRIVATE/sshd_config-quoted" 192.0.2.1)"
+  [ -n "$tries" ] && [ "$tries" != 2 ] && [ "$tries" != 3 ] || fail "the placeholder connection gets MaxAuthTries $tries"
+  log "sshd applies the quoted and escaped Includes and the quoted keyword; MaxAuthTries $tries for the placeholder"
+  capture vt02-match-quoted bound "$PRIVATE/sshd_config-quoted" /etc/ssh/sshd_config "$VH" preflight "${GOOD_ARGS[@]}"
+  expect_rc vt02-match-quoted 1
+  expect_match vt02-match-quoted "^\[FAIL\] sshd\.match +$PRIVATE/match dir/10-quoted\.conf、$PRIVATE/match dir/20-escaped\.conf 中有 Match 块"
+  expect_report vt02-match-quoted PASS sshd.include
+  expect_clean vt02-match-quoted
+  capture vt02-match-keyword bound "$PRIVATE/sshd_config-keyword" /etc/ssh/sshd_config "$VH" preflight "${GOOD_ARGS[@]}"
+  expect_rc vt02-match-keyword 1
+  expect_match vt02-match-keyword '^\[FAIL\] sshd\.match +/etc/ssh/sshd_config 中有 Match 块'
+  expect_clean vt02-match-keyword
 
   snapshot negative-after
   same_snapshot negative-before negative-after
