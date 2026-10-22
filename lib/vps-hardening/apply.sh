@@ -147,7 +147,7 @@ apply_run() {
 
   # Records of an earlier, rolled-back apply (FR-02) must not be reused.
   state_dir_init
-  rm -rf -- "$VH_STATE_FILE" "$VH_UFW_RULES_FILE" "$VH_UNITS_FILE" "$VH_SNAPSHOT_DIR" "$VH_PORTS_SNAPSHOT_DIR"
+  rm -rf -- "$VH_STATE_FILE" "$VH_UNITS_FILE" "$VH_SNAPSHOT_DIR" "$VH_PORTS_SNAPSHOT_DIR"
   state_set status applying
   VH_APPLY_STAGE=prepare
   VH_ABORT_HOOK=apply_abort
@@ -307,8 +307,7 @@ apply_ufw() {
   fi
   bounded_change ufw --force enable >>"$VH_LOG_FILE" 2>&1 || apply_fail "UFW 启用失败，详见 $VH_LOG_FILE"
   ufw_active || apply_fail 'UFW 启用后状态不是 active'
-  ufw_status_rules >"$VH_UFW_RULES_FILE"
-  printf 'UFW 已启用：%s 条规则\n' "$(wc -l <"$VH_UFW_RULES_FILE")"
+  printf 'UFW 已启用：%s 条规则\n' "$(ufw_status_rules | wc -l)"
 }
 
 f2b_jail_content() {

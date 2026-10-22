@@ -244,9 +244,8 @@ restore_ports() {
   if [ "$mode" = runtime ]; then
     bounded_change ufw reload >>"$VH_LOG_FILE" 2>&1 || failed+=('UFW 重新加载')
   fi
-  if ! [ -f "$VH_PORTS_SNAPSHOT_DIR/open" ] || ! [ -f "$VH_PORTS_SNAPSHOT_DIR/ufw-rules" ] ||
+  if ! [ -f "$VH_PORTS_SNAPSHOT_DIR/open" ] ||
     ! state_set open "$(cat "$VH_PORTS_SNAPSHOT_DIR/open")" ||
-    ! install -m 0600 -- "$VH_PORTS_SNAPSHOT_DIR/ufw-rules" "$VH_UFW_RULES_FILE" ||
     ! record_digest /etc/ufw/user.rules || ! record_digest /etc/ufw/user6.rules; then
     failed+=('记录恢复')
   fi

@@ -484,7 +484,7 @@ phase_m3_drift() {
       ;;
     firewall-reinstall)
       xui_menu menu '23\n6\n1\n0\n0\n'
-      want_fail='ufw.panel ufw.port80 ufw.rules'
+      want_fail='ufw.panel ufw.port80 ufw.rules ufw.userrules'
       ;;
     iplimit)
       xui_menu menu '22\n1\ny\n\n0\n'
@@ -503,7 +503,7 @@ phase_m3_drift() {
       ;;
     ufw-rule)
       ufw allow 8080/tcp
-      want_fail='ufw.rules'
+      want_fail='ufw.rules ufw.userrules'
       ;;
     nftables)
       systemctl enable nftables.service
@@ -512,6 +512,24 @@ phase_m3_drift() {
     sshd-dropin)
       printf '# drift\n' >>/etc/ssh/sshd_config.d/00-vps-hardening.conf
       want_fail='ssh.dropin'
+      ;;
+    sshd-match)
+      # Passwords for one source range; sshd -T for the placeholder connection
+      # still says no, so ssh.passwordauthentication alone would pass (FR-04).
+      printf 'Match Address 198.51.100.0/24\n    PasswordAuthentication yes\n' >/etc/ssh/sshd_config.d/99-match.conf
+      want_fail='ssh.match'
+      ;;
+    ufw-framework)
+      # A rule `ufw status` does not show; the next UFW reload loads it (FR-06).
+      sed -i '/^COMMIT$/i -A ufw6-before-input -p tcp --dport 8081 -j ACCEPT' /etc/ufw/before6.rules
+      want_fail='ufw.framework'
+      ;;
+    ufw-userrules)
+      # A rule written straight into user.rules, without the tuple comment:
+      # UFW loads it at its next start, `ufw status` does not list it, so
+      # ufw.rules alone would pass (FR-06).
+      sed -i '/^COMMIT$/i -A ufw-user-input -p tcp --dport 8081 -j ACCEPT' /etc/ufw/user.rules
+      want_fail='ufw.userrules'
       ;;
     reboot-required)
       touch /var/run/reboot-required

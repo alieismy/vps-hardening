@@ -13,7 +13,6 @@ readonly VH_SNAPSHOT_DIR="$VH_STATE_DIR/snapshot"
 # state before apply.
 readonly VH_PORTS_SNAPSHOT_DIR="$VH_STATE_DIR/snapshot-ports"
 readonly VH_UNITS_FILE="$VH_STATE_DIR/units"
-readonly VH_UFW_RULES_FILE="$VH_STATE_DIR/ufw-rules"
 readonly VH_LOCK_FILE=/run/vps-hardening.lock
 
 # Files apply may change. The snapshot is taken after package installation, so

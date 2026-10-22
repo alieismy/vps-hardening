@@ -342,6 +342,23 @@ root_keys_case() {
   expect_clean "$name"
 }
 
+# bound FILE TARGET CMD...: run CMD with FILE over TARGET, visible only in a
+# private mount namespace.
+bound() {
+  # shellcheck disable=SC2016
+  unshare --mount --propagation private -- sh -c 'mount --bind "$1" "$2" && shift 2 && exec "$@"' sh "$@"
+}
+
+# match_files: a copy of the main sshd config and one of the drop-in directory,
+# each with a Match block that enables passwords for one source range (FR-04).
+match_files() {
+  rm -rf "$PRIVATE/sshd_config.d"
+  cp /etc/ssh/sshd_config "$PRIVATE/sshd_config"
+  cp -a /etc/ssh/sshd_config.d "$PRIVATE/sshd_config.d"
+  printf 'Match Address 198.51.100.0/24\n    PasswordAuthentication yes\n' |
+    tee -a "$PRIVATE/sshd_config" >"$PRIVATE/sshd_config.d/99-match.conf"
+}
+
 # apply_refused NAME ID [FILE TARGET]: apply on a pseudo-terminal, with FILE
 # over TARGET in a private mount namespace if given. Preflight must stop it,
 # with ID failing, before the confirmation prompt (VT-02, VT-03).
@@ -419,6 +436,13 @@ phase_negative() {
   input_case open-high 2 '公开端口超出范围' preflight --open 65536/udp
   input_case open-noproto 2 '公开端口格式不合法' preflight --open 443
   input_case open-dup 2 '公开端口重复' preflight --open 443/tcp --open 443/tcp
+  # D14 bans 80/tcp only.
+  input_case open-80 2 '公开端口不能是 80/tcp' preflight --open 80/tcp
+  input_case open-80-udp 0 '公开端口：80/udp' preflight --open 80/udp
+  capture vt04-open-80-apply on_tty "$VH" apply --open 80/tcp
+  expect_rc vt04-open-80-apply 2
+  expect_text vt04-open-80-apply '公开端口不能是 80/tcp'
+  expect_clean vt04-open-80-apply
   # Options removed by requirements D22 and D23 must not be silently ignored.
   input_case removed-option 2 '未知参数：--maxretry' preflight --maxretry 5
   input_case timeout-2 2 '--confirm-timeout 应为' preflight --confirm-timeout 2
@@ -430,22 +454,34 @@ phase_negative() {
   expect_match vt04-rootkey-both '^\[INFO\] root\.key +ssh-rsa SHA256:'
   input_case not-tty 2 '必须在交互终端中运行' apply "${GOOD_ARGS[@]}"
 
+  match_files
+  capture vt02-match bound "$PRIVATE/sshd_config" /etc/ssh/sshd_config "$VH" preflight "${GOOD_ARGS[@]}"
+  expect_rc vt02-match 1
+  expect_report vt02-match FAIL sshd.match
+  expect_report vt02-match PASS sshd.include
+  expect_clean vt02-match
+  apply_refused vt02-match-apply sshd.match "$PRIVATE/sshd_config.d" /etc/ssh/sshd_config.d
+
   snapshot negative-after
   same_snapshot negative-before negative-after
 }
 
-# VT-03: preflight and apply on an existing host (S1 to S4) refuse without changes.
+# existing_host_case SCENARIO ID [FILE TARGET], VT-03: preflight and apply on an
+# existing host (S1 to S4) refuse without changes, with FILE over TARGET in a
+# private mount namespace if given.
 existing_host_case() {
-  local name="vt03-$1"
+  local scenario="$1" name="vt03-$1" id="$2" prefix=()
+  shift 2
+  [ "$#" -eq 0 ] || prefix=(bound "$1" "$2")
   settle
-  snapshot "$1-before"
-  capture "$name" "$VH" preflight "${GOOD_ARGS[@]}"
-  apply_refused "$name-apply" "$2"
+  snapshot "$scenario-before"
+  capture "$name" "${prefix[@]}" "$VH" preflight "${GOOD_ARGS[@]}"
+  apply_refused "$name-apply" "$id" "$@"
   expect_text "$name-apply" '存量主机不在支持范围内'
-  snapshot "$1-after"
-  same_snapshot "$1-before" "$1-after"
+  snapshot "$scenario-after"
+  same_snapshot "$scenario-before" "$scenario-after"
   expect_rc "$name" 1
-  expect_report "$name" FAIL "$2"
+  expect_report "$name" FAIL "$id"
   expect_text "$name" '存量主机不在支持范围内'
   expect_clean "$name"
 }
@@ -508,10 +544,20 @@ phase_s2_listen() {
   fail 'test listeners did not start'
 }
 
-# S2: UFW enabled with a custom rule (8080) besides SSH.
+# S2: UFW enabled with custom rules (8080, and 8081 for IPv6 only) besides
+# SSH. Before that, while UFW is inactive: an IPv4 rule in a framework file,
+# which `ufw status` does not show, and then the IPv6-only added rule, which
+# `ufw enable` would put in force (FR-02). VT-51 covers before6.rules.
 phase_s2() {
   settle
   command -v ufw >/dev/null || install_packages --no-install-recommends ufw
+  sed '/^COMMIT$/i -A ufw-before-input -p tcp --dport 8081 -j ACCEPT' /etc/ufw/before.rules >"$PRIVATE/before.rules"
+  existing_host_case s2-framework new-host.ufw-framework "$PRIVATE/before.rules" /etc/ufw/before.rules
+  expect_report vt03-s2-framework PASS new-host.ufw
+  ufw allow proto tcp to ::/0 port 8081
+  existing_host_case s2-inactive new-host.ufw
+  expect_text vt03-s2-inactive 'UFW 未启用，但已有 1 条规则'
+  expect_report vt03-s2-inactive PASS new-host.ufw-framework
   ufw allow 22/tcp
   ufw allow 8080/tcp
   ufw --force enable

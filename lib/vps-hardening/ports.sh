@@ -78,17 +78,27 @@ ports_compute() {
   [ "${#VH_PORTS_NEW[@]}" -le "$VH_MAX_OPEN" ] || usage_error "公开端口最多 $VH_MAX_OPEN 个"
 }
 
-# The change starts from the rules apply recorded, with 22/tcp allowed.
+# The change starts from the declared rules, with 22/tcp allowed.
 ports_checks() {
+  local changed=()
   if ufw_active; then
     report PASS ports.ufw 'UFW 已启用'
   else
     report FAIL ports.ufw 'UFW 未启用'
   fi
-  if [ -f "$VH_UFW_RULES_FILE" ] && diff <(sort "$VH_UFW_RULES_FILE") <(ufw_status_rules | sort) >/dev/null; then
-    report PASS ports.rules 'UFW 规则与记录一致'
+  if diff <(ufw_status_rules | ufw_rule_tokens) <(expected_rule_tokens 22/tcp/both "${VH_PORTS_OLD[@]}") >/dev/null; then
+    report PASS ports.rules 'UFW 规则与声明一致'
   else
-    report FAIL ports.rules 'UFW 规则与记录不一致：请先用 verify 查看并处理差异'
+    report FAIL ports.rules 'UFW 规则与声明不一致：请先用 verify 查看并处理差异'
+  fi
+  # ufw rewrites both files from the rules it lists, so a change would drop a
+  # line written there directly and record the result, while the line stays
+  # loaded until UFW next starts.
+  mapfile -t changed < <(ufw_user_files_changed)
+  if [ "${#changed[@]}" -gt 0 ]; then
+    report FAIL ports.userrules "$(join_by '、' "${changed[@]}") 与记录不一致：请先用 verify 查看并处理差异"
+  else
+    report PASS ports.userrules 'user.rules 和 user6.rules 与记录一致'
   fi
   if ufw_added_rules | ufw_rules_allow_port 22; then
     report PASS ports.ssh 'UFW 放行 22/tcp'
@@ -166,7 +176,6 @@ ports_run() {
   printf '\n== 1/3 记录变更前的规则\n'
   snapshot_take "$VH_PORTS_SNAPSHOT_DIR" "${VH_PORT_FILES[@]}" || ports_fail '无法记录 UFW 规则文件的快照'
   state_get open >"$VH_PORTS_SNAPSHOT_DIR/open"
-  install -m 0600 -- "$VH_UFW_RULES_FILE" "$VH_PORTS_SNAPSHOT_DIR/ufw-rules"
 
   printf '== 2/3 布置自动恢复（%s 分钟）\n' "$VH_IN_TIMEOUT"
   VH_PORTS_STAGE=changing
@@ -177,7 +186,6 @@ ports_run() {
   ports_ufw >>"$VH_LOG_FILE" 2>&1 || ports_fail "UFW 规则变更失败，详见 $VH_LOG_FILE"
   ports_rules_match || ports_fail "变更后的 UFW 规则与声明的公开端口不一致，详见 $VH_LOG_FILE"
   state_set open "${VH_PORTS_NEW[*]}"
-  ufw_status_rules >"$VH_UFW_RULES_FILE"
   for path in "${VH_PORT_FILES[@]}"; do
     record_digest "$path"
   done

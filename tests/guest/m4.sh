@@ -118,16 +118,28 @@ phase_m4_ports_refused() {
   capture add-panel on_tty "$VH" ports --add 2053/tcp
   expect_rc add-panel 2
   expect_text add-panel '与面板端口相同'
+  capture add-http on_tty "$VH" ports --add 80/tcp
+  expect_rc add-http 2
+  expect_text add-http '公开端口不能是 80/tcp'
   capture add-declared on_tty "$VH" ports --add 443/tcp/ipv4
   expect_rc add-declared 2
   expect_text add-declared '已经是公开端口'
   capture remove-undeclared on_tty "$VH" ports --remove 8080/tcp
   expect_rc remove-undeclared 2
   expect_text remove-undeclared '不是已声明的公开端口'
+  # A line written straight into a rules file: the change would rewrite the
+  # file without it while the line stays loaded.
+  cp -p /etc/ufw/user6.rules "$PRIVATE/user6.rules"
+  sed -i '/^COMMIT$/i -A ufw6-user-input -p tcp --dport 8081 -j ACCEPT' /etc/ufw/user6.rules
+  capture userrules on_tty "$VH" ports --add 8443/tcp
+  cp -p "$PRIVATE/user6.rules" /etc/ufw/user6.rules
+  expect_rc userrules 1
+  expect_report userrules FAIL ports.userrules
+  expect_report userrules PASS ports.rules
   capture cancelled on_tty "$VH" ports --add 8443/tcp
   expect_rc cancelled 1
   expect_text cancelled '已取消，未做任何变更'
-  for name in no-tty add-ssh add-panel add-declared remove-undeclared cancelled; do
+  for name in no-tty add-ssh add-panel add-http add-declared remove-undeclared userrules cancelled; do
     expect_clean "$name"
   done
   tool_record >"$phase_dir/record-after.txt"
@@ -253,6 +265,7 @@ phase_m4_installer() {
   [ ! -e "$INSTALLED_BIN" ] || fail 'a refused install left files'
 
   expect_install install 0 '安装完成' "$inst" --source-dir "$rel"
+  expect_text install '下一步：vps-hardening preflight'
   installed_record | tee "$phase_dir/installed.txt"
   [ "$(grep -c '^755 root:root ' "$phase_dir/installed.txt")" -eq 2 ] || fail 'the command or module directory is not 0755 root'
   [ "$(grep -c '^644 root:root ' "$phase_dir/installed.txt")" -eq 12 ] || fail 'not 12 modules 0644 root'
@@ -299,9 +312,14 @@ phase_m4_installer() {
   installed_record >"$phase_dir/installed-after.txt"
   diff -u "$phase_dir/installed.txt" "$phase_dir/installed-after.txt" || fail 'a refused install changed the installed files'
 
-  # Replacing a different installed copy puts the release back.
+  # Replacing a different installed copy puts the release back. On an applied
+  # host the closing hint points to verify, not preflight.
   printf '# local change\n' >>"$INSTALLED_LIB/status.sh"
+  install -d -m 0700 "$STATE_DIR"
+  printf 'status=applied\n' >"$STATE_DIR/state"
   expect_install replace 0 '安装完成' "$inst" --source-dir "$rel"
+  expect_text replace '下一步：vps-hardening verify'
+  rm -rf "$STATE_DIR"
   installed_record >"$phase_dir/installed-replaced.txt"
   diff -u "$phase_dir/installed.txt" "$phase_dir/installed-replaced.txt" || fail 'the replaced install differs'
   for name in unbound relative install again tampered-asset tampered-manifest missing-asset pending locked replace; do

@@ -67,6 +67,15 @@ same_as_applied() {
   [ -n "$digest" ] && [ "$(file_digest "$1")" = "$digest" ]
 }
 
+# The UFW user rules files that differ from the record. UFW loads every line of
+# them, but `ufw status` lists only the rules it wrote with a tuple comment.
+ufw_user_files_changed() {
+  local path
+  for path in "${VH_PORT_FILES[@]}"; do
+    same_as_applied "$path" || printf '%s\n' "$path"
+  done
+}
+
 # Minutes left until the automatic restore, rounded up.
 minutes_left() {
   local deadline
@@ -123,6 +132,7 @@ verify_ssh() {
     report FAIL ssh.config "无法读取 sshd 生效配置：$(head -n 1 "$VH_TMP/sshd-T.err")"
     return 0
   fi
+  check_sshd_match ssh.match
   # sshd -T prints prohibit-password under its older name.
   expect_sshd ssh.permitrootlogin root permitrootlogin without-password prohibit-password
   expect_sshd ssh.passwordauthentication root passwordauthentication no
@@ -177,7 +187,7 @@ verify_ssh_record() {
 }
 
 verify_ufw() {
-  local status
+  local status changed=()
 
   if ! have ufw; then
     report FAIL ufw.installed 'UFW 未安装'
@@ -204,27 +214,45 @@ verify_ufw() {
   else
     report FAIL ufw.ipv6 '/etc/default/ufw 中不是 IPV6=yes'
   fi
-
-  if ufw_added_rules | ufw_rules_allow_port 80; then
-    report FAIL ufw.port80 '存在放行 80 端口的规则（D14 要求不开放）'
+  mapfile -t changed < <(ufw_framework_changed)
+  if [ "${#changed[@]}" -gt 0 ]; then
+    report FAIL ufw.framework "$(join_by '、' "${changed[@]}") 与软件包的原始文件不同，其中的规则不显示在 ufw status 中"
   else
-    report PASS ufw.port80 '没有放行 80 端口的规则'
+    report PASS ufw.framework 'UFW 的 before/after 文件与软件包的原始文件相同'
+  fi
+
+  if ufw_added_rules | ufw_rules_allow_port 80 tcp; then
+    report FAIL ufw.port80 '存在放行 80/tcp 的规则（D14 要求不开放）'
+  else
+    report PASS ufw.port80 '没有放行 80/tcp 的规则'
   fi
   if have_record; then
     verify_ufw_record
   else
     skip_without_state ufw.rules
+    skip_without_state ufw.userrules
     skip_without_state ufw.panel
   fi
 }
 
-# FR-06: exactly the rules apply wrote, none for the panel port.
+# FR-06: exactly 22/tcp and the declared ports, none for the panel port. The
+# declaration, not the rules seen at apply, is the reference: rules added to
+# UFW before apply must not count as declared. During a port change the record
+# holds the new ports.
 verify_ufw_record() {
-  local panel
-  if [ -f "$VH_UFW_RULES_FILE" ] && diff <(sort "$VH_UFW_RULES_FILE") <(ufw_status_rules | sort) >"$VH_TMP/ufw.diff"; then
-    report PASS ufw.rules "规则与应用时一致（$(wc -l <"$VH_UFW_RULES_FILE") 条，IPv4 和 IPv6 分别计）"
+  local panel open=() changed=()
+  read -r -a open <<<"$(state_get open)"
+  expected_rule_tokens 22/tcp/both "${open[@]}" >"$VH_TMP/ufw.expected"
+  if diff "$VH_TMP/ufw.expected" <(ufw_status_rules | ufw_rule_tokens) >"$VH_TMP/ufw.diff"; then
+    report PASS ufw.rules "规则与声明一致（$(wc -l <"$VH_TMP/ufw.expected") 条，IPv4 和 IPv6 分别计）"
   else
-    report FAIL ufw.rules "规则与应用时不一致：$(grep -E '^[<>]' "$VH_TMP/ufw.diff" 2>/dev/null | sed 's/^</缺少 /; s/^>/多出 /; s/  */ /g' | paste -sd ';')"
+    report FAIL ufw.rules "规则与声明不一致：$(grep -E '^[<>]' "$VH_TMP/ufw.diff" 2>/dev/null | sed 's/^</缺少 /; s/^>/多出 /' | paste -sd ';')"
+  fi
+  mapfile -t changed < <(ufw_user_files_changed)
+  if [ "${#changed[@]}" -gt 0 ]; then
+    report FAIL ufw.userrules "$(join_by '、' "${changed[@]}") 与记录不一致：直接写入的规则不显示在 ufw status 中"
+  else
+    report PASS ufw.userrules 'user.rules 和 user6.rules 与记录一致'
   fi
   panel="$(state_get panel_port)"
   if ufw_added_rules | ufw_rules_allow_port "$panel"; then
@@ -234,11 +262,14 @@ verify_ufw_record() {
   fi
 }
 
-# Reads `ufw show added` rule lines on stdin; true when an inbound allow or
-# limit rule names the port, alone or in a list (80, 80/tcp, port 80,443).
+# ufw_rules_allow_port PORT [PROTO]: reads `ufw show added` rule lines on
+# stdin; true when an inbound allow or limit rule names the port, alone or in a
+# list (80, 80/tcp, port 80,443). With PROTO, a rule limited to the other
+# protocol (80/udp, proto udp) does not count.
 ufw_rules_allow_port() {
-  awk -v port="$1" '
+  awk -v port="$1" -v proto="${2-}" '
     function names(spec, n, parts, i) {
+      if (proto != "" && spec ~ /\/(tcp|udp)$/ && spec !~ ("/" proto "$")) return 0
       sub(/\/(tcp|udp)$/, "", spec)
       n = split(spec, parts, ",")
       for (i = 1; i <= n; i++) if (parts[i] == port) return 1
@@ -246,6 +277,7 @@ ufw_rules_allow_port() {
     }
     $1 == "allow" || $1 == "limit" {
       if ($2 == "out") next
+      for (i = 2; i < NF; i++) if (proto != "" && $i == "proto" && $(i + 1) != proto) next
       for (i = 2; i <= NF; i++) {
         if ($i == "port" && names($(i + 1))) found = 1
         if ($i ~ /^[0-9,]+(\/(tcp|udp))?$/ && $(i - 1) != "port" && names($i)) found = 1

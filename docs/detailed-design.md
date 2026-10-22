@@ -2,13 +2,13 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | v0.5 草案：增补里程碑 M4（`status`、`rollback`、`ports`、已应用时的 `apply`、发行版安装脚本）的契约、状态记录、测试和运行证据（第 8.10～8.12 节），涉及第 1～9 节；按需求 v1.6 草案（D32）把测试中的 3X-UI 改为 v3.10.2。待用户评审。v0.4 已批准：增补里程碑 M3 的检查项（第 4 节）、测试（第 7 节）和运行证据（第 8.7～8.9 节），涉及第 1、4、7～9 节。超出 v0.3 第 1 节所列 M3 范围的三个检查项（`f2b.config`、`f2b.files`、`uu.dropin`）已经用户确认（需求 U18、D30）。用户于 2026-10-20 评审通过（需求 U19、D31）。评审之后，按拉取请求 #9 的代码评审意见修复三处忽略 `dpkg --verify` 退出码的判定，第 4、6 节和第 8.7 节随之补充。v0.3 已批准：增补里程碑 M2（`apply`、`confirm`、自动恢复）的契约、状态记录、测试和运行证据，涉及第 1～9 节；M3、M4 实现时继续增补。第 1 节的范围调整（Fail2ban 和自动更新的写入提前到 M2）偏离方案设计 v1.1 第 10 节，已经评审通过，方案设计 v1.2 第 10 节随之修改。按需求 v1.4（D26），arm64 改为按需运行的参考，M2 的 arm64 结果放在附录 A。增补第 8.6 节：在用户提供的一台测试 VPS 上试运行 M2 开发版，不是 M5 的验收。用户于 2026-10-20 评审通过（需求 U16、D28），包括第 1 节的范围调整和 VT-25 的判定方式。此前的版本：v0.1 于 2026-10-20 经用户评审，除第 2.4 节的 `--maxretry` 和第 4 节 `ssh.permitrootlogin` 的期望值两处外通过；v0.2 按需求 v1.3（D22、D23）修改第 2.2、2.4、3～7、9 节，删除管理用户和公钥文件参数、sudo 条件检查，新增 root 公钥检查 `root.keys`，于同日经用户评审通过（需求 U13、D25） |
-| 日期 | 2026-10-21（v0.1 为 2026-10-13） |
-| 上游 | [需求规格说明 v1.6 草案](requirements.md)、[方案设计 v1.3 草案](solution-design.md)、[验证计划 v1.4 草案](verification-plan.md) |
+| 状态 | v0.6 草案：按需求 v1.7 草案（D34～D36）修复评审发现的缺口，涉及第 1～4、6、7、9 节，新增第 8.13 节：预检和 `verify` 拒绝 sshd 配置中的 `Match` 块；UFW 未启用时，预检也拒绝已添加的规则和被改动的 before/after 框架文件，`verify` 比较同样的框架文件；`ufw.rules` 和 `ports.rules` 改为与声明比较，不再记录规则行；公开端口不能是 80/tcp；安装脚本按状态提示下一步。按需求 D37，`verify` 增加 `ufw.userrules`，`ports` 增加变更前检查 `ports.userrules`：`user.rules`、`user6.rules` 须与记录的摘要相同。待用户评审。v0.5 草案：增补里程碑 M4（`status`、`rollback`、`ports`、已应用时的 `apply`、发行版安装脚本）的契约、状态记录、测试和运行证据（第 8.10～8.12 节），涉及第 1～9 节；按需求 v1.6（D32）把测试中的 3X-UI 改为 v3.10.2。用户于 2026-10-22 评审通过（需求 U24、D38），并要求安装脚本在已应用的主机上的结尾提示在发布前修复，已在 v0.6 中修复（第 2.12 节）。v0.4 已批准：增补里程碑 M3 的检查项（第 4 节）、测试（第 7 节）和运行证据（第 8.7～8.9 节），涉及第 1、4、7～9 节。超出 v0.3 第 1 节所列 M3 范围的三个检查项（`f2b.config`、`f2b.files`、`uu.dropin`）已经用户确认（需求 U18、D30）。用户于 2026-10-20 评审通过（需求 U19、D31）。评审之后，按拉取请求 #9 的代码评审意见修复三处忽略 `dpkg --verify` 退出码的判定，第 4、6 节和第 8.7 节随之补充。v0.3 已批准：增补里程碑 M2（`apply`、`confirm`、自动恢复）的契约、状态记录、测试和运行证据，涉及第 1～9 节；M3、M4 实现时继续增补。第 1 节的范围调整（Fail2ban 和自动更新的写入提前到 M2）偏离方案设计 v1.1 第 10 节，已经评审通过，方案设计 v1.2 第 10 节随之修改。按需求 v1.4（D26），arm64 改为按需运行的参考，M2 的 arm64 结果放在附录 A。增补第 8.6 节：在用户提供的一台测试 VPS 上试运行 M2 开发版，不是 M5 的验收。用户于 2026-10-20 评审通过（需求 U16、D28），包括第 1 节的范围调整和 VT-25 的判定方式。此前的版本：v0.1 于 2026-10-20 经用户评审，除第 2.4 节的 `--maxretry` 和第 4 节 `ssh.permitrootlogin` 的期望值两处外通过；v0.2 按需求 v1.3（D22、D23）修改第 2.2、2.4、3～7、9 节，删除管理用户和公钥文件参数、sudo 条件检查，新增 root 公钥检查 `root.keys`，于同日经用户评审通过（需求 U13、D25） |
+| 日期 | 2026-10-22（v0.1 为 2026-10-13） |
+| 上游 | [需求规格说明 v1.7 草案](requirements.md)、[方案设计 v1.4 草案](solution-design.md)、[验证计划 v1.5 草案](verification-plan.md) |
 | 下游 | 实现、测试 |
 | 深度 | 命令契约、检查项目录、模块划分、实现约束和测试框架；不重复上游已有的决策理由 |
 
-**证据状态。** 第 2～6 节描述的是仓库中的实现，第 7 节描述的是测试框架。运行证据见第 8 节：第 8.1～8.5、8.7、8.10 节来自 CI 虚拟机；第 8.6、8.8、8.9、8.11 节来自一台测试 VPS，只有一台主机，不能代替真实主机验收（M5）；第 8.12 节是按这些输出做的人工走查。
+**证据状态。** 第 2～6 节描述的是仓库中的实现，第 7 节描述的是测试框架。运行证据见第 8 节：第 8.1～8.5、8.7、8.10、8.13 节来自 CI 虚拟机；第 8.6、8.8、8.9、8.11 节来自一台测试 VPS，只有一台主机，不能代替真实主机验收（M5）；第 8.12 节是按这些输出做的人工走查。
 
 ## 1. 范围
 
@@ -53,6 +53,16 @@ M4 实现（v0.5，方案设计第 10 节的 P1 部分）：
 
 发布预发行版和 VT-72 的公开部分在用户评审、合并之后进行，不在本版本的证据中。
 
+**修复（v0.6，需求 D34～D36）。** 对需求 v1.6 草案的评审发现三处缺口，都是自 M2 起就有的：
+
+- **sshd 的 `Match` 块。** `sshd -T -C` 只按一个假定的连接求值（第 6 节）。排在片段的 `Include` 之后或后面片段中的 `Match Address` 块，可以对其他来源保留密码登录，而 `verify` 仍然通过。现在预检（`sshd.match`）和 `verify`（`ssh.match`）拒绝主配置及其包含的文件中的任何 `Match` 块（第 3、4 节）。
+- **`ufw status` 不显示的规则。** 预检原来只拒绝已启用的 UFW。UFW 未启用时已添加的规则，会在 `apply` 启用 UFW 时一起生效；before/after 框架文件中的规则则始终不显示。现在预检也拒绝这两种情况，`verify` 另外比较框架文件（第 3、4 节）。
+- **规则的基线。** `ufw.rules` 原来与 `apply` 之后记录的规则行比较，`apply` 之前已添加的规则因此进入基线。现在与声明比较，不再记录规则行（第 2.5、2.8、2.11 节）。
+
+另外两处改动：公开端口不能是 80/tcp，80/udp 可以（需求 D35，第 2.4 节）；安装脚本在已应用的主机上提示 `verify` 和 `status`（第 2.12 节）。`apply` 除了不再记录规则行以外没有改变，`confirm`、自动恢复和 `rollback` 也没有改变。
+
+**直接写入的规则（v0.6，需求 D37）。** `ufw status` 不显示 `user.rules`、`user6.rules` 中没有 tuple 注释的行，UFW 启动时却载入它们。`verify` 增加 `ufw.userrules`，核对两个文件与记录的摘要，已应用时的 `apply` 经 `verify` 的检查项同样核对；`ports` 增加变更前检查 `ports.userrules`（第 2.11、4 节）。剩下的缺口见第 9 节。
+
 ## 2. 命令契约
 
 ### 2.1 调用与环境
@@ -90,7 +100,7 @@ M4 起 `confirm` 和 `_restore` 也处理 `ports` 的变更，退出码的含义
 | `ports` | 端口变更已生效，进入待确认 | 不是 root；另一个操作正在进行；状态不是"已应用"；变更前检查有不符合项；管理员没有输入 `yes`；变更失败（已恢复原端口，或恢复未全部完成） | 内部错误。变更已经开始时，先恢复原端口再退出 |
 | `apply`（已应用时） | 参数与记录一致，`verify` 的检查全部通过，未做变更 | 参数与记录不一致或有不符合项，未做变更 | 内部错误 |
 
-`ports` 的参数中，与记录有关的错误（新增 22、面板端口或已声明的端口，撤销未声明的端口）在取得操作锁、读取记录之后才能判定，退出码同样为 2，此时也未做任何变更。安装脚本的退出码见第 2.12 节。
+`ports` 的参数中，与记录有关的错误（新增面板端口或已声明的端口，撤销未声明的端口），以及在同一处判定的新增 22 和 80/tcp，在取得操作锁、读取记录之后才报告，退出码同样为 2；这时还没有执行变更前检查，也未做任何变更。安装脚本的退出码见第 2.12 节。
 
 ### 2.3 输出格式
 
@@ -115,7 +125,7 @@ M4 起 `confirm` 和 `_restore` 也处理 `ports` 的变更，退出码的含义
 | 参数 | 规则 |
 |---|---|
 | `--panel-port` | 默认 2053（需求 D20）；1～65535，不能是 22 |
-| `--open` | 可重复，最多 16 个；`端口/tcp|udp[/both|ipv4|ipv6]`，地址族默认 `both`；端口不能是 22 或面板端口，同一端口和协议不能重复 |
+| `--open` | 可重复，最多 16 个；`端口/tcp|udp[/both|ipv4|ipv6]`，地址族默认 `both`；端口不能是 22 或面板端口，`端口/协议` 不能是 80/tcp（80/udp 可以，需求 D35），同一端口和协议不能重复 |
 | `--confirm-timeout` | 3～60 的整数分钟，默认 10（需求 D18） |
 
 `apply` 先检查标准输入是否为终端（方案设计第 7.1 节），再解析参数。
@@ -124,7 +134,7 @@ M4 起 `confirm` 和 `_restore` 也处理 `ports` 的变更，退出码的含义
 
 | 参数 | 规则 |
 |---|---|
-| `--add` | 可重复；格式同 `--open`；不能是 22 或应用时的面板端口；`端口/协议` 不能已在声明中 |
+| `--add` | 可重复；格式同 `--open`；不能是 22 或应用时的面板端口；`端口/协议` 不能是 80/tcp，也不能已在声明中 |
 | `--remove` | 可重复；格式同 `--open`；必须是已声明的 `端口/协议`，不能是 22；省略地址族时按声明的地址族撤销，给出时须与声明的一致 |
 | `--confirm-timeout` | 同上表 |
 
@@ -162,7 +172,7 @@ v0.1 中的 `--user`、`--pubkey-file` 和 `--maxretry` 已删除：root 是管�
 2. 默认策略设为拒绝入站、允许出站、拒绝转发。
 3. 放行 22/tcp 和每个 `--open` 端口。地址族为 `both` 时用 `ufw allow 端口/协议`；`ipv4`、`ipv6` 分别加 `to 0.0.0.0/0`、`to ::/0`。规则都带注释 `vps-hardening`。
 4. 核实已有放行 22/tcp 的规则，然后才 `systemctl enable ufw.service` 并 `ufw --force enable`。
-5. 核实状态为 active，把 `ufw status` 的规则行记入 `ufw-rules`。`verify` 的 `ufw.rules` 以这份记录为准。
+5. 核实状态为 active。规则行不记录：`verify` 的 `ufw.rules` 与声明比较（第 4 节）。v0.5 及之前把这时 `ufw status` 的规则行记入 `ufw-rules`，以它为准；UFW 未启用时已添加的规则在第 4 步一起生效，也进入了记录，此后 `verify` 不会报告（需求 D34）。
 
 **Fail2ban。**
 
@@ -300,8 +310,7 @@ WantedBy=sysinit.target
 | `pending` | 只在待确认期间存在：`kind`（`apply` 或 `ports`，M4 新增）、`session`（发起变更的会话的审计会话编号）、`deadline`（截止时间，Unix 秒）、`timer`（当前定时器的单元名） |
 | `units` | 每行一个受管单元：名称、应用前是否存在、`is-enabled`、`is-active`。受管单元为 `ufw.service`、`fail2ban.service`、`apt-daily.timer`、`apt-daily-upgrade.timer` |
 | `snapshot/` | `index` 每行一个受管文件：`序号 present 摘要 权限:UID:GID 路径`，或 `序号 absent - - 路径`；`0`～`7` 是对应文件的副本 |
-| `snapshot-ports/` | M4 新增，只在端口变更待确认期间存在：`index` 和副本的格式同 `snapshot/`，只含 `/etc/ufw/user.rules`、`/etc/ufw/user6.rules`；`open` 为变更前的公开端口，`ufw-rules` 为变更前的规则记录。确认或恢复后删除。与 `snapshot/` 分开，所以 `rollback` 始终以应用前的快照为准 |
-| `ufw-rules` | 应用后 `ufw status` 的规则行；每次端口变更后更新 |
+| `snapshot-ports/` | M4 新增，只在端口变更待确认期间存在：`index` 和副本的格式同 `snapshot/`，只含 `/etc/ufw/user.rules`、`/etc/ufw/user6.rules`；`open` 为变更前的公开端口。确认或恢复后删除。与 `snapshot/` 分开，所以 `rollback` 始终以应用前的快照为准 |
 | `log` | 带 UTC 时间的操作记录（恢复时每一步一行，便于定位耗时），以及软件包安装、UFW、Fail2ban 命令的输出 |
 
 受管文件：SSH 片段、`/etc/default/ufw`、`/etc/ufw/ufw.conf`、`/etc/ufw/user.rules`、`/etc/ufw/user6.rules`、Fail2ban 的 jail 和 `fail2ban.local`、APT 配置。
@@ -328,6 +337,7 @@ WantedBy=sysinit.target
 - "恢复中"和"恢复失败"是方案设计第 7.3 节状态图之外新增的状态。恢复没有全部完成时不能记为"已回滚"，否则预检会允许再次应用。
 - "端口变更待确认"也是新增的状态（M4）。它与"待确认"共用标记和自动恢复，但恢复只撤销端口变更，成功后回到"已应用"。端口变更的恢复同样先记为"恢复中"，没有全部完成时记为"恢复失败"，原因以"端口变更："开头，之后由 `rollback` 处理（第 2.10 节）。
 - 记录中没有密码和私钥：工具不读取密码，也不开启 `set -x`。
+- M2～M4 的开发版还写有 `ufw-rules`（应用后 `ufw status` 的规则行，端口变更时在 `snapshot-ports/` 中另存一份）。v0.6 起不再写入，也不再读取（第 2.5 节）；旧版本留在状态目录中的这个文件不影响任何判定。
 
 ### 2.9 `status`
 
@@ -374,19 +384,19 @@ WantedBy=sysinit.target
 1. 解析参数（第 2.4 节）；不是 root 时拒绝；取操作锁，不等待。
 2. 状态必须是"已应用"。待确认、端口变更待确认、未应用和其他状态都被拒绝（退出码 1），提示先确认、等待到期或先执行 `apply`。
 3. 计算新的声明：记录中的公开端口去掉 `--remove` 的，再加上 `--add` 的。与记录有关的参数错误在这一步报告（退出码 2）。
-4. 变更前检查，任一项不符合就以退出码 1 结束，不做变更：`ports.ufw`（UFW 已启用）、`ports.rules`（当前规则与记录一致；不一致时先用 `verify` 查看差异）、`ports.ssh`（有放行 22/tcp 的规则）、`root.key` 和 `root.keys`。
+4. 变更前检查，任一项不符合就以退出码 1 结束，不做变更：`ports.ufw`（UFW 已启用）、`ports.rules`（当前规则与记录中的声明逐条一致，判定同 `verify` 的 `ufw.rules`；不一致时先用 `verify` 查看差异）、`ports.userrules`（`user.rules`、`user6.rules` 与记录的摘要相同，判定同 `verify` 的 `ufw.userrules`。`ufw allow`、`ufw delete` 按已解析的规则重写文件，不先拒绝的话，直接写入的行从文件中消失、摘要被重新记下，而这一行在 UFW 下次启动前仍然生效；v0.6 新增）、`ports.ssh`（有放行 22/tcp 的规则）、`root.key` 和 `root.keys`。
 5. 输出变更计划：撤销和增加的端口、变更后放行的端口、面板端口不放行、确认时限；然后与 `apply` 相同的两项确认。
 6. 执行三步：
-   1. 记录变更前的规则：两个规则文件的快照、变更前的声明（`open`）和规则记录（`ufw-rules`），都放在 `snapshot-ports/`，与应用前的快照分开；
+   1. 记录变更前的规则：两个规则文件的快照和变更前的声明（`open`），都放在 `snapshot-ports/`，与应用前的快照分开；
    2. 布置自动恢复：与 `apply` 的第 6 步相同，标记的种类为 `ports`；状态改为"端口变更待确认"；
-   3. UFW：先撤销、后增加。增加的命令与 `apply` 的相同；撤销用 `ufw delete allow …`，带上注释，与本工具写入的规则精确对应。然后核实结果，更新记录中的声明、规则记录和两个文件的摘要，用完整时限重新计时，输出截止时间和确认命令。
+   3. UFW：先撤销、后增加。增加的命令与 `apply` 的相同；撤销用 `ufw delete allow …`，带上注释，与本工具写入的规则精确对应。然后核实结果，更新记录中的声明和两个文件的摘要，用完整时限重新计时，输出截止时间和确认命令。
 
 `ufw delete` 删除不存在的规则时退出码仍为 0，所以第 3 步核实的是结果：`ufw status` 的规则行去掉 `(v6)` 标记、压缩空格、按地址族标记后，必须正好是 22/tcp 和新声明中的每个端口，在声明的地址族上各一条，来源为 `Anywhere`，带注释 `vps-hardening`。只放行一个地址族的规则在 `ufw status` 中也显示为 `Anywhere`，只靠 `(v6)` 区分 IPv6（ufw 0.36.2 `backend_iptables.py` 的 `get_status`）。
 
 确认、恢复和失败：
 
 - `confirm` 的检查与 `apply` 之后的相同（第 2.6 节），新会话不能是发起 `ports` 的会话。确认后删除端口变更的快照，记录 `ports_confirmed_at`，然后运行 `verify`。
-- 到期未确认（运行时）或待确认期间重启（开机时），`_restore` 按标记的种类只撤销端口变更：状态改为"恢复中"；运行时先停止定时器；按 `snapshot-ports/` 恢复两个规则文件；运行时执行 `ufw reload`（开机时 UFW 尚未启动，启动时读取恢复后的文件）；恢复记录中的声明、规则记录和两个文件的摘要；撤除自动恢复。全部成功时状态回到"已应用"，记录 `ports_rolled_back_at` 和原因；否则按第 2.8 节记为"恢复失败"。
+- 到期未确认（运行时）或待确认期间重启（开机时），`_restore` 按标记的种类只撤销端口变更：状态改为"恢复中"；运行时先停止定时器；按 `snapshot-ports/` 恢复两个规则文件；运行时执行 `ufw reload`（开机时 UFW 尚未启动，启动时读取恢复后的文件）；恢复记录中的声明和两个文件的摘要；撤除自动恢复。全部成功时状态回到"已应用"，记录 `ports_rolled_back_at` 和原因；否则按第 2.8 节记为"恢复失败"。
 - 失败分两个阶段，与 `apply` 相同：第 1 步（记录变更前的规则）失败时，删除端口变更的快照并记录原因（注明"尚未修改规则"），状态仍为"已应用"；从第 2 步起的失败、ERR 陷阱和 SIGINT、SIGTERM、SIGHUP 都立即按上面的方式恢复原端口，退出码为 1（内部错误为 3）。
 - 端口变更待确认期间执行 `rollback`，执行的是完整恢复，端口变更随其他变更一起撤销（第 2.7 节）。
 
@@ -400,6 +410,7 @@ WantedBy=sysinit.target
 - **拒绝条件。** 不是 root；缺少所需的命令；存在待确认标记（待确认期间 systemd 单元会调用已安装的工具）；操作锁被占用（第 2.7 节，不等待）。
 - **放置。** 已安装的文件与发行版完全一致时（入口和每个模块的摘要相同，模块目录中没有多余的文件），输出"未做变更"。否则模块先写到 `/usr/local/lib/.vps-hardening.stage.<PID>`（目录 0755，文件 0644，属主 root），入口写到 `/usr/local/bin/.vps-hardening.new.<PID>`（0755）；然后把旧模块目录改名移开、新目录改名就位、入口改名替换，`sync` 后删除旧目录。两次改名之间失败时，退出陷阱把旧目录放回。最后运行 `vps-hardening --version` 核对版本。
 - **awk 的正则。** 清单的格式检查不用正则区间（第 6 节）。
+- **结尾的提示（v0.6）。** 安装完成时，状态文件中有 `status=applied` 一行（已应用）就提示执行 `verify` 核对配置、`status` 查看记录；否则说明安装没有执行 `preflight` 或 `apply`，提示执行 `preflight`。v0.5 总是提示 `preflight`，而已应用的主机上预检会因 `new-host.state` 不符合而结束（第 8.11 节）。
 
 ## 3. preflight 检查项
 
@@ -412,12 +423,14 @@ WantedBy=sysinit.target
 | `inputs.*` | 输入摘要 | 不判定不符合：只回显已校验的面板端口、公开端口和确认时限；没有公开端口时 `inputs.open` 为警告 |
 | `new-host.xui` | 存量判定 S1 | 存在 `x-ui.service` 或 `/usr/local/x-ui` |
 | `new-host.container` | 存量判定 S4 | 存在 Docker（命令或 `docker.service`）或 Podman |
-| `new-host.ufw` | 存量判定 S2 | UFW 已启用 |
+| `new-host.ufw` | 存量判定 S2 | UFW 已启用；或者未启用，但已有添加的规则（`ufw show added` 非空，这些规则会在 `apply` 启用 UFW 时生效）；无法读取已添加的规则时同样不符合。未安装 UFW 时通过 |
+| `new-host.ufw-framework` | 存量判定 S2 | 只在 UFW 已安装、未启用时输出：`/etc/ufw` 中的 `before.rules`、`before6.rules`、`after.rules`、`after6.rules`、`before.init`、`after.init` 有与 `/usr/share/ufw` 中软件包的原始文件不同的（逐字节比较，缺少也算）。这些文件中的规则不显示在 `ufw status` 中（需求 D34） |
 | `new-host.fail2ban` | 存量判定 S3 | 有 `*.local`；`jail.d`、`fail2ban.d` 中有发行版 `defaults-debian.conf` 以外的文件；或 `dpkg --verify fail2ban` 报告改动 |
 | `new-host.state` | 是否执行过 | 存在 `/var/lib/vps-hardening`，且状态不是"已回滚"。上次应用已完全回滚的主机仍算新机（FR-02，方案设计第 7.3 节）；待确认、端口变更待确认、已应用、恢复失败等状态都不符合；"应用中""恢复中""恢复失败"时提示先执行 `rollback`（M4） |
 | `sshd.config` | sshd 配置 | `sshd -t` 失败，或 `sshd -T` 读不出生效配置 |
 | `sshd.include` | 片段能否生效 | 主配置在 `Include /etc/ssh/sshd_config.d/*.conf` 之前已设置受管选项或打开了 `Match` |
 | `sshd.dropin-order` | 片段排序 | 排在 `00-vps-hardening.conf` 之前的片段设置了受管选项或 `Match`，或本工具的片段已存在 |
+| `sshd.match` | `Match` 块 | 主配置或它包含的任何文件中有 `Match` 行，不论位置和条件（需求 D36）。包含的文件按 `Include` 递归展开，相对路径以 `/etc/ssh` 为基准；注释行不计 |
 | `root.key`、`root.keys` | root 的公钥（需求 FR-01、FR-03） | root 的 `authorized_keys`（按 root 的 `AuthorizedKeysFile` 生效值展开）中没有可用的公钥。可用指同时满足：行首就是密钥类型，不带选项（cloud-init 用 `command=` 前缀禁止 root 登录时，这样的行不算）；能被 `ssh-keygen -l -E sha256` 解析；算法在 `pubkeyacceptedalgorithms` 中（`ssh-rsa` 密钥以 `rsa-sha2-*` 判定）。按指纹去重，每把可用的公钥输出一行 `INFO root.key`（类型和指纹）；有未计入的行时，`root.keys` 注明行数 |
 | `sudo.nopasswd-accounts` | 免密账户 | 只报告（`INFO`）：有 SSH 密钥且免密 sudo 的账户，应用时将被禁止 SSH 登录（需求 D13） |
 | `apt.idle` | 包管理器 | dpkg、apt 或 unattended-upgrades 的锁被持有，或 apt、dpkg 进程在运行 |
@@ -436,15 +449,18 @@ WantedBy=sysinit.target
 | `state` | "已应用"时通过；"待确认"时为警告，注明约几分钟后自动恢复；"端口变更待确认"时为警告，注明约几分钟后恢复原端口；没有状态目录、"已回滚"和其他状态为不符合 | M2 已实现；端口变更为 M4 新增 |
 | `ssh.dropin` | SSH 片段的 SHA-256 等于应用时的记录 | M2 已实现；没有应用记录时跳过 |
 | `ssh.denied` | 每个被禁账户：以它的身份执行 `sshd -T -C`，它在 `DenyUsers` 中，密码和键盘交互认证都是 `no` | M2 新增；没有被禁账户时不输出 |
-| `ufw.rules` | `ufw status` 的规则行排序后与应用时的记录完全一致，多出或缺少规则都不符合；IPv4、IPv6 规则分别计 | M2 已实现；没有应用记录时跳过 |
-| `ufw.panel` | 没有放行面板端口的规则，判定方法与 `ufw.port80` 相同 | M2 已实现；没有应用记录时跳过 |
+| `ufw.rules` | `ufw status` 的规则行与记录中的声明逐条一致：22/tcp 和每个公开端口在声明的地址族上各一条，来源为 `Anywhere`，带注释 `vps-hardening`（规整方法同第 2.11 节）；多出或缺少规则都不符合；IPv4、IPv6 规则分别计 | M2 已实现；v0.6 改为与声明比较（之前与应用后记录的规则行比较，第 2.5 节）；没有应用记录时跳过 |
+| `ufw.userrules` | `/etc/ufw/user.rules`、`/etc/ufw/user6.rules` 的 SHA-256 等于记录：`apply` 结束时记下，`ports` 变更后和恢复后更新（第 2.8 节）。`ufw status` 只列出带 tuple 注释的规则，直接写入文件的行由这一项发现；不一致时列出不一致的文件 | v0.6 新增（需求 D37）；没有应用记录时跳过 |
+| `ufw.panel` | 没有放行面板端口的规则，不论协议；判定方法与 `ufw.port80` 相同 | M2 已实现；没有应用记录时跳过 |
 | `uu.dropin` | 本工具的 APT 配置 `/etc/apt/apt.conf.d/52vps-hardening` 的 SHA-256 等于应用时的记录 | M3 新增；没有应用记录时跳过 |
 | `boundary.panel-listen` | 安装了 3X-UI 时（判定同 `new-host.xui`），应用时声明的面板端口上的 TCP 监听地址都是回环地址（`127.0.0.0/8`、`::1`、`::ffff:127.0.0.0/104`）；有非回环地址时不符合；端口上没有监听时为警告，无法核对 | M3 实现；未安装 3X-UI 时为 `INFO`，没有应用记录时跳过 |
 | `accounts.nopasswd` | 有密钥、免密 sudo、又不在 `DenyUsers` 中的登录账户 | 已实现 |
 | `ssh.permitrootlogin`、`ssh.passwordauthentication`、`ssh.kbdinteractive`、`ssh.pubkey`、`ssh.forwarding`、`ssh.port` | 以 root 身份执行 `sshd -T -C` 的生效值：`without-password` 或 `prohibit-password`（`sshd -T` 用旧名 `without-password` 输出 `prohibit-password`）、`no`、`no`、`yes`、`yes` 或 `local`、`22` | 已实现；被禁账户另由 `ssh.denied` 检查 |
+| `ssh.match` | 同 preflight 的 `sshd.match`：主配置及其包含的文件中没有 `Match` 块。有 `Match` 块时，上一行以 root 求得的值不代表所有来源 | v0.6 新增（需求 D36） |
 | `root.key`、`root.keys` | 同 preflight：root 至少有一把可用的公钥 | 已实现 |
 | `ssh.listen` | 22 端口在 IPv4 上监听为必需；没有 IPv6 时为警告 | 已实现 |
-| `ufw.installed`、`ufw.active`、`ufw.defaults`、`ufw.ipv6`、`ufw.port80` | 已安装并启用；默认拒绝入站、允许出站、拒绝转发；`IPV6=yes`；没有放行 80 端口的入站规则。转发策略：`ufw status verbose` 显示 `deny (routed)` 或 `disabled (routed)`，并且 `/etc/default/ufw` 中为 `DEFAULT_FORWARD_POLICY="DROP"`。内核没有开启转发时，ufw 把转发策略显示为 `disabled`（第 8.4 节） | 已实现；转发策略的判定在 M2 修改 |
+| `ufw.installed`、`ufw.active`、`ufw.defaults`、`ufw.ipv6`、`ufw.port80` | 已安装并启用；默认拒绝入站、允许出站、拒绝转发；`IPV6=yes`；没有放行 80/tcp 的入站规则（不限协议的 80 也算，只放行 80/udp 的不算，需求 D35）。转发策略：`ufw status verbose` 显示 `deny (routed)` 或 `disabled (routed)`，并且 `/etc/default/ufw` 中为 `DEFAULT_FORWARD_POLICY="DROP"`。内核没有开启转发时，ufw 把转发策略显示为 `disabled`（第 8.4 节） | 已实现；转发策略的判定在 M2 修改；`ufw.port80` 在 v0.6 改为只判 80/tcp |
+| `ufw.framework` | 同 preflight 的 `new-host.ufw-framework`：6 个框架文件与 `/usr/share/ufw` 中的原始文件相同。UFW 未安装时，与 UFW 的其他检查项一样不输出（`ufw.installed` 不符合） | v0.6 新增（需求 D34） |
 | `f2b.installed`、`f2b.service`、`f2b.jails`、`f2b.mainconf` | 已安装；服务启用且运行；jail 只有 `sshd`；`jail.conf`、`fail2ban.conf` 未改动 | 已实现 |
 | `f2b.config` | `fail2ban-client -t` 成功 | M3 新增 |
 | `f2b.values` | 服务有响应时，读取 14 项生效值，逐项等于 FR-08（见下文）；服务没有响应时不符合 | M3 实现；期望值都是常量，不需要应用记录 |
@@ -454,7 +470,7 @@ WantedBy=sysinit.target
 | `boundary.container`、`boundary.xui-bbr` | 没有 Docker 或 Podman；没有 `/etc/sysctl.d/99-bbr-x-ui.conf` | 已实现 |
 | `reboot.required` | 存在 `/var/run/reboot-required` | 警告 |
 
-`ufw.rules` 用 `ufw status` 而不用 `ufw show added`：后者丢失地址族，只放行 IPv4 的 `proto udp to 0.0.0.0/0 port 8443` 显示为 `ufw allow 8443/udp`，与两个地址族都放行的规则无法区分（第 8.4 节）。`ufw status` 只在 UFW 启用时列出规则，未启用时 `ufw.rules` 与 `ufw.active` 一起报告不符合。
+`ufw.rules` 用 `ufw status` 而不用 `ufw show added`：后者丢失地址族，只放行 IPv4 的 `proto udp to 0.0.0.0/0 port 8443` 显示为 `ufw allow 8443/udp`，与两个地址族都放行的规则无法区分（第 8.4 节）。`ufw status` 只在 UFW 启用时列出规则，未启用时 `ufw.rules` 与 `ufw.active` 一起报告不符合。预检的 `new-host.ufw` 反过来用 `ufw show added`：UFW 未启用时 `ufw status` 不列出规则，而预检只需要知道有没有已添加的规则，不需要地址族。
 
 Fail2ban 各项的输出顺序为 `f2b.installed`、`f2b.service`、`f2b.config`、`f2b.jails`、`f2b.values`、`f2b.files`、`f2b.mainconf`。`f2b.values` 的读取和比较：
 
@@ -497,7 +513,7 @@ Fail2ban 各项的输出顺序为 `f2b.installed`、`f2b.service`、`f2b.config`
 - **有界。** 可能被服务阻塞的读取命令（`sshd`、`ufw`、`fail2ban-client`、`apt-config`、`apt-cache`、`sudo -l`）加 30 秒超时。`apply` 和恢复中改变系统的 `systemctl`、`ufw`、`systemd-run` 命令加 120 秒超时，软件包安装 30 分钟（方案设计第 7.5 节）。Bash 要等当前命令返回才执行信号陷阱，不设超时的话，一个卡住的命令会同时挡住断线后的恢复；定时器触发的恢复等锁 15 分钟后也会放弃。
 - **写入。** 受管文件先写到 `<路径>.vh-new`，设权限 0644 后改名替换；状态文件同样改名替换（第 2.8 节）。`apply` 中 `apt-get` 的标准输入为 `/dev/null`，不会读走管理员终端上的输入。
 - **管道与 `pipefail`。** 读取端不提前退出（不用 `head`、`grep -q` 截断长输出），否则写入端会因 SIGPIPE 失败，在 `pipefail` 下被误判。`apt-config dump` 的输出缓存后复用。
-- **sshd 生效值。** 用 `sshd -T -C user=<用户>,host=vps-hardening.invalid,addr=192.0.2.1,laddr=192.0.2.2,lport=22` 按用户求值，结果按用户缓存。地址取自文档保留地址，使 `Match Address` 块按"普通外部来源"求值。
+- **sshd 生效值。** 用 `sshd -T -C user=<用户>,host=vps-hardening.invalid,addr=192.0.2.1,laddr=192.0.2.2,lport=22` 按用户求值，结果按用户缓存。地址取自文档保留地址。按一个连接求值不能代表所有来源，所以有 `Match` 块的配置被拒绝（`sshd.match`、`ssh.match`，需求 D36）；没有 `Match` 块时，求得的值与这些连接参数无关。v0.5 写的是"使 `Match Address` 块按普通外部来源求值"，这只覆盖了一个来源（需求 D34）。
 - **包管理器是否在运行。** 以锁的持有者（`lslocks`）为准，再加 apt、dpkg 进程名。进程名逐个交给 `pgrep -x`：整个模式超过 15 个字符时 pgrep 不匹配任何进程，用 `|` 拼接的模式会静默失效。不能用进程名判断 unattended-upgrades：它的关机辅助进程常驻，进程名截断后与升级进程相同。
 - **ERR 陷阱。** 只在主 shell 中把意外失败转换为退出码 3。`$(...)` 和管道中的命令也会触发陷阱，其中包括预期的非零状态（如查询未安装的单元），所以子 shell 中不处理；真正的失败经退出状态回到主 shell 后再判定。
 - **启发式判定。** `root.keys` 只计入格式明确的公钥行（带选项的行即使实际能登录也不计入），`new-host.fail2ban` 以文件存在为准，`dpkg --verify` 无法校验时视为有改动。两者在不确定时都判为不符合，宁可误拒，不会误放行。
@@ -565,16 +581,16 @@ M4 的测试再增加以下内容：
 |---|---|---|
 | matrix | 三平台 amd64；arm64 按需（参考） | 准备；核实转发连接在客体中的来源地址；VT-01；VT-50 的未加固部分；sshd 探测研究。然后在同一客体上执行 M2 的主流程：应用 → 三种被拒绝的确认 → 从新会话确认 → 核对 → 隧道 → 重启后核对 → 回滚（VT-60）。待确认、确认后和回滚后各执行一次 `status` |
 | recovery | 三平台 amd64；arm64 按需（参考） | 准备好的磁盘为底，两个覆盖层：确认超时（时限 3 分钟，应用后不确认）；待确认期间从应用会话重启 |
-| negative | 三平台 amd64 | 准备；VT-02、VT-04；关机后以准备好的磁盘为底，S1～S4 各用一个覆盖层磁盘启动（VT-03）；S2 中检查 UFW 是否过滤转发连接；再用一个覆盖层执行 VT-23，之后在这个覆盖层上解除对 `fail2ban.service` 的屏蔽，再次应用并确认（VT-64 的第四种情况）；最后用一个覆盖层执行 VT-72 的本地部分 |
-| hardened | 三平台 amd64；arm64 按需（参考） | 准备，记录基线；`apply --open 443/tcp --open 2096/tcp`（3X-UI 的入站和订阅端口），从新会话确认；VT-30、VT-31、VT-33 和 VT-35、VT-32、VT-34、VT-40；安装 3X-UI（VT-55 第一部分、VT-50、VT-71）；经隧道打开面板；重启后核对（VT-55 第二部分）。以上全程持续探测（VT-25）。关机后以这块磁盘为底，9 个覆盖层各注入一项漂移（VT-51）；另有 VT-61、VT-63、VT-64 各一个覆盖层 |
+| negative | 三平台 amd64 | 准备；VT-02、VT-04；关机后以准备好的磁盘为底，S1～S4 各用一个覆盖层磁盘启动（VT-03），S2 的覆盖层在启用 UFW 之前先检查两种未启用时的情形；S2 中检查 UFW 是否过滤转发连接；再用一个覆盖层执行 VT-23，之后在这个覆盖层上解除对 `fail2ban.service` 的屏蔽，再次应用并确认（VT-64 的第四种情况）；最后用一个覆盖层执行 VT-72 的本地部分 |
+| hardened | 三平台 amd64；arm64 按需（参考） | 准备，记录基线；`apply --open 443/tcp --open 2096/tcp`（3X-UI 的入站和订阅端口），从新会话确认；VT-30、VT-31、VT-33 和 VT-35、VT-32、VT-34、VT-40；安装 3X-UI（VT-55 第一部分、VT-50、VT-71）；经隧道打开面板；重启后核对（VT-55 第二部分）。以上全程持续探测（VT-25）。关机后以这块磁盘为底，12 个覆盖层各注入一项漂移（VT-51）；另有 VT-61、VT-63、VT-64 各一个覆盖层 |
 
 M1 用例的判定要点：
 
 - VT-01：`preflight` 退出码为 0，`root.keys` 通过，前后状态摘要一致；
 - VT-50（未加固）：`verify` 退出码为 1；`state`、`ssh.passwordauthentication`、`accounts.nopasswd`、`f2b.installed` 为不符合，Debian 上 `ufw.installed`、Ubuntu 上 `ufw.active` 为不符合；`ssh.permitrootlogin`（镜像默认已是 `prohibit-password`）、`root.keys`、`ssh.pubkey`、`ssh.port`、`nft.service`、`boundary.container`、`boundary.xui-bbr` 为通过；前后摘要一致；所有证据中没有测试密码；
-- VT-02：非 root（`runuser -u nobody`）、不支持的版本（在私有挂载命名空间中覆盖 `/etc/os-release`）、root 没有可用的公钥（同样在私有挂载命名空间中，用只有注释、只有带 `command=` 选项、只有无法解析的行三种文件覆盖 root 的 `authorized_keys`）、dpkg 前端锁被占用、有不持锁的 `dpkg` 进程，分别得到对应的不符合项或退出码 2；
-- VT-03：S1～S4 各自得到 `new-host.xui`、`new-host.ufw`、`new-host.fail2ban`、`new-host.container` 不符合，并提示"存量主机不在支持范围内"，`preflight` 前后摘要一致；
-- VT-04：第 2.4 节的各类非法输入退出码为 2，已删除的参数（`--maxretry`）按未知参数处理；root 同时有 Ed25519 和 RSA 公钥时两把都被识别；时限 3 和 60 被接受；标准输入不是终端时 `apply` 被拒绝。
+- VT-02：非 root（`runuser -u nobody`）、不支持的版本（在私有挂载命名空间中覆盖 `/etc/os-release`）、root 没有可用的公钥（同样在私有挂载命名空间中，用只有注释、只有带 `command=` 选项、只有无法解析的行三种文件覆盖 root 的 `authorized_keys`）、dpkg 前端锁被占用、有不持锁的 `dpkg` 进程，分别得到对应的不符合项或退出码 2。v0.6 增加 sshd 配置中有 `Match` 块的两种情况，都在私有挂载命名空间中覆盖，真实文件不变：主配置末尾加 `Match Address 198.51.100.0/24` 块（块内 `PasswordAuthentication yes`），`preflight` 退出码为 1，`sshd.match` 不符合，`sshd.include` 通过；片段目录中加同样内容的 `99-match.conf`，`apply` 在预检阶段被拒绝，`sshd.match` 不符合；
+- VT-03：S1～S4 各自得到 `new-host.xui`、`new-host.ufw`、`new-host.fail2ban`、`new-host.container` 不符合，并提示"存量主机不在支持范围内"，`preflight` 前后摘要一致。S2 的覆盖层在启用 UFW 之前先检查两种情形（v0.6），`preflight` 和 `apply` 都被拒绝，前后摘要一致：私有挂载命名空间中 `before.rules` 加一条放行 8081/tcp 的 IPv4 规则，`new-host.ufw-framework` 不符合、`new-host.ufw` 通过；`ufw allow proto tcp to ::/0 port 8081` 添加一条只放行 IPv6 的规则后，`new-host.ufw` 不符合（"UFW 未启用，但已有 1 条规则"）、`new-host.ufw-framework` 通过；
+- VT-04：第 2.4 节的各类非法输入退出码为 2，已删除的参数（`--maxretry`）按未知参数处理；root 同时有 Ed25519 和 RSA 公钥时两把都被识别；时限 3 和 60 被接受；标准输入不是终端时 `apply` 被拒绝；公开端口为 80/tcp 时 `preflight` 和经伪终端的 `apply` 退出码都为 2，80/udp 被接受（v0.6）。
 - VT-02、VT-03 中 `apply` 的部分（M2 补测）：`apply` 在伪终端中运行，不输入任何内容。非 root、不支持的版本、root 只有带 `command=` 选项的公钥、dpkg 前端锁被占用这 4 种情况，以及 S1～S4，都在预检阶段被拒绝：退出码 1，对应的检查项不符合，输出"预检有不符合项，未做任何变更"（非 root 时在预检之前就被拒绝）；S1～S4 还提示"存量主机不在支持范围内"。S1～S4 的 `preflight` 和 `apply` 在同一对状态摘要之间执行，摘要一致。
 
 M2 用例的判定要点（验证计划第 4.2、4.3 节）：
@@ -610,13 +626,16 @@ M3 用例的判定要点（验证计划第 4.4～4.7 节）：
 | 漂移 | 注入方式 | 期望 |
 |---|---|---|
 | `firewall-install` | 3X-UI 菜单：防火墙 → 安装防火墙 | 退出码 0，没有不符合项；UFW 不变，菜单输出 `Firewall is already active`（第 9 节） |
-| `firewall-reinstall` | 菜单：防火墙 → 停用防火墙，再安装防火墙 | `ufw.panel`、`ufw.port80`、`ufw.rules` |
+| `firewall-reinstall` | 菜单：防火墙 → 停用防火墙，再安装防火墙 | `ufw.panel`、`ufw.port80`、`ufw.rules`、`ufw.userrules` |
 | `iplimit` | 菜单：IP Limit → 安装 | `f2b.files`、`f2b.jails`、`f2b.mainconf` |
 | `listen-all` | `x-ui setting -listenIP 0.0.0.0` 并重启 x-ui | `boundary.panel-listen` |
 | `bbr` | 菜单：BBR → 启用 | `boundary.xui-bbr` |
-| `ufw-rule` | `ufw allow 8080/tcp` | `ufw.rules` |
+| `ufw-rule` | `ufw allow 8080/tcp` | `ufw.rules`、`ufw.userrules` |
 | `nftables` | `systemctl enable nftables.service` | `nft.service` |
 | `sshd-dropin` | 在 SSH 片段末尾追加一行注释 | `ssh.dropin` |
+| `sshd-match` | 新增片段 `99-match.conf`：`Match Address 198.51.100.0/24`，块内 `PasswordAuthentication yes`（v0.6） | `ssh.match`；`ssh.passwordauthentication` 仍通过，按假定的连接求值仍为 `no` |
+| `ufw-framework` | 在 `before6.rules` 的 `COMMIT` 之前加一条放行 8081/tcp 的规则（v0.6） | `ufw.framework` |
+| `ufw-userrules` | 在 `user.rules` 的 `COMMIT` 之前直接写入一条放行 8081/tcp 的规则，没有 tuple 注释（v0.6） | `ufw.userrules`；`ufw.rules` 仍通过 |
 | `reboot-required` | 创建 `/var/run/reboot-required` | 退出码 0，只有警告 `reboot.required` |
 
   菜单经标准输入应答，使用安装时已校验的 `/usr/bin/x-ui`（等于 tag 中的 `x-ui.sh`，验证计划第 3.5 节）；菜单在输入意外时会递归调用自身，所以每次限时 300 秒。
@@ -626,9 +645,9 @@ M4 用例的判定要点（验证计划第 4.8、4.9 节）：
 - VT-60：在 matrix 主流程的重启核对之后执行，全程持续探测。标准输入不是终端时退出码为 2；经伪终端回滚，输出"已恢复到应用前的配置"和保留的软件包，并有 `[WARN] rollback.password`（测试镜像应用前允许密码认证，第 7.2 节）；root 和默认用户都能用密钥登录。随后按 VT-20 的判据核对，原因为"手工回滚"：没有残留的自动恢复，`sshd -T`、UFW、受管文件、受管单元与基线一致，软件包保留，没有秘密泄露。`status` 显示"已回滚"和原因；再次回滚退出码为 1，输出"已经回滚"。
 - `status`（VT-62 的 M4 部分）：待确认时退出码为 0，显示"待确认"和确认截止时间；确认后显示"已应用"、受管文件的前后摘要和隧道命令（`ssh -N -L`）。
 - VT-61：回滚前记录 3X-UI 的文件摘要（`/usr/local/x-ui`、`/usr/bin/x-ui`、`/etc/x-ui`、`x-ui.service` 及其 drop-in 目录；排除数据库、指标文件和运行中生成的 Xray 配置 `bin/config.json`）和 `x-ui.service` 的启用、运行状态；回滚全程持续探测；回滚后按 VT-60 的判据核对，3X-UI 的文件和服务状态不变，面板只监听 `127.0.0.1:2053`。
-- VT-63：变更前 UFW 正好放行 22、443、2096（各两个地址族），从第二来源 443、2096 可达，8443、9443、2053 不可达。6 种请求被拒绝或取消：标准输入不是终端、`--add 22/tcp`、`--add 2053/tcp`、`--add 443/tcp/ipv4`、`--remove 8080/tcp` 的退出码为 2，在提示处取消的为 1；前后的工具记录相同（第 7.2 节）。`--add 8443/tcp --remove 2096/tcp` 输出"端口变更已生效，等待确认"，待确认期间 root 能登录；从新会话确认后状态为"已应用"，声明为 `443/tcp/both 8443/tcp/both`，没有残留的自动恢复和端口变更的快照，UFW 规则与声明逐条一致，443、8443 可达，2096、2053、9443 不可达，`verify` 通过，前后摘要一致。再执行 `--add 9443/tcp --confirm-timeout 3` 而不确认：状态为"端口变更待确认"，标记的种类为 `ports`，9443 可达，`status` 显示变更前的公开端口，`verify` 退出码为 0（`state` 警告，`ufw.rules` 通过）；测试驱动最多等 900 秒，状态回到"已应用"，原因为"确认超时"，两个规则文件的摘要等于确认后的，9443 不可达，`verify` 通过。全程持续探测。
-- VT-64：用应用时的参数（`--open 443/tcp --open 2096/tcp`）再次 `apply`，退出码为 0，输出"未做任何变更"，没有出现两项确认的提示；只换公开端口（`--open 443/tcp`），退出码为 1，`apply.inputs` 不符合；手工 `ufw allow 8080/tcp` 后再次 `apply`，退出码为 1，`ufw.rules` 不符合。每次前后的工具记录相同。第四种情况在 negative 套件中：VT-23 回退后解除屏蔽，`apply --open 443/tcp` 进入待确认，从新会话确认后状态为"已应用"，上次的回滚记录已删除，没有残留的自动恢复，`verify` 通过。
-- VT-72（本地部分）：在从未运行过本工具的覆盖层上执行（状态目录和 `/usr/local/bin/vps-hardening` 都不存在）。未绑定的安装脚本退出码为 1，相对路径为 2；正常安装为 0，入口和模块目录为 0755，12 个模块为 0644，属主 root，没有残留的临时文件，与发行版目录逐个相同，版本正确，已安装的工具与仓库副本的 `preflight` 输出和退出码相同；重复安装输出"未做变更"；被篡改的资产、被篡改的清单（重新生成而没有更新内置摘要）、缺少的资产、存在待确认标记、操作锁被占用，都以退出码 1 拒绝，已安装的文件不变；本地改动一个已安装的模块后再次安装，恢复为发行版的内容。
+- VT-63：变更前 UFW 正好放行 22、443、2096（各两个地址族），从第二来源 443、2096 可达，8443、9443、2053 不可达。8 种请求被拒绝或取消：标准输入不是终端、`--add 22/tcp`、`--add 2053/tcp`、`--add 80/tcp`（v0.6）、`--add 443/tcp/ipv4`、`--remove 8080/tcp` 的退出码为 2；在 `user6.rules` 的 `COMMIT` 之前直接写入一条规则后 `--add 8443/tcp`，退出码为 1，`ports.userrules` 不符合、`ports.rules` 通过，之后放回原文件（v0.6）；在提示处取消的为 1；前后的工具记录相同（第 7.2 节）。`--add 8443/tcp --remove 2096/tcp` 输出"端口变更已生效，等待确认"，待确认期间 root 能登录；从新会话确认后状态为"已应用"，声明为 `443/tcp/both 8443/tcp/both`，没有残留的自动恢复和端口变更的快照，UFW 规则与声明逐条一致，443、8443 可达，2096、2053、9443 不可达，`verify` 通过，前后摘要一致。再执行 `--add 9443/tcp --confirm-timeout 3` 而不确认：状态为"端口变更待确认"，标记的种类为 `ports`，9443 可达，`status` 显示变更前的公开端口，`verify` 退出码为 0（`state` 警告，`ufw.rules` 通过）；测试驱动最多等 900 秒，状态回到"已应用"，原因为"确认超时"，两个规则文件的摘要等于确认后的，9443 不可达，`verify` 通过。全程持续探测。
+- VT-64：用应用时的参数（`--open 443/tcp --open 2096/tcp`）再次 `apply`，退出码为 0，输出"未做任何变更"，没有出现两项确认的提示；只换公开端口（`--open 443/tcp`），退出码为 1，`apply.inputs` 不符合；手工 `ufw allow 8080/tcp` 后再次 `apply`，退出码为 1，`ufw.rules` 和 `ufw.userrules` 不符合。每次前后的工具记录相同。第四种情况在 negative 套件中：VT-23 回退后解除屏蔽，`apply --open 443/tcp` 进入待确认，从新会话确认后状态为"已应用"，上次的回滚记录已删除，没有残留的自动恢复，`verify` 通过。
+- VT-72（本地部分）：在从未运行过本工具的覆盖层上执行（状态目录和 `/usr/local/bin/vps-hardening` 都不存在）。未绑定的安装脚本退出码为 1，相对路径为 2；正常安装为 0，入口和模块目录为 0755，12 个模块为 0644，属主 root，没有残留的临时文件，与发行版目录逐个相同，版本正确，已安装的工具与仓库副本的 `preflight` 输出和退出码相同；重复安装输出"未做变更"；被篡改的资产、被篡改的清单（重新生成而没有更新内置摘要）、缺少的资产、存在待确认标记、操作锁被占用，都以退出码 1 拒绝，已安装的文件不变；本地改动一个已安装的模块后再次安装，恢复为发行版的内容。正常安装的结尾提示下一步执行 `preflight`；最后一种情况执行前写入只含 `status=applied` 的状态文件，结尾提示改为 `verify`，之后删除状态目录（v0.6）。
 
 ### 7.4 状态摘要
 
@@ -662,7 +681,7 @@ VT-61 比较 3X-UI 的文件时同样排除数据库和指标文件，另排除�
 
 来源：GitHub Actions 运行 `39389558685`（v0.2 的代码，commit `e3de443`，2026-10-20），9 个作业全部通过；只改动文档的复核运行 `39391825013`（commit `4925946`）同样全部通过，VT-01～VT-04、VT-50 的结果一致。v0.1 的代码对应运行 `38438964687`（commit `63dda79`，2026-10-13）和代码未变的复核运行 `38503522626`（commit `7ef6e0f`），同样全部通过。证据构件 `vm-matrix-*`、`vm-negative-*` 保留 14 天。按验证计划第 6 节逐项核对了构件，不以 CI 状态为准。证据层次为"虚拟机生命周期"，不代表真实主机。除注明的以外，第 8.1 节的结果来自运行 `39389558685`。
 
-第 8.1～8.3 节是 M1 的证据，第 8.4～8.6 节是 M2 的证据，第 8.7～8.9 节是 M3 的证据，第 8.10～8.12 节是 M4 的证据。按需求 D26，arm64 只作参考：第 8.1、8.2 节按当时的需求记录了 M1 的 arm64 结果，保持原样；M2 起 arm64 的结果放在附录 A。
+第 8.1～8.3 节是 M1 的证据，第 8.4～8.6 节是 M2 的证据，第 8.7～8.9 节是 M3 的证据，第 8.10～8.12 节是 M4 的证据，第 8.13 节是修复（v0.6）的证据。按需求 D26，arm64 只作参考：第 8.1、8.2 节按当时的需求记录了 M1 的 arm64 结果，保持原样；M2 起 arm64 的结果放在附录 A。
 
 ### 8.1 结果
 
@@ -964,6 +983,46 @@ VT-61 比较 3X-UI 的文件时同样排除数据库和指标文件，另排除�
 - 另外两点不属于以 root 管理的日常操作，但会改变加固前的行为：镜像默认的免密 sudo 账户不能再经 SSH 登录（需求 D13）；管理员的出口在 10 分钟内累积 5 次认证失败会被封禁 1 天（需求 R-3）。只用密钥登录时，ssh-agent 中有多把密钥、`IdentitiesOnly` 和认证前断开都不计为失败（VT-34）。
 - 置信度：中。走查基于 CI 虚拟机和一台测试 VPS 的输出；3X-UI 没有配置入站。
 
+### 8.13 修复的运行结果
+
+来源：GitHub Actions 运行 `39778449517`（拉取请求 #11 的合并提交 `2486e83`，它的树与 commit `5649b5d` 相同，2026-10-22），12 个 amd64 作业全部通过；同一 commit 的静态检查运行 `39778449550` 通过。证据构件逐个用例核对，不以 CI 状态为准。证据层次为"虚拟机生命周期"，不代表真实主机。arm64 没有运行（第 9 节）。
+
+这是第二轮。第一轮运行 `39762487646`（合并提交 `24414a4`，树与 commit `bafa4b7` 相同）在增加 `ufw.userrules`、`ports.userrules`（需求 D37）之前，12 个作业同样全部通过；除下文注明的计数和用例外，两轮的结果相同。
+
+这一轮 runner 上安装 QEMU 的时间在 18 秒～30 分 20 秒之间，作业时长因此不可比，下表列运行套件那一步的时长：
+
+| 套件 | 平台 | 套件时长 | 结果 |
+|---|---|---|---|
+| matrix | Debian 12 / 13、Ubuntu 24.04，amd64 | 3 分 27 秒～4 分 06 秒 | 通过 |
+| recovery | 同上 | 4 分 51 秒～5 分 26 秒 | 通过 |
+| negative | 同上 | Debian 3 分 09 秒～5 分 22 秒，Ubuntu 24.04 22 分 21 秒（见本节末尾） | 通过 |
+| hardened | 同上 | 14 分 29 秒～18 分 31 秒 | 通过 |
+
+三个平台的结果相同，不同之处注明：
+
+- VT-01：`sshd.match` 通过，三个镜像的 sshd 配置都没有 `Match` 块。Ubuntu 24.04 的镜像预装 UFW，`new-host.ufw`（已安装但未启用，没有已添加的规则）和 `new-host.ufw-framework` 都通过；Debian 12、13 的镜像没有 UFW，`new-host.ufw` 为"UFW 未安装"，框架文件一项不输出。应用后三个平台的 `ufw.framework` 都通过，即 `apply` 安装的（Debian）和预装的（Ubuntu）6 个框架文件都与模板相同（第 9 节）；`ufw.userrules` 也都通过。
+- VT-02、VT-04：negative 基础阶段的调用由 28 个增加到 33 个，新增的 5 个都符合第 7.3 节：`--open 80/tcp` 的 `preflight` 和经伪终端的 `apply` 退出码都为 2，输出"公开端口不能是 80/tcp"；`--open 80/udp` 为 0；主配置末尾有 `Match` 块时，`preflight` 退出码为 1，唯一的不符合项是 `sshd.match`，`sshd.include` 通过；片段目录中有 `Match` 块时，`apply` 在预检阶段以退出码 1 被拒绝，不符合项同样只有 `sshd.match`。其余调用的结果与第 8.10 节相同，前后摘要一致。
+- VT-03：S1～S4 的结果与第 8.10 节相同。S2 启用 UFW 之前的两种情形，`preflight` 和 `apply` 都以退出码 1 被拒绝，提示"存量主机不在支持范围内"，前后摘要一致：`before.rules` 中加规则时，唯一的不符合项是 `new-host.ufw-framework`，`new-host.ufw` 通过；添加只放行 IPv6 的规则后，唯一的不符合项是 `new-host.ufw`（"UFW 未启用，但已有 1 条规则"），`new-host.ufw-framework` 通过。
+- `verify` 的通过项比第 8.10 节多 3 项（`ssh.match`、`ufw.framework`、`ufw.userrules`），比第一轮多 1 项：matrix 应用后和重启后为 40 项通过；安装 3X-UI 后为 41 项通过；VT-63 确认后和恢复原端口后为 41 项通过，待确认期间为 40 项通过、1 项警告（`state`）；VT-64 同参数再次 `apply` 为 42 项通过（`apply.inputs` 加 `verify` 的 41 项）；negative 中回退后再次应用并确认为 40 项通过。
+- VT-51：12 项漂移的结果都与第 7.3 节的表一致。`ufw-userrules` 只有 `ufw.userrules` 不符合（"/etc/ufw/user.rules 与记录不一致"），`ufw.rules` 通过：`ufw status` 不显示这一行，去掉 `ufw.userrules` 就没有不符合项，即第一轮的 `verify` 会通过（依据不符合项集合推断）。`firewall-reinstall` 和 `ufw-rule` 另外报告 `ufw.userrules`：菜单和 `ufw allow` 都改写了 `user.rules`。`sshd-match` 只有 `ssh.match` 不符合，`ssh.passwordauthentication` 通过（按假定的连接求值仍为 `no`）。`ufw-framework` 只有 `ufw.framework` 不符合，`ufw.rules` 通过。`firewall-install` 同样输出 `Firewall is already active`。
+- VT-63：8 种请求中 6 种退出码为 2（包括 `--add 80/tcp`）；`user6.rules` 被直接写入后的 `--add 8443/tcp` 退出码为 1，`ports.userrules` 不符合、`ports.rules` 通过；取消为 1。工具记录都不变。不确认的变更，测试驱动从待确认阶段的核对结束起等待 174～183 秒，状态回到"已应用"。
+- VT-64：不同参数时只有 `apply.inputs` 不符合；手工放行 8080/tcp 后 `ufw.rules` 和 `ufw.userrules` 不符合，这时 `ufw.rules` 与声明比较（第 4 节）。
+- VT-72（本地部分）：10 种情况的退出码与第 8.10 节相同。正常安装的结尾提示"下一步：vps-hardening preflight"；状态文件为"已应用"时，替换安装的结尾提示"下一步：vps-hardening verify"。
+- VT-25：没有在重启窗口外两次都失败的探测。窗口外第一次失败、1 秒后重试成功的有 2 次，错误都是等待版本信息超时，第一次尝试的 5 秒都覆盖恢复重新加载 sshd 的时刻，与第 9 节记录的情况相同：
+  - Debian 13 的 VT-23，尝试从 12:38:42 开始，应用失败后的恢复在 12:38:44 重新加载 sshd；
+  - Ubuntu 24.04 的 VT-20（确认超时），尝试从 12:36:48 开始，恢复在 12:36:49 重新加载 sshd。
+  第一轮 Debian 12 的 VT-63 在恢复端口时那 1 次重试，这一轮没有再出现，三个平台的 VT-63 都没有重试。
+- 泄露扫描：12 个作业都没有发现测试密码、客户端私钥和面板的 WebBasePath（测试驱动在扫描通过后才写入 `COMPLETED`）。
+
+两轮各有一个 Ubuntu 24.04 的套件慢了很多，时间都花在客体从 Ubuntu 软件源下载上：
+
+- 第一轮是 hardened 套件（31 分 31 秒，第 8.10 节约 16 分钟）。VT-40（`unattended-upgrade --dry-run`）用了 824 秒，第 8.10 节为 42 秒；准备阶段下载 24.8 MB 用了 1 分 25 秒，第 8.10 节为 4 秒。VT-40 的 dry-run 限时 15 分钟，只剩约 76 秒。
+- 这一轮是 negative 套件（22 分 21 秒，第一轮为 4 分 15 秒）。准备阶段下载 24.8 MB 用了 5 分 21 秒（77.4 kB/s）；S4 安装容器软件包，下载 73.3 MB 用了 11 分 38 秒，第一轮的 S4 阶段为 14 秒。作业加上 9 分 48 秒的 QEMU 安装共 32 分 17 秒，作业限时 45 分钟。
+
+推断原因是 Ubuntu 软件源的下载速度在不同运行之间变化，与修复无关（置信度中）。今后如果因此超时，先重跑确认是环境原因。
+
+- 置信度：功能结论为高：三个平台一次运行全部通过，新增用例的结果与第 7.3 节的判据逐项一致。
+
 ## 9. 已知限制与后续
 
 - 已在 M2 解决的 M1 遗留项：
@@ -982,13 +1041,25 @@ VT-61 比较 3X-UI 的文件时同样排除数据库和指标文件，另排除�
 - 恢复后保留已安装的软件包（方案设计第 4.4 节）。开机恢复只恢复单元的启用状态，所以应用前启用、但当时没有运行的服务，开机后会运行。真实的新机上，受管单元一般不处于这种状态；测试环境中的两个 APT 定时器正是这种状态（第 7.2 节：测试在运行期停止了它们），开机恢复后照常运行，所以 VT-22 只比较启用状态。
 - `confirm` 的检查防的是误操作，不防有意绕过的 root（方案设计第 7.5 节）。
 - 测试中 `apt-daily-upgrade.service` 被替换为空操作（第 7.2 节），因此没有覆盖真正的无人值守升级；FR-09 只有 dry-run 的证据（VT-40）。
-- arm64 只作参考（需求 D26）：按需手动运行，覆盖 matrix、recovery 和 hardened 套件，结果见附录 A；negative 套件只在 amd64 上运行（验证计划第 3.1 节的"三平台"范围）。hardened 套件还没有在 arm64 上运行过：TCG 下 M2 的主流程就要 14～19 分钟，加上 M3 的用例和 9 个覆盖层，可能超过 60 分钟的作业上限（推断，未测量）。
+- arm64 只作参考（需求 D26）：按需手动运行，覆盖 matrix、recovery 和 hardened 套件，结果见附录 A；negative 套件只在 amd64 上运行（验证计划第 3.1 节的"三平台"范围）。hardened 套件还没有在 arm64 上运行过：TCG 下 M2 的主流程就要 14～19 分钟，加上 M3 的用例、12 个漂移覆盖层和 M4 的 3 个覆盖层，可能超过 60 分钟的作业上限（推断，未测量）。
 - 除第 8.6、8.8、8.9、8.11 节在一台测试 VPS 上的试运行和核对外，结论只到 CI 虚拟机层次；真实主机验收在 M5，需要用户另行授权。
 - 外部连通测试不能从出口经过代理的电脑直接做：代理会在本地接受任何 TCP 连接（第 8.9 节）。M5 的外部测试要用不经代理的来源，或者以 VPS 上的 UFW 日志、抓包为准。
 - `ports` 核实规则时，只放行一个地址族的端口按 `ufw status` 的格式判定（第 2.11 节）。这一判定依据 ufw 的源码；VT-63 只增减了两个地址族都放行的端口，单一地址族的增减没有在虚拟机中运行过。`apply` 写入的单一地址族规则由 M2 的 VT-14 覆盖。
 - `rollback` 恢复应用前的 SSH 配置，包括密码认证：应用前允许密码登录的主机，回滚后密码猜测随即开始，`rollback.password` 只作警告。测试 VPS 上没有执行 `rollback`，也没有执行 `ports`，两者只有虚拟机中的证据（第 8.10、8.11 节）。
-- 安装脚本完成后总是提示"下一步：vps-hardening preflight"。在已应用的主机上升级时这个提示不适用：预检会因 `new-host.state` 不符合而结束，应改用 `status` 或 `verify`（第 8.11 节）。
+- 已在 v0.6 解决：安装脚本完成后原来总是提示"下一步：vps-hardening preflight"，在已应用的主机上不适用（第 8.11 节）；现在按状态提示（第 2.12 节）。
 - VT-72 的公开部分（从发行版的公开地址下载并校验）要在发布预发行版之后才能做，本版本只有本地模式的证据。
+- 需求 v1.6 草案的评审发现的三处缺口（第 1 节）自 M2 起就存在。第 8.5、8.7、8.10 节的用例中没有 `Match` 块、UFW 未启用时已添加的规则和被改动的框架文件，那些结论在各自覆盖的情况下仍然成立，只是没有覆盖这三种情况。
+- `sshd.match`、`ssh.match` 拒绝任何 `Match` 块，包括与认证无关的（例如只对某个来源关闭 `X11Forwarding`）。这是需求 D36 的取舍：按一个连接求值无法确认所有来源都只允许密钥登录。有这类配置的主机要先去掉 `Match` 块才能应用；应用后加入的，`verify` 报告不符合。
+- 框架文件以 `/usr/share/ufw` 中的模板为准。依据测试 VPS 上 ufw 0.36.2-9 的 `postinst`（2026-10-22 只读核对）：
+  - 四个 `.rules` 文件由 ucf 管理，模板为 `/usr/share/ufw/iptables/<名称>`，`/usr/share/ufw/<名称>` 是指向它的符号链接。未改动的副本在软件包升级时随模板更新，升级后仍相同。
+  - `before.init`、`after.init` 只在 `/etc/ufw` 中不存在时复制，升级不更新。今后的 ufw 版本如果改了这两个模板，未改动的旧副本也会与新模板不同，`ufw.framework` 报告不符合，属于误报（推断，目前没有观察到）。这时比较差异，确认只来自模板的变化后，可以把模板复制到 `/etc/ufw`。
+  - Debian 12、Ubuntu 24.04 的 `postinst` 没有逐一核对；CI 中三个平台上 6 个文件都与模板相同（第 8.13 节）。
+- `ufw status` 和 `ufw show added` 只列出 `user.rules`、`user6.rules` 中带 `### tuple ###` 注释的规则，而 UFW 启动和重新加载时用 `iptables-restore` 载入整个文件（ufw 0.36.2 的 `backend_iptables.py` 中的 `_read_rules` 和 `ufw-init-functions`）。直接编辑这两个文件加入的、没有 tuple 注释的规则因此会生效，却不显示：
+  - `apply` 之前加入的不会生效：`apply` 的 `ufw allow` 按已解析的规则重写两个文件（`_write_rules`），这样的行被丢弃（依据源码，没有在虚拟机中运行）。
+  - `apply` 之后直接编辑的，由 `ufw.userrules` 发现（需求 D37，第 4 节）；`ports` 先以 `ports.userrules` 拒绝，避免改写文件后把这一行洗掉（第 2.11 节）。
+  - 直接编辑后又执行 `ufw reload` 或 `ufw enable` 的，仍然发现不了：两者先执行 `ufw-init start` 载入整个文件，再按已解析的规则重写两个文件（`frontend.py` 的 `set_enabled`，`backend_iptables.py` 的 `start_firewall` 调用 `update_logging`，2026-10-22 在测试 VPS 上的 0.36.2-9 只读核对）。结果是规则生效，文件恢复原样，摘要一致，`ufw status` 也不显示；UFW 下次启动（例如重启）时这一行不再载入。要发现这种情况得比较内核中生效的规则，其中还有 Fail2ban 等其他来源的链，没有实现。
+  - `ufw logging` 改日志级别时也会重写两个文件（文件中的 `### LOGGING ###` 一节随级别变化），`ufw.userrules` 报告不符合，虽然规则没有变化。改回原来的级别（默认 `low`）后文件应当恢复原样（推断：重写的结果由规则和级别决定，VT-63 中恢复后的摘要等于确认后的，没有对日志级别单独测试）。
+  - ufw 软件包升级如果改变了重写文件的格式，下一次 `ufw reload`、`ufw enable` 或增删规则后 `ufw.userrules` 会报告不符合（推断，目前没有观察到）。
 
 ## 附录 A arm64 参考结果
 
