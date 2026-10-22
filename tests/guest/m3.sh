@@ -457,7 +457,7 @@ xui_verify() {
   fi
 }
 
-# xui_menu NAME INPUT: the v3.7.0 menu script, answered with INPUT (printf %b
+# xui_menu NAME INPUT: the v3.10.2 menu script, answered with INPUT (printf %b
 # escapes). Its menus call themselves again on unexpected input, so the run
 # is bounded.
 xui_menu() {

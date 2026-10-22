@@ -2,10 +2,10 @@ name: vm
 
 on:
   pull_request:
-    paths: ['bin/**', 'lib/**', 'tests/**', '.github/workflows/vm.yml']
+    paths: ['bin/**', 'lib/**', 'tests/**', 'install.sh', '.github/workflows/vm.yml']
   push:
     branches: [master]
-    paths: ['bin/**', 'lib/**', 'tests/**', '.github/workflows/vm.yml']
+    paths: ['bin/**', 'lib/**', 'tests/**', 'install.sh', '.github/workflows/vm.yml']
   workflow_dispatch:
     inputs:
       arm64:
@@ -104,7 +104,7 @@ jobs:
           retention-days: 14
 
   # M3 on a guest hardened and confirmed as an administrator would: Fail2ban
-  # (VT-30 to VT-35), automatic updates (VT-40), 3X-UI v3.7.0 with verify
+  # (VT-30 to VT-35), automatic updates (VT-40), 3X-UI v3.10.2 with verify
   # before and after a reboot (VT-55, VT-50, VT-71), then one overlay per
   # drift (VT-51). arm64 runs only when a manual run asks for it.
   hardened:

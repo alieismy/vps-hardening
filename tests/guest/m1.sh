@@ -15,18 +15,20 @@ readonly KEYS=/opt/vh-keys
 readonly EVIDENCE=/root/vh-evidence
 # Never archived: the 3X-UI installer prints generated panel credentials here.
 readonly PRIVATE=/root/vh-private
-readonly XUI_INSTALL_SHA256=a7f4fedcea3abe8987508d00f29834b8872e4e4e5059159eb19460d474b37cdc
-readonly XUI_SCRIPT_SHA256=cfabcd4af35a3646c374ea0ccba5178f4c0d3135f699277fc8d8b810158e85c0
-# VO-1: the release archives x-ui-linux-<arch>.tar.gz of v3.7.0 have the
-# SHA-256 GitHub lists as their asset digest (amd64 0f8dd7baef3458f6591574e2
-# 4814f322cf7f5e1e27f0a594683745e50be84ec5, arm64 3caf1db1e8b10bb1fa1324c945
-# 522690bcf01c533ee75b377268f1c01a3ce896). install.sh deletes the archive
+readonly XUI_INSTALL_SHA256=9684bae4f769b2127fcceceb4f200045657381311867529e6ba76c6b58e2825d
+# x-ui.sh of tag v3.10.2: install.sh fetches it from the tag as /usr/bin/x-ui,
+# and the release archive carries the same file.
+readonly XUI_SCRIPT_SHA256=3c7dabe7ea9edf0d950eff1caffbf203a1f8b52e98fc75e203372757f47998c0
+# VO-1: the release archives x-ui-linux-<arch>.tar.gz of v3.10.2 have the
+# SHA-256 GitHub lists as their asset digest (amd64 bfda7921984e7a72555c38d4
+# e861c7a8b67b3686b658608937de99682f1452d0, arm64 a867c65ce52ad49f6504dd4c9c
+# 395337dc92ba57ae478da4f1b7ddb624014ed5). install.sh deletes the archive
 # after unpacking it, so the panel and Xray binaries taken from those archives
 # are checked instead.
-readonly XUI_BINARIES_AMD64='4738190332c5480ec96fd72e10a21157ee4bcf91c240a9b4b061d14f15092298  /usr/local/x-ui/x-ui
-64d46afb80adea1bf97a0d467e83f4a9ac1ebd0995891e84bca3f1a1d1affb1d  /usr/local/x-ui/bin/xray-linux-amd64'
-readonly XUI_BINARIES_ARM64='c63141e2b9d34fb796a756d6adaee05c7312d507861fefd97e1fdca4df9adaef  /usr/local/x-ui/x-ui
-4b8af237444801bf17b3dc10a1c5c24581fbe3d433eba3d78c6c3a0da1df56fc  /usr/local/x-ui/bin/xray-linux-arm64'
+readonly XUI_BINARIES_AMD64='0748168b208efe544e4e800a9448923d75843aa0339a0a8cc31381d21b92b126  /usr/local/x-ui/x-ui
+4cca4de3ab8c16b3803a70e9ebe0570d2a72480c716d89aa91603ec568bf0f44  /usr/local/x-ui/bin/xray-linux-amd64'
+readonly XUI_BINARIES_ARM64='a59b5a19d9e972735e5af7ef75e23483a16716dc3cafd17d0efc55ce6bf3abac  /usr/local/x-ui/x-ui
+fadf8d792889536a9410686f3d5c4df76ec7865b7aa2297495365759ffeb424c  /usr/local/x-ui/bin/xray-linux-arm64'
 
 GOOD_ARGS=(--open 443/tcp --open 2096/tcp)
 phase_dir=''
@@ -108,8 +110,9 @@ expect_clean() {
 
 # Everything a read-only command must leave untouched (verification plan 4).
 # Excluded, because other processes change them during a test: rule counters
-# (the test's own SSH traffic) and the content of the 3X-UI database, which the
-# running panel writes on its own.
+# (the test's own SSH traffic) and the content of the 3X-UI database and of its
+# metrics file, which the running panel writes on its own (the metrics file
+# every minute).
 snapshot() {
   local out="$phase_dir/snap-$1.txt" unit tool
   {
@@ -117,7 +120,7 @@ snapshot() {
     find /etc -xdev -printf '%M %u:%g %p -> %l\n' | sort || true
     echo '== /etc content'
     find /etc -xdev -type f -print0 | sort -z | xargs -0 -r sha256sum |
-      grep -vE '  /etc/x-ui/x-ui\.db(-wal|-shm)?$' || true
+      grep -vE '  /etc/x-ui/(x-ui\.db(-wal|-shm)?|system_metrics\.gob)$' || true
     echo '== ssh keys'
     find /root/.ssh /home -xdev -path '*/.ssh/*' -type f -print0 | sort -z | xargs -0 -r sha256sum || true
     echo '== 3x-ui files'
@@ -447,13 +450,12 @@ existing_host_case() {
   expect_clean "$name"
 }
 
-# 3X-UI v3.7.0 installed the way vps-proxy-setup will (verification plan 3.5).
+# 3X-UI v3.10.2 installed the way vps-proxy-setup will (verification plan 3.5).
 install_xui_fixture() {
   local dir="$BUNDLE/fixtures/3x-ui" rc=0 binaries
-  printf '%s  %s\n%s  %s\n' "$XUI_INSTALL_SHA256" "$dir/install.sh" "$XUI_SCRIPT_SHA256" "$dir/x-ui.sh" |
-    sha256sum -c -
+  printf '%s  %s\n' "$XUI_INSTALL_SHA256" "$dir/install.sh" | sha256sum -c -
   XUI_NONINTERACTIVE=1 XUI_SSL_MODE=none XUI_ENABLE_FAIL2BAN=false XUI_PANEL_PORT=2053 \
-    bash "$dir/install.sh" v3.7.0 </dev/null >"$PRIVATE/xui-install.log" 2>&1 || rc=$?
+    bash "$dir/install.sh" v3.10.2 </dev/null >"$PRIVATE/xui-install.log" 2>&1 || rc=$?
   # Lines that could carry the generated panel credentials stay private.
   grep -viE 'user|pass|token|path|url|http' "$PRIVATE/xui-install.log" | tail -n 40 >"$phase_dir/xui-install-tail.log" || true
   [ "$rc" -eq 0 ] || {
@@ -465,9 +467,10 @@ install_xui_fixture() {
     arm64) binaries="$XUI_BINARIES_ARM64" ;;
     *) fail "no 3X-UI release digests for $(dpkg --print-architecture)" ;;
   esac
-  printf '%s\n%s  %s\n' "$binaries" "$XUI_SCRIPT_SHA256" /usr/local/x-ui/x-ui.sh | sha256sum -c - ||
-    fail '3X-UI binaries differ from the v3.7.0 release archive (VO-1)'
-  install -m 0755 "$dir/x-ui.sh" /usr/bin/x-ui
+  printf '%s\n%s  %s\n%s  %s\n' "$binaries" "$XUI_SCRIPT_SHA256" /usr/local/x-ui/x-ui.sh \
+    "$XUI_SCRIPT_SHA256" /usr/bin/x-ui | sha256sum -c - ||
+    fail '3X-UI files differ from the v3.10.2 release (VO-1)'
+  # Non-interactive installs listen on all addresses; the panel stays local.
   /usr/local/x-ui/x-ui setting -listenIP 127.0.0.1 >/dev/null
   systemctl restart x-ui
   for _ in $(seq 30); do

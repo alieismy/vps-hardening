@@ -25,6 +25,9 @@ cmd_apply() {
     printf '[x] 另一个 vps-hardening 操作正在进行，请稍后再试\n' >&2
     exit "$VH_EXIT_FAIL"
   }
+  if [ "$(state_get status)" = applied ]; then
+    apply_again
+  fi
   printf '== 预检\n'
   run_preflight_checks
   report_summary
@@ -34,11 +37,41 @@ cmd_apply() {
   fi
   read -r -a VH_DENIED_USERS <<<"$(nopasswd_key_accounts | paste -sd ' ')"
   apply_plan
-  if ! apply_prompt; then
+  if ! safeguards_prompt 确认完成; then
     printf '已取消，未做任何变更。\n'
     exit "$VH_EXIT_FAIL"
   fi
   apply_run
+}
+
+# NFR-03 and design 7.3: apply on an applied host changes nothing. It passes
+# when the inputs match the record and verify passes. Drift is refused, not
+# repaired; public ports change through ports. The confirmation time is not
+# compared: it only matters while a change is pending.
+apply_again() {
+  local want got
+  printf '== 已应用：核对参数和当前状态\n'
+  want="$(state_get panel_port) $(sorted_words "$(state_get open)")"
+  got="$VH_IN_PANEL_PORT $(sorted_words "${VH_IN_OPEN[*]}")"
+  if [ "$want" = "$got" ]; then
+    report PASS apply.inputs '参数与应用记录一致'
+  else
+    report FAIL apply.inputs "参数与应用记录不同：记录为面板端口 $(state_get panel_port)、公开端口 $(open_ports_text "$(state_get open)")，本次为面板端口 $VH_IN_PANEL_PORT、公开端口 $(open_ports_text "${VH_IN_OPEN[*]}")。公开端口请用 ports 变更"
+  fi
+  run_verify_checks
+  report_summary
+  if [ "$VH_COUNT_FAIL" -eq 0 ]; then
+    printf '\n已应用，全部通过，未做任何变更。\n'
+    exit "$VH_EXIT_OK"
+  fi
+  printf '\n已应用，但有不符合项，未做任何变更。请按上面的不符合项处理，或执行 vps-hardening rollback 后重新应用。\n'
+  exit "$VH_EXIT_FAIL"
+}
+
+# sorted_words "WORDS": the words sorted, on one line.
+sorted_words() {
+  # shellcheck disable=SC2086 # split into words on purpose
+  printf '%s\n' $1 | sort | paste -sd ' '
 }
 
 apply_plan() {
@@ -57,17 +90,6 @@ apply_plan() {
   printf -- '- Fail2ban：只保护 SSH（normal 模式，5 次失败封禁 1 天）\n'
   printf -- '- 自动安全更新：每天更新并安装安全更新，不自动重启\n'
   printf -- '- 确认时限 %s 分钟：期间须从新的 SSH 会话以 root 执行 confirm，否则自动恢复\n' "$VH_IN_TIMEOUT"
-}
-
-# FR-05: the administrator confirms both safeguards explicitly.
-apply_prompt() {
-  local answer=''
-  printf '\n开始之前请确认：\n'
-  printf '  1. 当前 SSH 会话会一直保持，直到确认完成；\n'
-  printf '  2. 服务商控制台或救援模式可用。\n'
-  printf '两项都满足请输入 yes：'
-  read -r answer || return 1
-  [ "$answer" = yes ]
 }
 
 # Undo whatever apply has changed so far (FR-05).
@@ -111,24 +133,13 @@ apply_abort() {
 # A lost session or Ctrl-C mid-apply restores at once instead of waiting for the timer.
 apply_signal() {
   trap '' INT TERM HUP
-  if [ "$1" = HUP ]; then
-    # The terminal is gone; keep the rest of the output in the log.
-    if [ -d "$VH_STATE_DIR" ]; then
-      exec >>"$VH_LOG_FILE" 2>&1
-    else
-      exec >/dev/null 2>&1
-    fi
-  fi
+  [ "$1" != HUP ] || output_to_log
   apply_fail "收到信号 $1"
 }
 
 apply_run() {
   local timeout_s=$((VH_IN_TIMEOUT * 60))
-  # Systemd units call the tool by this path while the change is pending.
-  if ! [[ "$VH_SELF" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
-    printf '[x] 本工具的路径含特殊字符，无法写入 systemd 单元：%s\n' "$VH_SELF" >&2
-    exit "$VH_EXIT_FAIL"
-  fi
+  check_self_path
   trap 'apply_signal INT' INT
   trap 'apply_signal TERM' TERM
   trap 'apply_signal HUP' HUP
@@ -136,7 +147,7 @@ apply_run() {
 
   # Records of an earlier, rolled-back apply (FR-02) must not be reused.
   state_dir_init
-  rm -rf -- "$VH_STATE_FILE" "$VH_UFW_RULES_FILE" "$VH_UNITS_FILE" "$VH_SNAPSHOT_DIR"
+  rm -rf -- "$VH_STATE_FILE" "$VH_UFW_RULES_FILE" "$VH_UNITS_FILE" "$VH_SNAPSHOT_DIR" "$VH_PORTS_SNAPSHOT_DIR"
   state_set status applying
   VH_APPLY_STAGE=prepare
   VH_ABORT_HOOK=apply_abort
@@ -154,11 +165,11 @@ apply_run() {
   printf '\n== 1/6 记录初始状态并安装软件包\n'
   units_record
   install_missing_packages
-  snapshot_take || apply_fail '无法记录受管文件的快照'
+  snapshot_take "$VH_SNAPSHOT_DIR" "${VH_MANAGED_FILES[@]}" || apply_fail '无法记录受管文件的快照'
 
   printf '== 2/6 布置自动恢复（%s 分钟）\n' "$VH_IN_TIMEOUT"
   VH_APPLY_STAGE=changing
-  arm_restore "$timeout_s" || apply_fail '无法布置自动恢复；不会继续修改 SSH'
+  arm_restore "$timeout_s" apply || apply_fail '无法布置自动恢复；不会继续修改 SSH'
 
   printf '== 3/6 SSH\n'
   apply_ssh
@@ -251,14 +262,20 @@ apply_ssh() {
   printf 'sshd 已按新配置重新加载\n'
 }
 
-ufw_open_rule() {
-  local port="${1%%/*}" rest="${1#*/}" proto family
-  proto="${rest%%/*}"
-  family="${rest#*/}"
+# ufw_port_rule [delete] PORT/PROTO/FAMILY: allow a declared public port, or
+# delete that rule (FR-14). The deletion names the comment too, so that it
+# matches the rule exactly.
+ufw_port_rule() {
+  local verb=(allow) port proto family
+  if [ "$1" = delete ]; then
+    verb=(delete allow)
+    shift
+  fi
+  IFS=/ read -r port proto family <<<"$1"
   case "$family" in
-    both) bounded_change ufw allow "$port/$proto" comment "$VH_UFW_COMMENT" ;;
-    ipv4) bounded_change ufw allow proto "$proto" to 0.0.0.0/0 port "$port" comment "$VH_UFW_COMMENT" ;;
-    ipv6) bounded_change ufw allow proto "$proto" to ::/0 port "$port" comment "$VH_UFW_COMMENT" ;;
+    both) bounded_change ufw "${verb[@]}" "$port/$proto" comment "$VH_UFW_COMMENT" ;;
+    ipv4) bounded_change ufw "${verb[@]}" proto "$proto" to 0.0.0.0/0 port "$port" comment "$VH_UFW_COMMENT" ;;
+    ipv6) bounded_change ufw "${verb[@]}" proto "$proto" to ::/0 port "$port" comment "$VH_UFW_COMMENT" ;;
   esac
 }
 
@@ -277,7 +294,7 @@ ufw_configure() {
   bounded_change ufw default deny routed || return 1
   bounded_change ufw allow 22/tcp comment "$VH_UFW_COMMENT" || return 1
   for spec in "${VH_IN_OPEN[@]}"; do
-    ufw_open_rule "$spec" || return 1
+    ufw_port_rule "$spec" || return 1
   done
 }
 
@@ -397,10 +414,9 @@ apply_auto_updates() {
 
 # FR-13: digests of the managed files after the change, for verify.
 record_digests() {
-  local path i=0
+  local path
   for path in "${VH_MANAGED_FILES[@]}"; do
-    state_set "digest.$i" "$(file_digest "$path") $path"
-    i=$((i + 1))
+    record_digest "$path"
   done
 }
 

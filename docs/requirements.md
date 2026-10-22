@@ -2,10 +2,10 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | v1.5 已批准：按 M3 的测试结果（U17，D29）更正第 7.2 节中 3X-UI"安装防火墙"菜单的行为和 FR-10 的对应验收条目；按 VT-34 的结果更新 R-3 的证据状态，并在第 10.1 节补充 Fail2ban 对封禁过的来源加重计数的规则。这三处内容已经用户确认（U18、D30）；全文于同日经用户评审通过（U19、D31）。v1.4 已批准：按用户 2026-10-20 的决定（U14，D26），正式支持和验收的架构改为 x86_64，aarch64 改为按需运行的参考；涉及 NFR-04 和第 2、9、11～13 节。同一版本按用户 2026-10-20 的提问（U15）定下加固、调优和 3X-UI 的执行顺序（D27），涉及 FR-02 的说明和第 7.3 节。用户于同日评审通过（U16、D28）。v1.3 已批准：按用户 2026-10-20 的决定（U12，D22～D24）改为 root 只用密钥登录、不创建管理用户，Fail2ban 改用普通过滤模式、`maxretry` 取 5，并写明加固前的升级顺序；涉及 FR-01、FR-03～FR-05、FR-07、FR-08、FR-12、NFR-01、NFR-06 和第 1、3、6～10、12 节，用户于同日评审通过（U13、D25）。此前的版本：v1.0 于 2026-10-13 评审确认（D17）；v1.1 按方案设计第 11 节的建议修改 FR-05、FR-09 和第 6 节（D18～D20）；v1.2 在第 7.2 节补登 3X-UI 的安装约定（D21），两次修改都经用户于同日确认。作为详细设计和实现的依据；修改需重新评审 |
-| 日期 | 2026-10-20（v1.2 为 2026-10-13） |
+| 状态 | v1.6 草案：按用户 2026-10-21 的决定（U20，D32、D33），3X-UI 共存基线由 v3.7.0 改为 v3.10.2；涉及 SC2、FR-10、FR-11 和第 2、7.2、8、10～13 节。待用户评审。v1.5 已批准：按 M3 的测试结果（U17，D29）更正第 7.2 节中 3X-UI"安装防火墙"菜单的行为和 FR-10 的对应验收条目；按 VT-34 的结果更新 R-3 的证据状态，并在第 10.1 节补充 Fail2ban 对封禁过的来源加重计数的规则。这三处内容已经用户确认（U18、D30）；全文于同日经用户评审通过（U19、D31）。v1.4 已批准：按用户 2026-10-20 的决定（U14，D26），正式支持和验收的架构改为 x86_64，aarch64 改为按需运行的参考；涉及 NFR-04 和第 2、9、11～13 节。同一版本按用户 2026-10-20 的提问（U15）定下加固、调优和 3X-UI 的执行顺序（D27），涉及 FR-02 的说明和第 7.3 节。用户于同日评审通过（U16、D28）。v1.3 已批准：按用户 2026-10-20 的决定（U12，D22～D24）改为 root 只用密钥登录、不创建管理用户，Fail2ban 改用普通过滤模式、`maxretry` 取 5，并写明加固前的升级顺序；涉及 FR-01、FR-03～FR-05、FR-07、FR-08、FR-12、NFR-01、NFR-06 和第 1、3、6～10、12 节，用户于同日评审通过（U13、D25）。此前的版本：v1.0 于 2026-10-13 评审确认（D17）；v1.1 按方案设计第 11 节的建议修改 FR-05、FR-09 和第 6 节（D18～D20）；v1.2 在第 7.2 节补登 3X-UI 的安装约定（D21），两次修改都经用户于同日确认。作为详细设计和实现的依据；修改需重新评审 |
+| 日期 | 2026-10-21（v1.2 为 2026-10-13） |
 | 上游依据 | [README](../README.md) 中已确认的范围（2026-10-10），以及第 2 节列出的用户原话和决定 |
-| 下游 | [方案设计](solution-design.md)（v1.2）、[详细设计](detailed-design.md)（v0.4）、[验证计划](verification-plan.md)（v1.3） |
+| 下游 | [方案设计](solution-design.md)（v1.3 草案）、[详细设计](detailed-design.md)（v0.5 草案）、[验证计划](verification-plan.md)（v1.4 草案） |
 
 优先级：**P0** 必须，缺少则首版不成立；**P1** 应有，可以放到下一迭代；**P2** 可选；**P3** 明确不做。
 
@@ -52,6 +52,7 @@
 | U17 | 2026-10-20 | 开始，测试 VPS 用（指开始 M3，并在 M3 中使用上述测试 VPS） |
 | U18 | 2026-10-20 | 1. 3X-UI v3.7.0 的"安装防火墙"在 UFW 已启用时不做任何改动 确认； 2.增加 `f2b.config`、`f2b.files`、`uu.dropin` 三项 确认； 3.Fail2ban 对封禁过的来源加重计数 确认 |
 | U19 | 2026-10-20 | 1. 已经review 3个文档，确认； 2. 3X-UI 已有的VPS都安装的是3.7.0版本，新的VPS是否需要升级到v3.10.2，请你评估，之前其它人评估的结果是：升级前最具体的风险是：当前生效节点缺少新版核心需要的 ML-KEM 兼容字段。具体评估文档见（本地路径，从略）“3x-ui v3.7.0 → v3.10.2 升级兼容性评估.md”，供你参考。3. 以上工作完成后请你执行下一步（第 1 项指需求 v1.5 草案、验证计划 v1.3 草案和详细设计 v0.4 草案） |
+| U20 | 2026-10-21 | 对 U19 第 2 项的评估作出两个选择："改为 v3.10.2 (Recommended)"；"在现有主机上卸载后安装"（依次指：M4 中把 3X-UI 共存基线由 v3.7.0 改为 v3.10.2，按 v3.10.2 重新运行共存用例和 VT-61，客户端开启 ML-KEM 由用户负责；测试 VPS 上先用 `x-ui uninstall` 卸载 v3.7.0，再按第 7.2 节安装 v3.10.2） |
 
 ### 2.2 已确认决定
 
@@ -65,7 +66,7 @@
 | D6 | 只支持新机。已经运行 3X-UI 的存量主机不在范围内；需要加固时，先备份业务，重装系统后按新机流程执行 | 2026-10-13 | 用户选择 |
 | D7 | 交付形态：在 VPS 本机运行的单命令工具，提供预检、应用、验证和回滚，不依赖控制端 | 2026-10-13 | 用户选择 |
 | D8 | Fail2ban 原样采用用户现网 3X-UI 配置方案（V1.15）第 16.1 节的 SSH 配置：`ignoreip` 只含回环地址，管理出口不豁免。**过滤模式已被 D23 修改** | 2026-10-13 | 用户选择 |
-| D9 | 与代理仓库的共存，以 3X-UI v3.7.0 为验证基线 | 2026-10-13 | U4 |
+| D9 | 与代理仓库的共存，以 3X-UI v3.7.0 为验证基线。**版本已被 D32 修改** | 2026-10-13 | U4 |
 | D10 | 只做基础加固，不做 CIS 全量合规、入侵检测、AppArmor/SELinux 策略或审计系统；不安装代理，不做网络调优 | 2026-10-10 | README |
 | D11 | 平台范围与 vps-tuning 一致：Debian 12、Debian 13、Ubuntu 24.04 LTS，x86_64 和 aarch64。**架构部分已被 D26 修改** | 2026-10-13 | U6（原 OD-1） |
 | D12 | 自动安全更新后不自动重启，由验证报告待重启状态 | 2026-10-13 | U6（原 OD-2） |
@@ -77,7 +78,7 @@
 | D18 | 确认时限默认 10 分钟，允许 3～60 分钟 | 2026-10-13 | U9（原 OD-4），依据见方案设计第 7.5 节 |
 | D19 | Debian 上的自动更新同时安装稳定版小版本更新（`label=Debian`，与 Debian 默认一致），以便自动获得标为 `no-dsa` 的低危修复；Ubuntu 仍只装 `-security` 和 ESM 的安全来源。修改 FR-09 | 2026-10-13 | U9（方案设计 OI-3） |
 | D20 | 面板端口默认 2053，可以修改 | 2026-10-13 | U9（方案设计 OI-1） |
-| D21 | vps-proxy-setup 安装 3X-UI v3.7.0 时带版本参数 `v3.7.0`，并在安装后用 tag 中已校验的 `x-ui.sh` 替换 `/usr/bin/x-ui`。写入第 7.2 节 | 2026-10-13 | U10（验证计划 VO-3） |
+| D21 | vps-proxy-setup 安装 3X-UI v3.7.0 时带版本参数 `v3.7.0`，并在安装后用 tag 中已校验的 `x-ui.sh` 替换 `/usr/bin/x-ui`。写入第 7.2 节。**已被 D32 替代** | 2026-10-13 | U10（验证计划 VO-3） |
 | D22 | root 是管理账户，只能用 SSH 密钥登录（`PermitRootLogin prohibit-password`）。本工具不创建普通管理用户，不修改 sudo 配置，也不修改 root 的 `authorized_keys`。替代 D2 中"禁止 root 经 SSH 登录"和"日常使用普通 sudo 用户"两项 | 2026-10-20 | U11、U12 |
 | D23 | Fail2ban 的 sshd jail 使用普通过滤模式（`mode = normal`），`maxretry` 固定为 5，不再作为参数。修改 D8 的过滤模式，替代 D15 | 2026-10-20 | U11、U12 |
 | D24 | 加固前由管理员执行 `apt update && apt full-upgrade` 并重启，本工具不执行全量升级；M2 的使用说明写明这一顺序 | 2026-10-20 | U11、U12 |
@@ -88,6 +89,8 @@
 | D29 | 3X-UI v3.7.0 的"安装防火墙"在 UFW 已启用时不做任何改动（M3 中三个平台实测），第 7.2 节据此更正。FR-10 的验收改为"停用防火墙后再安装防火墙"：这是加固后的主机上这个菜单真正改动 UFW 的操作；单独"安装防火墙"仍作为用例保留，期望 `verify` 照常通过 | 2026-10-20 | U17 |
 | D30 | 用户确认三项：D29；详细设计 v0.4 在 M3 中增加 `f2b.config`、`f2b.files`、`uu.dropin` 三个检查项（超出 v0.3 第 1 节列给 M3 的范围）；第 10.1 节 Fail2ban 对封禁过的来源加重计数的规则，以及 R-3 据此补充的内容 | 2026-10-20 | U18 |
 | D31 | 本需求规格说明 v1.5（含 D29、D30）、验证计划 v1.3 和详细设计 v0.4 经用户评审通过 | 2026-10-20 | U19 |
+| D32 | 3X-UI 共存基线改为 v3.10.2（tag commit `608ef4e`）。理由：v3.7.0 受 5 个已公开的安全公告影响，都在 v3.9.0 或更早修复；新机没有数据要迁移；v3.10.2 的 `install.sh` 从所装的 tag 下载 `x-ui.sh`，不再需要替换菜单脚本（第 10.1 节）。修改 D9 的版本，替代 D21。客户端在连接 v3.10.2 的节点之前开启 ML-KEM（第 7.2 节），由用户负责。已有的 v3.7.0 主机不受本决定约束 | 2026-10-21 | U19、U20 |
+| D33 | 测试 VPS 上的 v3.10.2 证据按"卸载 v3.7.0 后安装"取得。这台主机装过 v3.7.0，不是新机，这项证据弱于虚拟机中的新机流程；FR-11 的验收以虚拟机测试为准 | 2026-10-21 | U20 |
 
 ## 3. 角色与场景
 
@@ -102,7 +105,7 @@
 | 编号 | 场景 | 相关需求 |
 |---|---|---|
 | SC1 | 新机首次加固：管理员拿到新 VPS，先全量升级并重启（D24），再以 root 用密钥登录，在安装 3X-UI 之前执行加固 | FR-01～FR-10 |
-| SC2 | 加固后部署代理：按约定安装 3X-UI 3.7.0，安装后加固状态仍然成立 | FR-07、FR-10、FR-11、第 7.2 节 |
+| SC2 | 加固后部署代理：按约定安装 3X-UI v3.10.2（D32），安装后加固状态仍然成立 | FR-07、FR-10、FR-11、第 7.2 节 |
 | SC3 | 访问面板：管理员从任何网络先开 SSH 隧道，再在本机浏览器打开面板 | FR-07 |
 | SC4 | 日常运维：以 root 用密钥登录，运行调优工具，系统自动安装安全更新 | FR-03、FR-09、第 7.3 节 |
 | SC5 | 定期核对：只读检查配置有没有漂移 | FR-10 |
@@ -288,16 +291,16 @@
 验收：
 
 - 加固后立即执行，通过；重启后执行，通过。
-- 按第 7.2 节安装 3X-UI 3.7.0 后执行，通过。
+- 按第 7.2 节安装 3X-UI v3.10.2 后执行，通过。
 - 人为执行 3X-UI 防火墙菜单的"停用防火墙"再"安装防火墙"，或启用 IP Limit，之后执行：报告具体漂移项，退出码非零。UFW 已启用时，单独执行"安装防火墙"不改动任何配置（第 7.2 节），之后执行仍然通过（D29）。
 - 执行前后系统状态摘要一致。
 
-### FR-11 与 3X-UI v3.7.0 共存（P0）
+### FR-11 与 3X-UI v3.10.2 共存（P0）
 
-- 按第 7.2 节约定的方式安装 3X-UI v3.7.0 后，FR-04、FR-06、FR-08 的最终状态不变。约定方式是：带版本参数安装，并替换 main 分支的菜单脚本（D21）；设置 `XUI_ENABLE_FAIL2BAN=false`，预先指定 `XUI_PANEL_PORT`；不使用 3X-UI 的防火墙菜单和 BBR 菜单。
+- 按第 7.2 节约定的方式安装 3X-UI v3.10.2 后，FR-04、FR-06、FR-08 的最终状态不变。约定方式是：校验 `install.sh` 的摘要后带版本参数安装（D32）；设置 `XUI_ENABLE_FAIL2BAN=false`，预先指定 `XUI_PANEL_PORT`；不使用 3X-UI 的防火墙菜单和 BBR 菜单。
 - 其他 3X-UI 版本要重新验证后，才能说兼容（R-2）。
 
-验收：在隔离环境中依次执行"加固 → 安装 3X-UI v3.7.0（固定 commit `f727d04`）→ 验证 → 重启 → 验证"，全部通过。
+验收：在隔离环境中依次执行"加固 → 安装 3X-UI v3.10.2（固定 commit `608ef4e`）→ 验证 → 重启 → 验证"，全部通过。
 
 ### FR-12 手工回滚（P1）
 
@@ -357,17 +360,17 @@ root 的公钥不是输入：预检读取 root 现有的 `authorized_keys`（FR-
 | 网络 sysctl、qdisc、BBR | vps-tuning | 不使用 3X-UI 的 BBR 菜单。它写入的 `/etc/sysctl.d/99-bbr-x-ui.conf` 排在调优配置之后，会覆盖调优值 |
 | 3X-UI/Xray 安装、面板 TLS、订阅、代理入站 | vps-proxy-setup | — |
 
-### 7.2 与 vps-proxy-setup 的约定（3X-UI v3.7.0）
+### 7.2 与 vps-proxy-setup 的约定（3X-UI v3.10.2）
 
-下表左列来自上游 v3.7.0 源码（证据见第 10.1 节）：
+下表左列来自上游 v3.10.2 源码（证据见第 10.1 节），与 v3.7.0 不同的地方在表中注明：
 
-| 3X-UI v3.7.0 的行为 | 约定 |
+| 3X-UI v3.10.2 的行为 | 约定 |
 |---|---|
-| 运行 `install.sh` 时不带版本参数，会解析上游的 latest 发布，安装最新版 | 带版本参数 `v3.7.0`（D21） |
-| 无论带不带版本参数，`install.sh` 都从上游 main 分支下载 `x-ui.sh`，安装为 `/usr/bin/x-ui`（管理菜单脚本）。菜单的行为因此取决于安装当天的 main 分支 | 安装后用 tag `v3.7.0` 中按第 10.1 节摘要校验过的 `x-ui.sh` 替换 `/usr/bin/x-ui`（D21） |
-| 没有设置 `XUI_ENABLE_FAIL2BAN` 时，`install.sh` 会调用 `x-ui setup-fail2ban`：安装 fail2ban 和 nftables；用 sed 修改 `/etc/fail2ban/jail.conf` 默认段的 `backend`，以及 `fail2ban.conf` 的 `allowipv6`；写入 `3x-ipl` jail；最后重启 fail2ban | 安装时设 `XUI_ENABLE_FAIL2BAN=false` |
+| 运行 `install.sh` 时不带版本参数，会解析上游的 latest 发布，安装最新版 | 带版本参数 `v3.10.2`（D32） |
+| `install.sh` 从所装的 tag 下载 `x-ui.sh`（安装为 `/usr/bin/x-ui`，即管理菜单脚本）、`x-ui.rc` 和服务单元文件，只有 `dev` 版本跟随 main 分支。发布包按同一 Release 中的 `.sha256` 文件校验；Release 没有这个文件时跳过校验，所以它只防下载损坏，不能代替固定的摘要。v3.7.0 的 `install.sh` 总是从 main 分支下载 `x-ui.sh`，也不校验发布包 | 运行前按第 10.1 节的摘要校验 `install.sh`（D32）。v3.7.0 需要的替换菜单脚本这一步（D21）不再需要 |
+| 没有设置 `XUI_ENABLE_FAIL2BAN`，或者设为 `true` 时，`install.sh` 会调用 `x-ui setup-fail2ban`：安装 fail2ban 和 nftables；在 Debian 12+ 和 Ubuntu 22.04+ 上，如果 `jail.conf` 默认段的 `backend` 仍是发行版的 `auto`，写入 `jail.d/3x-ipl-backend.conf`（默认段 `backend = systemd`）；用 sed 修改 `fail2ban.conf` 的 `allowipv6`；写入 `3x-ipl` jail；最后重启 fail2ban。v3.7.0 不写这个 jail.d 文件，而是用 sed 直接修改 `jail.conf` | 安装时设 `XUI_ENABLE_FAIL2BAN=false` |
 | 没有设置 `XUI_PANEL_PORT` 时，在 1024–62000 中随机选面板端口 | 设为加固时约定的面板端口 |
-| 防火墙菜单的"安装防火墙"：UFW 未启用时，放行 ssh、80、443、2053、2096，并执行 `ufw --force enable`；UFW 已启用时只输出 `Firewall is already active`，不做任何改动（D29）。所以在加固后的主机上，只有先"停用防火墙"再"安装防火墙"才会改动 UFW | 不使用；端口变更按 FR-14 处理 |
+| 防火墙菜单的"安装防火墙"：UFW 未启用时，放行 ssh、80、443、2053、2096，并执行 `ufw --force enable`；UFW 已启用时只输出 `Firewall is already active`，不做任何改动（D29）。所以在加固后的主机上，只有先"停用防火墙"再"安装防火墙"才会改动 UFW。D29 在 v3.7.0 上实测；v3.10.2 的这部分代码与 v3.7.0 相同，M4 的虚拟机测试中再次实测 | 不使用；端口变更按 FR-14 处理 |
 | BBR 菜单写入 `/etc/sysctl.d/99-bbr-x-ui.conf` | 不使用（归 vps-tuning） |
 | `3x-ipl` 的封禁动作基于 iptables，只豁免 SSH 端口和面板端口；SSH 端口只从 `/etc/ssh/sshd_config` 主文件读取，读不到时按 22 处理 | 不启用 IP Limit。因为 SSH 保持 22（D1），端口读取偏差在本约定下不会发生 |
 
@@ -383,6 +386,8 @@ root 的公钥不是输入：预检读取 root 现有的 `authorized_keys`（FR-
 | REALITY 回落等本机端口 | 不开放，只监听 127.0.0.1 | — |
 
 下面一条属于 vps-proxy-setup，登记在这里以免遗漏：Cloudflare API Token 会保存在 VPS 上，VPS 一旦被攻破，攻击者就能用它修改 DNS 记录。因此 Token 只授予签发证书所需的最小权限，例如只能编辑单个 Zone 的 DNS。
+
+下面一条属于 vps-proxy-setup 和代理客户端，同样登记在这里（D32）：v3.10.2 自带的 Xray 是 v26.10.10。从 Xray v26.9.8 起，REALITY 服务端只接受提供 X25519MLKEM768 密钥交换的 ClientHello，其他连接被当作普通访问转给伪装目标，客户端的握手因此失败。所以客户端要先开启 ML-KEM，再连接 v3.10.2 的节点，例如 Mihomo 要设 `support-x25519mlkem768: true`（默认关闭）。按源码，v3.7.0 的节点也接受开启了 ML-KEM 的客户端，所以可以先改客户端、再加新节点；这一点还没有用真实连接验证（第 10.1 节）。
 
 ### 7.3 与 vps-tuning 的约定
 
@@ -421,7 +426,7 @@ root 的公钥不是输入：预检读取 root 现有的 `authorized_keys`（FR-
 | 系统全量升级和重启 | 由管理员在加固前执行（D24） | — |
 | 给代理、REALITY、订阅或面板端口设 Fail2ban jail | REALITY 会把未通过认证的探测转发给伪装目标，不产生可靠的失败日志，加规则只会误封（推断） | 出现可复现的滥用证据 |
 | 基于 UFW 拦截日志封禁端口扫描来源 | 扫描器会频繁更换 IP，作用有限 | 同上 |
-| 3X-UI IP Limit（`3x-ipl`） | D8 要求保持关闭；v3.7.0 启用时会修改 `jail.conf`（见 R-6） | 用户决定启用，并完成共存评估 |
+| 3X-UI IP Limit（`3x-ipl`） | D8 要求保持关闭；启用时会修改 `fail2ban.conf`，v3.7.0 还会修改 `jail.conf`（见 R-6） | 用户决定启用，并完成共存评估 |
 | CrowdSec 等替代方案 | 用户没有要求 | — |
 | CIS 全量合规、入侵检测、AppArmor/SELinux 策略、审计系统 | D10 | — |
 | 额外的内核 sysctl 加固 | 用户没有要求；网络 sysctl 归 vps-tuning | 用户提出 |
@@ -450,8 +455,11 @@ root 的公钥不是输入：预检读取 root 现有的 `authorized_keys`（FR-
 |---|---|
 | 3X-UI v3.7.0 的 tag 指向 commit `f727d04f6522bb94a8fb52e8352fdcafb51c11e1`，Release 发布于 2026-08-24T13:08:28Z。`install.sh` 的 SHA-256 为 `a7f4fedcea3abe8987508d00f29834b8872e4e4e5059159eb19460d474b37cdc`，`x-ui.sh` 的 SHA-256 为 `cfabcd4af35a3646c374ea0ccba5178f4c0d3135f699277fc8d8b810158e85c0` | GitHub API；该 tag 的 raw 文件 |
 | 第 7.2 节列出的 v3.7.0 行为 | v3.7.0 的 `install.sh`（`setup_fail2ban`、面板端口选择）和 `x-ui.sh`（`setup_fail2ban_iplimit`、`create_iplimit_jails`、`install_firewall`、`enable_bbr`）。`install_firewall` 在 UFW 已启用时不放行端口的行为，2026-10-20 在 M3 的虚拟机测试中三个平台实测（[详细设计第 8.7 节](detailed-design.md#87-m3-运行结果)，D29） |
+| 第 7.2 节列出的 v3.10.2 行为（2026-10-21 核实）。与 v3.7.0 的 `x-ui.sh` 相比：主菜单编号，以及 `install_firewall`、`firewall_menu`、`enable_bbr`、`SSH_port_forwarding` 的代码相同；`create_iplimit_jails` 改写 `backend` 的方式不同（第 7.2 节）；`setup_fail2ban_iplimit` 只多了 EL7 上 firewalld 的处理 | v3.7.0 和 v3.10.2 的 `x-ui.sh`；v3.10.2 的 `install.sh`（`install_x-ui`、`verify_release_checksum`、`setup_fail2ban`、面板端口选择） |
+| 3X-UI v3.7.0 受 5 个已公开的安全公告影响：1 个高危（GHSA-h4x8-qc42-f6wv：已登录的面板管理员能以 root 身份写任意文件，v3.8.0 修复）、2 个中危、2 个低危，都在 v3.9.0 或更早修复（2026-10-21 查询）。按本文的约定，面板只经 SSH 隧道访问，能开隧道的人已经是 root，所以这个高危漏洞在本约定下的实际风险低（推断） | GitHub Security Advisories（MHSanaei/3x-ui） |
+| Xray 从 v26.9.8 起，REALITY 服务端只接受提供 X25519MLKEM768 的 ClientHello；同时提供 X25519 时，ML-KEM 须排在前面；其他连接按普通访问转给伪装目标。3X-UI v3.10.2 自带 Xray v26.10.10，v3.7.0 自带 v26.7.28。Mihomo 的 `support-x25519mlkem768` 默认关闭，关闭时从 ClientHello 中去掉 X25519MLKEM768。v3.10.2 生成的 Clash/Mihomo 订阅（v3.8.0 起）和 `vless://` 链接（v3.9.0 起）会带上这项设置（2026-10-21 核实，未做真实连接测试） | XTLS/REALITY commit `8cdf7bf9`；3X-UI 各 tag 的 `release.yml` 和订阅生成代码；Mihomo 的 `component/tls/reality.go` |
 | Fail2ban 对封禁过的来源加重计数（2026-10-20 核实）：`bantime.increment` 启用时，数据库中有封禁记录的来源，每次失败按 2、3、5……次计（已被封禁 1、2、3 次之后），上限为 `maxretry`。所以封禁过 3 次以上的来源，一次失败就再次被封。数据库记录保留 `dbpurgeage`（30 天）。1.0.2 和 1.1.0 的这部分代码相同 | fail2ban 1.0.2、1.1.0 的 `fail2ban/server/observer.py`（`failureFound`）；M3 虚拟机测试中，封禁过一次的来源第二轮 3 次失败即被封禁（详细设计第 8.7 节） |
-| 3X-UI 最新版是 v3.10.0（2026-10-12）。从 v3.9.0 起，IP Limit 改为写入 `jail.d/3x-ipl-backend.conf`，不再用 sed 修改 `jail.conf` | GitHub Releases；v3.9.0 和 v3.10.0 的 `x-ui.sh` |
+| 3X-UI v3.10.2 的 tag 指向 commit `608ef4e4010bf83e2e78328e08f77efc051ad4d7`，Release 发布于 2026-10-14T15:19:26Z，是 2026-10-21 时最新的正式版。`install.sh` 的 SHA-256 为 `9684bae4f769b2127fcceceb4f200045657381311867529e6ba76c6b58e2825d`，`x-ui.sh` 的 SHA-256 为 `3c7dabe7ea9edf0d950eff1caffbf203a1f8b52e98fc75e203372757f47998c0`（2026-10-21 核实）。从 v3.9.0 起，IP Limit 改为写入 `jail.d/3x-ipl-backend.conf`，不再用 sed 修改 `jail.conf` | GitHub API；该 tag 的 raw 文件；v3.9.0 起的 `x-ui.sh` |
 | OpenSSH 版本：Debian 12 为 9.2p1，Debian 13 为 10.0p1，Ubuntu 24.04 为 9.6p1 | sources.debian.org；Launchpad |
 | OpenSSH 从 9.8 起默认启用 `PerSourcePenalties`，三个平台中只有 Debian 13 具备 | [OpenSSH 9.8 发布说明](https://www.openssh.org/txt/release-9.8) |
 | fail2ban 默认配置：Debian 12（1.0.2-2）的 `defaults-debian.conf` 只启用 sshd jail，没有设置 `backend`。Debian 13（1.1.0-8）默认使用 nftables，sshd jail 的 `backend=systemd`，`journalmatch` 为 `_SYSTEMD_UNIT=ssh.service + _COMM=sshd` | Debian 源码包 |
@@ -460,23 +468,25 @@ root 的公钥不是输入：预检读取 root 现有的 `authorized_keys`（FR-
 | UFW 默认的 `sysctl.conf` 不包含 vps-tuning 的 17 项受管键 | Debian ufw 0.36.2-1、0.36.2-9 源码 |
 | UFW 的 `before.rules` 无条件放行回环接口（`-A ufw-before-input -i lo -j ACCEPT`），所以经 SSH 隧道访问本机端口不受 UFW 入站规则影响 | Debian ufw 0.36.2-9 源码 |
 | fail2ban 的依赖：Debian 12（1.0.2-2）把 `python3-systemd` 和 `nftables \| iptables` 都列为推荐依赖；Debian 13（1.1.0-8）把 `python3-systemd` 列为必需依赖，`nftables \| iptables` 仍是推荐依赖 | Debian 源码包 `debian/control` |
-| 3X-UI v3.7.0 的 `x-ui.sh` 自带"SSH 端口转发"菜单：用 `x-ui setting -listenIP 127.0.0.1` 让面板只监听回环地址，并提示用 `ssh -L` 访问。面板已经配置证书时，这个菜单直接认定面板是安全的。也就是说，上游把"配置证书"和"只监听回环 + 隧道"当作保护面板的两种并列方式 | v3.7.0 `x-ui.sh` 的 `SSH_port_forwarding` |
-| 3X-UI v3.7.0 的会话 Cookie 名固定为 `3x-ui`，`Path` 是面板的 WebBasePath。多台面板只要 WebBasePath 不同，同时经 localhost 隧道访问也不会互相覆盖登录状态 | v3.7.0 `internal/web/web.go` |
+| 3X-UI v3.7.0 和 v3.10.2 的 `x-ui.sh` 都自带"SSH 端口转发"菜单：用 `x-ui setting -listenIP 127.0.0.1` 让面板只监听回环地址，并提示用 `ssh -L` 访问。面板已经配置证书时，这个菜单直接认定面板是安全的。也就是说，上游把"配置证书"和"只监听回环 + 隧道"当作保护面板的两种并列方式 | 两个版本 `x-ui.sh` 的 `SSH_port_forwarding`（代码相同） |
+| 3X-UI v3.7.0 和 v3.10.2 的会话 Cookie 名固定为 `3x-ui`，`Path` 是面板的 WebBasePath。多台面板只要 WebBasePath 不同，同时经 localhost 隧道访问也不会互相覆盖登录状态 | 两个版本的 `internal/web/web.go` |
 | unattended-upgrades 的默认来源：Debian 12（2.9.1+nmu3）和 Debian 13（2.12）为 `label=Debian`（稳定版小版本更新）和两条 `Debian-Security` 来源；Ubuntu 为发布仓库、`-security` 和两条 ESM 安全来源。apt 配置中的列表只能用 `#clear` 清空，后读到的文件只会追加 | unattended-upgrades 源码包的 `data/50unattended-upgrades.*`；apt.conf(5) |
 | Debian 安全团队把低危漏洞标为 `no-dsa`，不发安全公告，这类修复可能随稳定版小版本更新发布 | Debian 安全追踪器说明 |
 | Ubuntu 24.04 的 fail2ban 属于 universe 仓库，1.0.2-3ubuntu0.1 发布在 noble-updates，不在 noble-security。Canonical 只对附加 Ubuntu Pro 的主机承诺 universe 软件包的安全维护 | Launchpad 发布记录；Ubuntu ESM 页面 |
 | 3X-UI v3.7.0 的 `install.sh`：不带版本参数时解析 latest 发布；无论带不带版本参数，都从 main 分支下载 `x-ui.sh` 并安装为 `/usr/bin/x-ui`；非交互模式下 `XUI_SSL_MODE` 默认为 `none`，并强制面板监听所有地址 | v3.7.0 `install.sh` |
+| 3X-UI v3.10.2 的 `install.sh`（2026-10-21 核实）：不带版本参数时解析 latest 发布；`x-ui.sh`、`x-ui.rc` 和服务单元文件从所装的 tag 下载，只有 `dev` 跟随 main；发布包按同一 Release 的 `.sha256` 文件校验，该文件返回 404 时跳过；非交互模式下 `XUI_SSL_MODE` 默认为 `none`，并强制面板监听所有地址；`XUI_ENABLE_FAIL2BAN` 已设置且不是 `true` 时跳过 Fail2ban 设置；没有 `XUI_PANEL_PORT` 时在 1024–62000 中随机选端口 | v3.10.2 `install.sh` |
+| 测试 VPS（Debian 13，x86_64）上用 `x-ui uninstall` 卸载 v3.7.0 后，按第 7.2 节安装 v3.10.2：二进制文件和 `x-ui.sh` 与发布一致；面板只监听 127.0.0.1:2053，经隧道可以访问；`verify` 全部通过，重启后仍然通过（2026-10-21；这台主机不是新机，D33） | [详细设计第 8.11 节](detailed-design.md#811-测试-vps-上的-m4-核对) |
 
 ### 10.2 风险
 
 | 编号 | 风险 | 影响 | 处理 |
 |---|---|---|---|
 | R-1 | 把管理员锁在服务器外 | 失去管理权 | FR-05、NFR-02；服务商控制台兜底 |
-| R-2 | 3X-UI 版本漂移：基线 v3.7.0 已落后最新版 v3.10.0 三个版本，Fail2ban 的处理方式在 v3.9.0 已经改变 | 共存结论对新版本不成立 | FR-11 限定版本；安装时固定版本并替换菜单脚本（D21）；升级 3X-UI 前重新验证 |
+| R-2 | 3X-UI 版本漂移：基线是 v3.10.2（D32）。上游发版频繁，从 v3.7.0 到 v3.10.2 改过 Fail2ban 的处理方式和安装脚本，以后的版本还会变 | 共存结论对其他版本不成立 | FR-11 限定版本；安装时固定版本并校验 `install.sh` 的摘要（第 7.2 节）；升级 3X-UI 前重新验证 |
 | R-3 | 管理员封到自己：按 D8，`ignoreip` 只含回环地址。U11 中已经发生过一次：在 `aggressive` 模式、`maxretry = 3` 下，客户端在认证完成前断开的附加连接被计为失败。客户端配置错误时，管理出口也可能被封 1 天，并逐次延长 | 一段时间内无法经 SSH 登录，面板隧道也同时不可用（D16） | 改用 `normal` 模式、`maxretry = 5`（D23），认证前断开不再计数；用服务商控制台解封。VT-34 已在三个平台的虚拟机中实测（详细设计第 8.7 节）：ssh-agent 中正确密钥排在 3 把错误密钥之后的 root 登录、`IdentitiesOnly=yes` 的登录、认证前断开的连接，各 6 次，都没有被计为失败。被封过的出口在 30 天内再次失败时，每次按 2 次以上计，封过 3 次以上时一次失败就再次被封（第 10.1 节） |
 | R-4 | 镜像默认用户拥有免密 sudo | 多出一条 root 级的登录路径，它的密钥可能与 root 的不同 | FR-03；D13 |
 | R-5 | 内核更新要重启才生效，不自动重启时待重启状态会一直累积 | 补丁装了但没有生效 | FR-10 报告待重启状态；管理员安排重启（D12） |
-| R-6 | 如果在 v3.7.0 上启用 IP Limit，它会修改 `jail.conf`。以后 fail2ban 软件包更新若也改动这个文件，unattended-upgrades 会跳过 fail2ban 的更新 | Fail2ban 的安全更新停滞 | 列为范围外；FR-10 检测漂移 |
+| R-6 | 如果启用 IP Limit，它会修改 `fail2ban.conf`（v3.7.0 还会修改 `jail.conf`）。以后 fail2ban 软件包更新若也改动这些文件，unattended-upgrades 会跳过 fail2ban 的更新 | Fail2ban 的安全更新停滞 | 列为范围外；FR-10 检测漂移 |
 | R-7 | Ubuntu 上 fail2ban 属于 universe 仓库，修复版本发布在 noble-updates；Canonical 只对附加 Ubuntu Pro 的主机承诺 universe 的安全维护（已核实，第 10.1 节） | 自动安全更新覆盖不到 fail2ban 的后续修复 | 首版不处理（U9）；是否附加 Ubuntu Pro 由用户自行决定 |
 | R-8 | 云服务商的安全组或防火墙在 VPS 外面 | 端口的实际可达性可能与 UFW 规则不一致 | 做外部连通测试；文档中提醒 |
 | R-9 | 一个人维护三个仓库 | 发布和验证滞后 | 分阶段推进 |
@@ -505,7 +515,7 @@ root 的公钥不是输入：预检读取 root 现有的 `authorized_keys`（FR-
 | 依赖 | 只依赖 22/tcp 可达 | 依赖代理链路正常；代理坏了，面板也连不上，而这恰恰是最需要面板的时候 |
 | 维护 | 没有地址清单要维护 | VPS 增购、退订时要维护地址清单 |
 | 便利性 | 每次使用前先开隧道（一条命令，或写进 `~/.ssh/config`） | 直接在浏览器打开 |
-| 上游支持 | 3X-UI v3.7.0 自带"SSH 端口转发"菜单（第 10.1 节） | 默认做法 |
+| 上游支持 | 3X-UI 自带"SSH 端口转发"菜单（v3.7.0 和 v3.10.2，第 10.1 节） | 默认做法 |
 
 结论（置信度：高）：面板只走 SSH 隧道。这样更安全，也不用维护 `ADMIN_CIDRS`，额外代价只是"先开隧道"这一步。用户已于 2026-10-13 确认（D16），首版不提供 `ADMIN_CIDRS` 直连（第 8 节）。以下两点属于 vps-proxy-setup 的设计：
 
@@ -514,7 +524,7 @@ root 的公钥不是输入：预检读取 root 现有的 `authorized_keys`（FR-
 
 ## 12. 验证方法
 
-- **隔离虚拟机：** x86_64 上 3 组（每个平台一组）跑完整生命周期；aarch64 的 3 组按需执行，只作参考（D26）。完整生命周期：预检 → 应用 → 新会话确认 → 验证 → 重启 → 验证 → 按第 7.2 节安装 3X-UI v3.7.0 → 验证 → 回滚（P1）。
+- **隔离虚拟机：** x86_64 上 3 组（每个平台一组）跑完整生命周期；aarch64 的 3 组按需执行，只作参考（D26）。完整生命周期：预检 → 应用 → 新会话确认 → 验证 → 重启 → 验证 → 按第 7.2 节安装 3X-UI v3.10.2 → 验证 → 回滚（P1）。
 - **负面用例：** 不确认时自动恢复；发起会话断开；root 没有可用公钥；公开端口与面板端口或 22 冲突；不是新机；cloud-init 预置 `PasswordAuthentication yes`；误用 3X-UI 防火墙菜单造成漂移。
 - **外部连通测试：** 从外部确认面板端口不可达、经隧道可达；测试期间持续探测 22/tcp。
 - **真实 VPS：** 在真实 VPS 上验收需要用户单独授权。CI 和虚拟机的证据不能代替真实主机验收。
@@ -549,3 +559,4 @@ root 的公钥不是输入：预检读取 root 现有的 `authorized_keys`（FR-
 | U17、D29 | 文档状态（v1.5 草案），FR-10，第 7.2 节，第 10.1 节，R-3 |
 | U18、D30 | 文档状态（v1.5 草案），D29，第 10.1 节，R-3；详细设计第 1、4 节 |
 | U19、D31 | 文档状态（已批准 v1.5） |
+| U19、U20、D32、D33 | 文档状态（v1.6 草案），D9、D21，SC2，FR-10、FR-11，第 7.2 节，第 8 节，第 10.1 节，第 11.1 节，第 12 节，R-2、R-6 |

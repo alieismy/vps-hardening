@@ -14,8 +14,14 @@ Adapted from vps-tuning's tests/platform-vm.py. Suites:
             existing-host case S1-S4 (VT-03), plus the UFW path check in S2,
             and the failed apply of VT-23.
   hardened  one guest, hardened and confirmed: Fail2ban (VT-30 to VT-35),
-            automatic updates (VT-40), then 3X-UI v3.7.0 (VT-55, VT-50,
-            VT-71); then one overlay of it per drift (VT-51).
+            automatic updates (VT-40), then 3X-UI v3.10.2 (VT-55, VT-50,
+            VT-71); then one overlay of it per drift (VT-51), and one each
+            for rollback with 3X-UI (VT-61), port changes (VT-63) and apply
+            on the applied host (VT-64).
+
+The matrix flow ends with status and the rollback command (VT-60); the
+negative suite also applies again after VT-23 (VT-64) and checks the release
+installer on an overlay of its own (VT-72, local part).
 """
 import argparse
 import hashlib
@@ -37,10 +43,10 @@ WORK = ROOT / '.tmp/vm'
 SSH_PORT = 2222
 # Runner port -> guest port (verification plan 3.3).
 FORWARDS = {SSH_PORT: 22, 12053: 2053, 10443: 443, 12096: 2096, 10080: 80, 18080: 8080}
-XUI_COMMIT = 'f727d04f6522bb94a8fb52e8352fdcafb51c11e1'  # tag v3.7.0
+XUI_COMMIT = '608ef4e4010bf83e2e78328e08f77efc051ad4d7'  # tag v3.10.2
+# install.sh fetches x-ui.sh from the same tag; tests/guest/m1.sh checks it.
 XUI_FILES = {
-    'install.sh': 'a7f4fedcea3abe8987508d00f29834b8872e4e4e5059159eb19460d474b37cdc',
-    'x-ui.sh': 'cfabcd4af35a3646c374ea0ccba5178f4c0d3135f699277fc8d8b810158e85c0',
+    'install.sh': '9684bae4f769b2127fcceceb4f200045657381311867529e6ba76c6b58e2825d',
 }
 VH = '/opt/vh-bundle/bin/vps-hardening'
 # Ports opened in the lifecycle flow; tests/guest/m2.sh lists the UFW rules they give.
@@ -52,6 +58,7 @@ DRIFTS = ('firewall-install', 'firewall-reinstall', 'iplimit', 'listen-all', 'bb
           'sshd-dropin', 'reboot-required')
 APPLY_PROMPT = '两项都满足请输入 yes'.encode()
 APPLIED = '加固已应用，等待确认'
+PORTS_CHANGED = '端口变更已生效，等待确认'
 # Key logins at least 2 s apart do not trigger Debian 13's penalties (VO-2).
 PROBE_INTERVAL = 3
 # Guest port -> runner port of the forwards above, for the reachability checks.
@@ -352,7 +359,8 @@ class Context:
     def bundle(self, with_xui):
         """Tool, guest tests and (for S1) the verified 3X-UI fixture files."""
         path = self.work / 'bundle.tar'
-        files = sorted(p for d in ('bin', 'lib', 'tests/guest') for p in (ROOT / d).rglob('*') if p.is_file())
+        files = sorted([ROOT / 'install.sh'] + [
+            p for d in ('bin', 'lib', 'tests/guest') for p in (ROOT / d).rglob('*') if p.is_file()])
         with tarfile.open(path, 'w') as tar:
             def add(name, data, mode):
                 info = tarfile.TarInfo(name)
@@ -591,6 +599,9 @@ def lifecycle(ctx, guest):
         check('confirm-rc=1' in output and '确认必须在以 root 登录的会话中执行' in output,
               'VT-24: confirm through sudo from the default user is refused')
         guest.phase('m2-pending', script='m2.sh')
+        status, output = guest.command('vt60-status-pending', f'{VH} status')
+        check(status == 0 and '状态：待确认' in output and '确认截止' in output,
+              'FR-13: status shows the pending change and its deadline')
         # VT-10 and VT-21: confirm from a new root session after the apply session closed.
         status, output = guest.command('vt10-confirm', f'{VH} confirm')
         check(status == 0 and '已确认' in output, 'VT-10: confirm from a new root session, then verify passes')
@@ -599,6 +610,9 @@ def lifecycle(ctx, guest):
         status, output = guest.command('vt24-confirm-again', f'{VH} confirm')
         check(status == 1 and '当前没有待确认的变更' in output, 'VT-24: confirm with nothing pending is refused')
         m2('m2-applied')
+        status, output = guest.command('vt60-status-applied', f'{VH} status')
+        check(status == 0 and '状态：已应用' in output and '受管文件' in output and 'ssh -N -L' in output,
+              'FR-13: status shows the record, the managed files and the tunnel command')
         result['ports_after'] = forwarded_ports()
         check(result['ports_after'] == {'443': True, '2096': False, '2053': False, '8080': False, '80': False},
               f'VT-14: through the forwards only 443 answers: {result["ports_after"]}')
@@ -610,6 +624,20 @@ def lifecycle(ctx, guest):
         probe.outage_over()
         guest.must_login('root', 'after the reboot')
         m2('m2-rebooted')
+        # VT-60: the rollback command after apply, confirm and a reboot.
+        status, output = guest.command('vt60-rollback-no-tty', f'{VH} rollback')
+        check(status == 2 and '必须在交互终端中运行' in output, 'VT-60: rollback without a terminal is refused')
+        status, output = guest.interactive('vt60-rollback', f'{VH} rollback; echo "rollback-rc=$?"')
+        check('rollback-rc=0' in output and '已恢复到应用前的配置' in output and '软件包保留' in output,
+              'VT-60: rollback restored the configuration and lists the kept packages')
+        check('[WARN] rollback.password' in output, 'VT-60: rollback warned that password logins come back')
+        guest.must_login('root', 'after the rollback')
+        guest.must_login(ctx.user, 'after the rollback')
+        m2('m2-rolled-back', 'manual')
+        status, output = guest.command('vt60-status-rolled-back', f'{VH} status')
+        check(status == 0 and '状态：已回滚' in output and '手工回滚' in output, 'FR-13: status shows the rollback')
+        status, output = guest.interactive('vt60-rollback-again', f'{VH} rollback; echo "rollback-rc=$?"')
+        check('rollback-rc=1' in output and '已经回滚' in output, 'VT-60: a second rollback is refused')
     (ctx.evidence / 'lifecycle.json').write_text(json.dumps(result, indent=2))
 
 
@@ -763,6 +791,18 @@ def negative(ctx, image):
             guest.must_login('root', 'after the failed apply')
             guest.must_login(ctx.user, 'after the failed apply')
             guest.phase('m2-rolled-back', 'failure', script='m2.sh')
+            # VT-64: once the cause is gone, apply runs the normal flow again.
+            guest.phase('m4-unmask', script='m4.sh')
+            status, output = guest.interactive('vt64-reapply', f'{VH} apply --open 443/tcp')
+            check(status == 0 and APPLIED in output, 'VT-64: apply after the rolled-back failure awaits confirmation')
+            status, output = guest.command('vt64-reapply-confirm', f'{VH} confirm')
+            check(status == 0 and '已确认' in output, 'VT-64: confirm from a new root session, then verify passes')
+            guest.phase('m4-reapplied', script='m4.sh')
+
+    # VT-72, local part: the release installer on a host the tool never touched.
+    with Guest(ctx, 'vt72', ctx.overlay(prepared, 'vt72.qcow2')) as guest:
+        guest.ready()
+        guest.phase('m4-installer', script='m4.sh')
 
 
 def panel(ctx, guest, template):
@@ -808,6 +848,65 @@ def hardened(ctx, image):
         with Guest(ctx, f'vt51-{drift}', ctx.overlay(disk, f'vt51-{drift}.qcow2')) as guest:
             guest.ready()
             guest.phase('m3-drift', drift, script='m3.sh')
+    for name, case in (('vt61', vt61), ('vt63', vt63), ('vt64', vt64)):
+        with Guest(ctx, name, ctx.overlay(disk, f'{name}.qcow2')) as guest:
+            guest.ready()
+            guest.phase('m4-setup', script='m4.sh')
+            case(ctx, guest)
+
+
+def vt61(ctx, guest):
+    """VT-61: the rollback command with 3X-UI installed leaves 3X-UI as it is."""
+    guest.phase('m4-xui-record', script='m4.sh')
+    with Probe(guest, 'vt61'):
+        status, output = guest.interactive('vt61-rollback', f'{VH} rollback; echo "rollback-rc=$?"')
+        check('rollback-rc=0' in output and '已恢复到应用前的配置' in output, 'VT-61: rollback finished')
+        guest.must_login('root', 'after the rollback')
+        guest.must_login(ctx.user, 'after the rollback')
+    guest.phase('m2-rolled-back', 'manual', script='m2.sh')
+    guest.phase('m4-xui-kept', script='m4.sh')
+
+
+def vt63(ctx, guest):
+    """VT-63: refused port changes, one confirmed, one left to time out."""
+    def m4(*args):
+        guest.phase(*args, script='m4.sh')
+    guest.phase('m2-listen', '443', '2096', '8443', '9443', script='m2.sh')
+    m4('m4-ports-before')
+    m4('m4-ports-refused')
+    with Probe(guest, 'vt63'):
+        status, output = guest.interactive(
+            'vt63-ports', f'{VH} ports --add 8443/tcp --remove 2096/tcp; echo "ports-rc=$?"')
+        check('ports-rc=0' in output and PORTS_CHANGED in output, 'VT-63: the port change awaits confirmation')
+        guest.must_login('root', 'while the port change is pending')
+        status, output = guest.command('vt63-confirm', f'{VH} confirm')
+        check(status == 0 and '已确认，端口变更生效' in output, 'VT-63: confirm from a new root session, then verify passes')
+        m4('m4-ports-changed')
+        status, output = guest.interactive(
+            'vt63-ports-unconfirmed', f'{VH} ports --add 9443/tcp --confirm-timeout 3; echo "ports-rc=$?"')
+        check('ports-rc=0' in output and PORTS_CHANGED in output, 'VT-63: a second port change awaits confirmation')
+        m4('m4-ports-pending')
+        ctx.timings.measure('vt63.restore', guest.wait_status, 'applied', 900)
+        guest.must_login('root', 'after the port restore')
+        m4('m4-ports-restored')
+
+
+def vt64(ctx, guest):
+    """VT-64: apply on the applied host changes nothing; other inputs and drift are refused."""
+    def m4(*args):
+        guest.phase(*args, script='m4.sh')
+    m4('m4-record')
+    status, output = guest.interactive('vt64-apply-again', f'{VH} apply {HARDENED_OPEN}; echo "apply-rc=$?"')
+    check('apply-rc=0' in output and '未做任何变更' in output and APPLY_PROMPT.decode() not in output,
+          'VT-64: apply on the applied host exits 0 without asking or changing anything')
+    m4('m4-unchanged', 'again', 'm4-record')
+    status, output = guest.interactive('vt64-apply-other', f'{VH} apply --open 443/tcp; echo "apply-rc=$?"')
+    check('apply-rc=1' in output and '[FAIL] apply.inputs' in output, 'VT-64: apply with other inputs is refused')
+    m4('m4-unchanged', 'other', 'm4-record')
+    m4('m4-ufw-drift')
+    status, output = guest.interactive('vt64-apply-drift', f'{VH} apply {HARDENED_OPEN}; echo "apply-rc=$?"')
+    check('apply-rc=1' in output and '[FAIL] ufw.rules' in output, 'VT-64: apply on a drifted host is refused')
+    m4('m4-unchanged', 'drift', 'm4-ufw-drift')
 
 
 def main():

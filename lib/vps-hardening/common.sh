@@ -68,6 +68,25 @@ usage_error() {
   exit "$VH_EXIT_USAGE"
 }
 
+# A command refused before it changed anything.
+refuse() {
+  printf '[x] %s\n' "$*" >&2
+  exit "$VH_EXIT_FAIL"
+}
+
+# safeguards_prompt UNTIL (FR-05): the administrator confirms both safeguards
+# explicitly before apply, ports or rollback changes anything. UNTIL names the
+# end of the operation that the current session must outlive.
+safeguards_prompt() {
+  local answer=''
+  printf '\n开始之前请确认：\n'
+  printf '  1. 当前 SSH 会话会一直保持，直到%s；\n' "$1"
+  printf '  2. 服务商控制台或救援模式可用。\n'
+  printf '两项都满足请输入 yes：'
+  read -r answer || return 1
+  [ "$answer" = yes ]
+}
+
 internal_error() {
   printf '[x] 内部错误：%s\n' "$*" >&2
   exit "$VH_EXIT_INTERNAL"
