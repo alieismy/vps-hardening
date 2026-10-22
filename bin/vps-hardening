@@ -10,7 +10,7 @@ PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 LC_ALL=C
 export PATH LC_ALL
 
-readonly VH_VERSION='0.1.0-rc.1'
+readonly VH_VERSION='0.1.0-rc.2'
 
 # Installed as /usr/local/bin/vps-hardening with modules in
 # /usr/local/lib/vps-hardening; the repository uses the same relative layout.
