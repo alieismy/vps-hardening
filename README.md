@@ -1,10 +1,10 @@
 # VPS Hardening
 
-Baseline security hardening for Debian/Ubuntu VPS. **Status: pre-release [v0.1.0-rc.1](https://github.com/alieismy/vps-hardening/releases/tag/v0.1.0-rc.1) (milestones M1–M4: read-only checks, apply with automatic restore, Fail2ban values, coexistence with 3X-UI, status, rollback, port changes and the release installer; fixes for gaps found in the requirements review are included). Four issues found after its release are listed in its release notes and fixed on master for v0.1.0-rc.2. Tested in CI VMs and on one test VPS only; not yet accepted on real hosts (M5) — do not use on production VPS.**
+Baseline security hardening for Debian/Ubuntu VPS. **Status: pre-release [v0.1.0-rc.2](https://github.com/alieismy/vps-hardening/releases/tag/v0.1.0-rc.2) (milestones M1–M4: read-only checks, apply with automatic restore, Fail2ban values, coexistence with 3X-UI, status, rollback, port changes and the release installer; fixes for gaps found in the requirements review are included, and v0.1.0-rc.2 fixes four issues found after v0.1.0-rc.1 was released). Tested in CI VMs and on one test VPS only; not yet accepted on real hosts (M5) — do not use on production VPS.**
 
 为 Debian/Ubuntu VPS 提供基础安全加固，包括：SSH 只允许密钥登录（root 作为管理账户，只能用密钥登录）、UFW 只开放必要端口、Fail2ban，以及自动安全更新。目标是在不明显增加日常管理负担的前提下缩小暴露面，同时避免把管理员锁在服务器外。
 
-**当前状态：预发行版 [`v0.1.0-rc.1`](https://github.com/alieismy/vps-hardening/releases/tag/v0.1.0-rc.1)（2026-10-22），尚未做真实主机验收。** 已完成里程碑 M1～M3：只读的 `preflight`（预检）和 `verify`（验证），`apply`（应用）、`confirm`（确认）和自动恢复，以及 Fail2ban 生效值、自动更新和与 3X-UI 共存的验证。M4 已实现并经评审批准（需求 D38）：`status`（状态）、`rollback`（手工回滚）、`ports`（端口变更）、已应用的主机上再次 `apply` 只做核对，以及发行版安装脚本；3X-UI 共存基线改为 v3.10.2。评审需求时发现的三处缺口已修复并随预发行版发布，文档已批准（需求 D39）：sshd 配置中的 `Match` 块、`ufw status` 不显示的规则、规则的基线（需求 D34～D37）。发布后核实的四个问题列在它的发布说明中，已在 `master` 上修复，计划随 `v0.1.0-rc.2` 发布（需求 D40）：带引号或含空格的 sshd 配置写法会让 `Match` 块漏查；重复安装不检查权限；安装中途失败或被中断时不恢复原来的文件。以上都在三个平台的 amd64 虚拟机测试中通过（arm64 作为参考，按需测试）。尚未完成：真实主机验收（M5）。目前只在 CI 虚拟机和一台测试 VPS 上验证过（[详细设计第 8.6 节](docs/detailed-design.md#86-测试-vps-上的试运行)、[第 8.8 节](docs/detailed-design.md#88-测试-vps-上的-m3-核对)、[第 8.9 节](docs/detailed-design.md#89-测试-vps-上的-d27-顺序演练)、[第 8.11 节](docs/detailed-design.md#811-测试-vps-上的-m4-核对)；发布和公开下载的回验见[第 8.14 节](docs/detailed-design.md#814-预发行版和-vt-72-的公开部分)），不要用于生产 VPS。文档：[需求规格说明](docs/requirements.md)（v1.8 草案）、[方案设计](docs/solution-design.md)（v1.4，已批准）、[验证计划](docs/verification-plan.md)（v1.6 草案）、[详细设计](docs/detailed-design.md)（v0.7 草案，覆盖 M1～M4 和两轮修复），草案待评审；上一版（需求 v1.7、验证计划 v1.5、详细设计 v0.6）已批准。
+**当前状态：预发行版 [`v0.1.0-rc.2`](https://github.com/alieismy/vps-hardening/releases/tag/v0.1.0-rc.2)（2026-10-22），尚未做真实主机验收。** 已完成里程碑 M1～M3：只读的 `preflight`（预检）和 `verify`（验证），`apply`（应用）、`confirm`（确认）和自动恢复，以及 Fail2ban 生效值、自动更新和与 3X-UI 共存的验证。M4 已实现并经评审批准（需求 D38）：`status`（状态）、`rollback`（手工回滚）、`ports`（端口变更）、已应用的主机上再次 `apply` 只做核对，以及发行版安装脚本；3X-UI 共存基线改为 v3.10.2。评审需求时发现的三处缺口已修复并随预发行版发布，相应的文档（需求 v1.7、方案设计 v1.4、验证计划 v1.5、详细设计 v0.6）已批准（需求 D39）：sshd 配置中的 `Match` 块、`ufw status` 不显示的规则、规则的基线（需求 D34～D37）。`v0.1.0-rc.1` 发布后核实的四个问题列在它的发布说明中，已在 `v0.1.0-rc.2` 中修复（需求 D40）：带引号或含空格的 sshd 配置写法会让 `Match` 块漏查；重复安装不检查权限；安装中途失败或被中断时不恢复原来的文件。以上都在三个平台的 amd64 虚拟机测试中通过（arm64 作为参考，按需测试）。尚未完成：真实主机验收（M5）。目前只在 CI 虚拟机和一台测试 VPS 上验证过（[详细设计第 8.6 节](docs/detailed-design.md#86-测试-vps-上的试运行)、[第 8.8 节](docs/detailed-design.md#88-测试-vps-上的-m3-核对)、[第 8.9 节](docs/detailed-design.md#89-测试-vps-上的-d27-顺序演练)、[第 8.11 节](docs/detailed-design.md#811-测试-vps-上的-m4-核对)；发布和公开下载的回验见[第 8.14 节](docs/detailed-design.md#814-预发行版和-vt-72-的公开部分)、[第 8.16 节](docs/detailed-design.md#816-预发行版-v010-rc2-和-vt-72-的公开部分)），不要用于生产 VPS。文档：[需求规格说明](docs/requirements.md)（v1.8 草案）、[方案设计](docs/solution-design.md)（v1.4，已批准）、[验证计划](docs/verification-plan.md)（v1.6 草案）、[详细设计](docs/detailed-design.md)（v0.7 草案，覆盖 M1～M4 和两轮修复），草案待评审；上一版（需求 v1.7、验证计划 v1.5、详细设计 v0.6）已批准。
 
 ## 已确认的范围（2026-10-10，2026-10-13 补充，2026-10-20、2026-10-21 修改）
 
@@ -32,8 +32,8 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: pre-release [v0.1.0
 2. 安装预发行版。安装脚本先用内置的摘要校验 `SHA256SUMS`，再逐个校验 13 个资产，然后安装到 `/usr/local/bin/vps-hardening` 和 `/usr/local/lib/vps-hardening`；它只放置文件，不执行预检或应用（[详细设计第 2.12 节](docs/detailed-design.md#212-安装脚本)）：
 
    ```bash
-   curl -fsSLO https://github.com/alieismy/vps-hardening/releases/download/v0.1.0-rc.1/install.sh
-   echo 'b6771abb497e7a24aae71e2d65ee8275796d194f60513e30ec1fc89581a61d45  install.sh' | sha256sum -c -
+   curl -fsSLO https://github.com/alieismy/vps-hardening/releases/download/v0.1.0-rc.2/install.sh
+   echo '9c18d7c0fcb1b5532b659d05e1cdb6831acdb46484224fe94cb1670398aaf69b  install.sh' | sha256sum -c -
    bash install.sh
    ```
 
@@ -62,14 +62,14 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: pre-release [v0.1.0
 
 需求 v1.4、方案设计 v1.2、验证计划 v1.2 和详细设计 v0.3 已确认（2026-10-20，需求 D28）。这一轮确认的内容：ARM64 改为按需运行的参考（需求 D26）；加固、调优和 3X-UI 的执行顺序（需求 D27）；Fail2ban 和自动更新的配置写入提前到 M2（[详细设计第 1 节](docs/detailed-design.md#1-范围)）；连续探测失败后重试一次，两次都失败才算中断（VT-25）。此前确认的 root 只用密钥登录、Fail2ban 参数等见上方的范围表。另有一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
 
-预发行版 `v0.1.0-rc.1` 已于 2026-10-22 在 #10、#11 合并之后发布，VT-72 的公开部分已完成（需求 D38，[详细设计第 8.14 节](docs/detailed-design.md#814-预发行版和-vt-72-的公开部分)）；发布后核实的四个问题已补进它的发布说明（需求 D39）。下一步：发布 `v0.1.0-rc.2`，步骤与 rc.1 相同，然后从公开地址回验 VT-72（需求 D39）；评审需求 v1.8、验证计划 v1.6、详细设计 v0.7；之后是真实主机验收（M5）。
+预发行版 `v0.1.0-rc.1` 已于 2026-10-22 在 #10、#11 合并之后发布，VT-72 的公开部分已完成（需求 D38，[详细设计第 8.14 节](docs/detailed-design.md#814-预发行版和-vt-72-的公开部分)）；发布后核实的四个问题已补进它的发布说明（需求 D39）。预发行版 `v0.1.0-rc.2` 已于 2026-10-22 在 #14、#15 合并之后发布，修复了这四个问题，VT-72 的公开部分已完成（需求 D39，[详细设计第 8.16 节](docs/detailed-design.md#816-预发行版-v010-rc2-和-vt-72-的公开部分)）。下一步：评审需求 v1.8、验证计划 v1.6、详细设计 v0.7；之后是真实主机验收（M5）。
 
 ## 配套仓库
 
 | 仓库 | 用途 | 状态 |
 |---|---|---|
 | [vps-tuning](https://github.com/alieismy/vps-tuning) | 网络调优、诊断与测量 | Pre-release |
-| vps-hardening（本仓库） | 基础安全加固 | Pre-release（v0.1.0-rc.1） |
+| vps-hardening（本仓库） | 基础安全加固 | Pre-release（v0.1.0-rc.2） |
 | vps-proxy-setup | 代理服务搭建（以 3X-UI 为例） | 规划中，尚未创建 |
 
 建议的执行顺序（需求 D27；理由见[需求规格说明第 7.3 节](docs/requirements.md#73-与-vps-tuning-的约定)）：`apt update && apt full-upgrade` → 重启 → 加固并确认 → 调优（应用 → 重启 → 验证）→ 安装并配置 3X-UI → 调优仓库的严格验证 → 重启后复核。全量升级和重启由管理员执行，本工具不执行。调优的应用和重启要在加固确认之后进行，确认前重启会自动撤销加固。
