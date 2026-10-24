@@ -4,7 +4,8 @@
 # VT-64 and the local part of VT-72; VT-60 runs in the lifecycle flow with the
 # M2 phases). tests/vm.py runs rollback, ports, apply and confirm over SSH as
 # an administrator would, and one phase of this script per SSH session in
-# between.
+# between. The hardened suite also runs the two port-flow phases of VT-55
+# from here, for the UFW helpers.
 
 # shellcheck source=m2.sh
 . "${BASH_SOURCE[0]%/*}/m2.sh"
@@ -95,6 +96,23 @@ phase_m4_xui_kept() {
   ss -H -ltn 'sport = :2053' | tee "$phase_dir/xui-listen.txt"
   [ "$(awk '{print $4}' "$phase_dir/xui-listen.txt")" = 127.0.0.1:2053 ] || fail 'the panel is not on 127.0.0.1:2053 only'
   log "3X-UI files ($(wc -l <"$phase_dir/xui-files.txt")) and service unchanged; panel on loopback"
+}
+
+# VT-55, requirement D41: hardened without public ports, UFW allows 22/tcp only.
+phase_m4_flow_ssh_only() {
+  [ "$(state_value status)" = applied ] || fail "status is $(state_value status), expected applied"
+  [ -z "$(state_value open)" ] || fail "declared ports: $(state_value open)"
+  ufw_rules_are
+}
+
+# VT-55, requirement D41: the 3X-UI ports added with ports and confirmed.
+phase_m4_flow_ports_added() {
+  [ "$(state_value status)" = applied ] || fail "status is $(state_value status), expected applied"
+  [ "$(state_value open)" = '443/tcp/both 2096/tcp/both' ] || fail "declared ports: $(state_value open)"
+  [ -n "$(state_value ports_confirmed_at)" ] || fail 'the confirmation of the port change is not recorded'
+  no_restore_armed
+  ufw_rules_are 443/tcp 2096/tcp
+  verify_passes flow-verify
 }
 
 # VT-63: the hardened guest with HTTP servers on 443, 2096, 8443 and 9443.
@@ -399,6 +417,8 @@ m4_main() {
     m4-setup) phase_m4_setup ;;
     m4-xui-record) phase_m4_xui_record ;;
     m4-xui-kept) phase_m4_xui_kept ;;
+    m4-flow-ssh-only) phase_m4_flow_ssh_only ;;
+    m4-flow-ports-added) phase_m4_flow_ports_added ;;
     m4-ports-before) phase_m4_ports_before ;;
     m4-ports-refused) phase_m4_ports_refused ;;
     m4-ports-changed) phase_m4_ports_changed ;;

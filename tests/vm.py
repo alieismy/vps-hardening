@@ -51,7 +51,9 @@ XUI_FILES = {
 VH = '/opt/vh-bundle/bin/vps-hardening'
 # Ports opened in the lifecycle flow; tests/guest/m2.sh lists the UFW rules they give.
 LIFECYCLE_OPEN = '--open 443/tcp --open 2096/tcp/ipv6 --open 8443/udp/ipv4'
-# Ports opened in the hardened suite: the inbound and subscription ports of 3X-UI.
+# Ports of the hardened suite: the inbound and subscription ports of 3X-UI. They
+# are added with ports once 3X-UI is installed (requirement D41); VT-64 applies
+# again with them.
 HARDENED_OPEN = '--open 443/tcp --open 2096/tcp'
 # VT-51, one overlay each; tests/guest/m3.sh injects them.
 DRIFTS = ('firewall-install', 'firewall-reinstall', 'iplimit', 'listen-all', 'bbr', 'ufw-rule', 'nftables',
@@ -818,8 +820,9 @@ def panel(ctx, guest, template):
 
 
 def hardened(ctx, image):
-    """M3 on a guest hardened and confirmed as an administrator would; then
-    VT-51 on overlays of its disk after VT-55."""
+    """M3 on a guest hardened and confirmed as an administrator would, with
+    only 22/tcp until 3X-UI is installed and its ports are added (requirement
+    D41); then VT-51 on overlays of its disk after VT-55."""
     disk = ctx.overlay(image, 'disk.qcow2')
     with Guest(ctx, 'hardened', disk) as guest:
         def m3(name, *args):
@@ -830,13 +833,20 @@ def hardened(ctx, image):
         guest.phase('m2-prepare', script='m2.sh')
         guest.phase('m2-baseline', script='m2.sh')
         with Probe(guest, 'hardened') as probe:
-            status, output = guest.interactive('apply', f'{VH} apply {HARDENED_OPEN}')
+            status, output = guest.interactive('apply', f'{VH} apply')
             check(status == 0 and APPLIED in output, 'apply finished and awaits confirmation')
             template = next(line.strip() for line in output.splitlines() if line.strip().startswith('ssh -N -L'))
             status, output = guest.command('confirm', f'{VH} confirm')
             check(status == 0 and '已确认' in output, 'confirm from a new root session, then verify passes')
+            guest.phase('m4-flow-ssh-only', script='m4.sh')
             for name in ('m3-fail2ban', 'm3-regex', 'm3-ban', 'm3-manual-ban', 'm3-agent', 'm3-updates', 'm3-xui'):
                 m3(name)
+            status, output = guest.interactive(
+                'xui-ports', f'{VH} ports --add 443/tcp --add 2096/tcp; echo "ports-rc=$?"')
+            check('ports-rc=0' in output and PORTS_CHANGED in output, 'the 3X-UI ports await confirmation')
+            status, output = guest.command('xui-ports-confirm', f'{VH} confirm')
+            check(status == 0 and '已确认，端口变更生效' in output, 'confirm the 3X-UI ports from a new root session')
+            guest.phase('m4-flow-ports-added', script='m4.sh')
             panel(ctx, guest, template)
             probe.outage('reboot')
             guest.reboot()
