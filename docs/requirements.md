@@ -464,7 +464,7 @@ root 的公钥不是输入：预检读取 root 现有的 `authorized_keys`（FR-
 | 系统更新、基础工具安装、清理和重启 | 由管理员在加固前执行（D24、D42）；预检发现待重启时警告（D43） | — |
 | 给代理、REALITY、订阅或面板端口设 Fail2ban jail | REALITY 会把未通过认证的探测转发给伪装目标，不产生可靠的失败日志，加规则只会误封（推断） | 出现可复现的滥用证据 |
 | 基于 UFW 拦截日志封禁端口扫描来源 | 扫描器会频繁更换 IP，作用有限 | 同上 |
-| 3X-UI IP Limit（`3x-ipl`） | D8 要求保持关闭；启用时会修改 `fail2ban.conf`，v3.7.0 还会修改 `jail.conf`（见 R-6）。用户 2026-10-24 确认暂不考虑（U27）。不启用时，3X-UI 不按客户端限制同时使用的来源 IP 数：这项限制由 `3x-ipl` jail 执行（第 7.2 节） | 用户决定启用，并完成共存评估 |
+| 3X-UI IP Limit（`3x-ipl`） | D8 要求保持关闭；启用时会修改 `fail2ban.conf`，v3.7.0 还会修改 `jail.conf`（见 R-6）。用户 2026-10-24 确认暂不考虑（U27）。按 v3.10.2 的源码（`internal/web/job/check_client_ip_job.go`，2026-10-24 阅读，未实测）：只要有客户端设了 IP 数限制，x-ui 进程的环境中 `XUI_ENABLE_FAIL2BAN` 未设置或为 `true`，并且能执行 `fail2ban-client`（加固后的主机装有 fail2ban），面板就会经 Xray 临时断开超出限制的客户端，并把来源写入供 `3x-ipl` 读取的日志；封禁要靠这个 jail，不启用时不会封禁。不给客户端设 IP 数限制时，这段逻辑不起作用 | 用户决定启用，并完成共存评估 |
 | CrowdSec 等替代方案 | 用户没有要求 | — |
 | CIS 全量合规、入侵检测、AppArmor/SELinux 策略、审计系统 | D10 | — |
 | 额外的内核 sysctl 加固 | 用户没有要求；网络 sysctl 归 vps-tuning | 用户提出 |
