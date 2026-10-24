@@ -276,6 +276,20 @@ phase_matrix() {
   expect_rc vt01-preflight 0
   expect_clean vt01-preflight
   expect_report vt01-preflight PASS root.keys
+  expect_report vt01-preflight PASS reboot.required
+
+  # Requirement D43: a pending reboot only warns. Without --open, UFW is to
+  # allow 22/tcp only (requirement D41).
+  touch /var/run/reboot-required
+  snapshot vt01-reboot-before
+  capture vt01-reboot "$VH" preflight
+  snapshot vt01-reboot-after
+  rm -f /var/run/reboot-required
+  same_snapshot vt01-reboot-before vt01-reboot-after
+  expect_rc vt01-reboot 0
+  expect_clean vt01-reboot
+  expect_report vt01-reboot WARN reboot.required
+  expect_report vt01-reboot PASS inputs.open
 
   snapshot vt50-before
   capture vt50-verify "$VH" verify

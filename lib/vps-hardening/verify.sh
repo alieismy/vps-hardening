@@ -557,6 +557,7 @@ verify_panel_listen() {
   fi
 }
 
+# Also run by preflight, where it only warns as well (requirement D43).
 verify_reboot() {
   if [ -e /var/run/reboot-required ]; then
     report WARN reboot.required '系统需要重启才能让已安装的更新生效'

@@ -39,13 +39,14 @@ run_preflight_checks() {
   preflight_sshd
   preflight_accounts
   preflight_packages
+  verify_reboot
 }
 
 preflight_inputs() {
   local open_desc
   report PASS inputs.panel-port "面板端口 $VH_IN_PANEL_PORT：不开放，只经 SSH 隧道访问"
   if [ "${#VH_IN_OPEN[@]}" -eq 0 ]; then
-    report WARN inputs.open '没有声明公开端口；UFW 将只放行 22/tcp'
+    report PASS inputs.open '没有声明公开端口：UFW 只放行 22/tcp；安装 3X-UI 时用 ports --add 开放它的端口'
   else
     open_desc="$(join_by ', ' "${VH_IN_OPEN[@]}")"
     report PASS inputs.open "公开端口：$open_desc"
