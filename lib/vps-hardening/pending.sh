@@ -143,10 +143,17 @@ disarm_restore() {
 # f2b_unmask MODE: remove the runtime mask that apply puts on fail2ban.service
 # while it installs the package, if the state records one. A reboot removes
 # the mask by itself, so at boot only the record is cleared.
+# Under the mask the postinst's enable fails before deb-systemd-helper records
+# the unit's links. Without that record, the next upgrade of the package
+# enables and starts the service again, even after a restore disabled it.
+# update-state writes the record and leaves the enablement as it is.
 f2b_unmask() {
   [ "$(state_get f2b_install_mask)" = yes ] || return 0
   if [ "$1" != boot ]; then
     bounded_change systemctl unmask --runtime --quiet fail2ban.service >>"$VH_LOG_FILE" 2>&1 || return 1
+  fi
+  if pkg_installed fail2ban && ! deb-systemd-helper debian-installed fail2ban.service; then
+    bounded_change deb-systemd-helper update-state fail2ban.service >>"$VH_LOG_FILE" 2>&1 || return 1
   fi
   state_set f2b_install_mask no
 }

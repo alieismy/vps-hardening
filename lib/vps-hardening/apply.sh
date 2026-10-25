@@ -206,7 +206,8 @@ install_missing_packages() {
   # jail, whose 10-minute bans of sources in the journal backlog would outlast
   # the restart in step 5 (design 8.8). Masked in /run for the install, it
   # first starts in step 5 with FR-08's settings. The state records the mask
-  # first, so that every restore path removes it (f2b_unmask).
+  # first, so that every restore path removes it and records the unit for
+  # deb-systemd-helper as the postinst would have (f2b_unmask).
   if [[ " ${missing[*]} " == *' fail2ban '* ]]; then
     state_set f2b_install_mask yes
     bounded_change systemctl mask --runtime --quiet fail2ban.service >>"$VH_LOG_FILE" 2>&1 ||
