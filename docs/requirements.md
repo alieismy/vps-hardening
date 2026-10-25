@@ -287,7 +287,7 @@
 - 不给代理入站、订阅或面板端口设 jail；不启用 3X-UI 的 IP Limit（`3x-ipl`）。
 - 过滤模式取 `normal`（D23）。上游的 sshd 过滤器在 `normal` 模式下，把认证完成前断开的连接（`Connection closed/reset … [preauth]`、`Disconnected … [preauth]`）标为不计数，`ddos` 和 `aggressive` 模式则计为失败（已核实 fail2ban 1.0.2 和 1.1.0 的 `filter.d/sshd.conf`）。U11 中管理出口被封，就是这类断开造成的。代价是：密码登录关闭后，只针对 root 的扫描大多只留下这类断开日志，`normal` 模式基本不计数，主要封禁的是尝试不存在用户名的来源（推断，M3 实测）。这与第 1 节对 Fail2ban 的定位一致：它是补充防线。
 - 显式安装 `nftables` 和 `python3-systemd`，不依赖软件包的推荐依赖。只执行 `apt install fail2ban` 时：Debian 12 上 `python3-systemd` 只是推荐依赖；`nftables` 在 Debian 12 和 13 上都是 `nftables | iptables` 二选一的推荐依赖，而 UFW 已经装上了 `iptables`，所以 `nftables` 可能不会被安装。
-- 由本工具安装 fail2ban 时，服务第一次启动就使用上表的值：软件包的安装脚本不按自带的配置启动服务，按 journal 中已有失败产生的封禁同样按上表计时（D47）。已经装有 fail2ban 的新机上，应用前已有的封禁保持原来的时长。
+- 由本工具安装 fail2ban 时，服务第一次启动就使用上表的值：软件包的安装脚本不按自带的配置启动服务，按 journal 中已有失败产生的封禁同样按上表计时（D47）。已经装有 fail2ban 的新机上，应用前已有的封禁保持原来的时长；安装 fail2ban 时中断、之后由管理员完成软件包配置，或者第一次启动之前主机重启时，情形相同（D47）。
 - 必须处理以下平台差异（证据见第 10.1 节）：
   - Debian 12 可能没有 rsyslog 和 `/var/log/auth.log`，发行版默认的 sshd jail 没有设置 `backend`；
   - Ubuntu 24.04 初始版本中的 fail2ban 1.0.2-3 在 Python 3.12 下会报错，需要 noble-updates 中的 1.0.2-3ubuntu0.1 或更新版本；
