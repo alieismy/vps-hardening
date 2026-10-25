@@ -202,12 +202,22 @@ install_missing_packages() {
     return 0
   fi
   printf '安装：%s（输出写入 %s）\n' "${missing[*]}" "$VH_LOG_FILE"
+  # fail2ban's postinst starts the service at once with the package's own
+  # jail, whose 10-minute bans of sources in the journal backlog would outlast
+  # the restart in step 5 (design 8.8). Held back for the install (f2b_hold),
+  # it first starts in step 5 with FR-08's settings. The state records the
+  # hold first, so that every restore path removes it (f2b_release).
+  if [[ " ${missing[*]} " == *' fail2ban '* ]]; then
+    state_set f2b_install_hold yes
+    f2b_hold || apply_fail '无法在安装软件包期间阻止 fail2ban.service 启动'
+  fi
   if ! DEBIAN_FRONTEND=noninteractive timeout --kill-after=30 "$VH_APT_TIMEOUT" \
     apt-get -q -y --no-install-recommends \
     -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
     install "${missing[@]}" </dev/null >>"$VH_LOG_FILE" 2>&1; then
     apply_fail "安装软件包失败，详见 $VH_LOG_FILE"
   fi
+  f2b_release runtime || apply_fail '无法撤除安装期间对 fail2ban.service 的阻止'
 }
 
 # write_managed PATH: content on stdin, mode 0644, replaced atomically.

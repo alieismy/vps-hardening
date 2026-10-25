@@ -7,6 +7,7 @@
 readonly VH_BOOT_UNIT=vps-hardening-rollback.service
 readonly VH_BOOT_UNIT_FILE="/etc/systemd/system/$VH_BOOT_UNIT"
 readonly VH_TIMER_PREFIX=vps-hardening-timeout
+readonly VH_F2B_HOLD_DROPIN=/run/systemd/system/fail2ban.service.d/vps-hardening-install.conf
 # The kernel's value for "no audit session" in /proc/<pid>/sessionid and loginuid.
 readonly VH_AUDIT_UNSET=4294967295
 
@@ -140,6 +141,29 @@ disarm_restore() {
   [ "$errors" -eq 0 ]
 }
 
+# f2b_hold: while apply installs fail2ban, a drop-in in /run gives
+# fail2ban.service a condition that never holds, so the postinst's start is
+# skipped. The postinst's enable still runs, unlike under a mask, whose failed
+# `systemctl preset` leaves deb-systemd-helper without its record of the unit
+# and makes the next upgrade enable the service again after a restore.
+f2b_hold() {
+  mkdir -p -- "${VH_F2B_HOLD_DROPIN%/*}" &&
+    printf '[Unit]\nConditionPathExists=/nonexistent\n' >"$VH_F2B_HOLD_DROPIN" &&
+    bounded_change systemctl daemon-reload >>"$VH_LOG_FILE" 2>&1
+}
+
+# f2b_release MODE: remove the drop-in of f2b_hold, if the state records one.
+# A reboot removes it by itself, so at boot only the record is cleared.
+f2b_release() {
+  [ "$(state_get f2b_install_hold)" = yes ] || return 0
+  if [ "$1" != boot ]; then
+    rm -f -- "$VH_F2B_HOLD_DROPIN" || return 1
+    rmdir -- "${VH_F2B_HOLD_DROPIN%/*}" 2>/dev/null || true
+    bounded_change systemctl daemon-reload >>"$VH_LOG_FILE" 2>&1 || return 1
+  fi
+  state_set f2b_install_hold no
+}
+
 # Put unit enablement and activity back as recorded before package
 # installation. A unit that did not exist then ends disabled and stopped.
 # At boot the manager is not reloaded, and activity before the reboot does
@@ -147,7 +171,9 @@ disarm_restore() {
 # apply's enabling queued for the others is cancelled without waiting.
 restore_units() {
   local mode="$1" unit exists enabled active nr=() errors=0
-  [ -f "$VH_UNITS_FILE" ] || return 0
+  # An apply interrupted while installing packages may have left the drop-in.
+  f2b_release "$mode" || errors=$((errors + 1))
+  [ -f "$VH_UNITS_FILE" ] || return "$errors"
   [ "$mode" != boot ] || nr=(--no-reload)
   while read -r unit exists enabled active; do
     if [ "$exists" = no ]; then

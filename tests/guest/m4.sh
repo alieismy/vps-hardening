@@ -317,7 +317,8 @@ phase_m4_installer() {
     fail 'an incomplete install left staging files'
 
   expect_install install 0 '安装完成' "$inst" --source-dir "$rel"
-  expect_text install '下一步：vps-hardening preflight'
+  # The recommended flow declares no public port at hardening (requirements D41).
+  expect_match install '下一步：vps-hardening preflight$'
   installed_record | tee "$phase_dir/installed.txt"
   [ "$(grep -c '^755 root:root ' "$phase_dir/installed.txt")" -eq 2 ] || fail 'the command or module directory is not 0755 root'
   [ "$(grep -c '^644 root:root ' "$phase_dir/installed.txt")" -eq 12 ] || fail 'not 12 modules 0644 root'

@@ -408,6 +408,19 @@ check_packages_kept() {
   log "packages installed by apply kept: $(state_value packages_added)"
 }
 
+# VT-26: on an upgrade, fail2ban's postinst enables and starts the unit again
+# when deb-systemd-helper says it was enabled, which it also says for a unit
+# it has no record of (design 2.5, step 4). Once restored, it must have a
+# record and say no. The helper runs only as if from a maintainer script.
+check_f2b_stays_disabled() {
+  grep -q '^fail2ban.service absent ' "$BASELINE/units.txt" || return 0
+  DPKG_MAINTSCRIPT_PACKAGE=fail2ban deb-systemd-helper debian-installed fail2ban.service ||
+    fail 'deb-systemd-helper has no record of fail2ban.service: an upgrade would enable it again'
+  ! DPKG_MAINTSCRIPT_PACKAGE=fail2ban deb-systemd-helper --quiet was-enabled fail2ban.service ||
+    fail 'deb-systemd-helper says fail2ban.service was enabled: an upgrade would start it again'
+  log 'an upgrade of fail2ban keeps it disabled'
+}
+
 # VT-20: the restore started when the confirmation time was up, not earlier.
 # How long it then takes depends on the machine (minutes under emulation),
 # so the duration only has the bound the test driver waits for.
@@ -605,6 +618,7 @@ phase_m2_rolled_back() {
   check_files_restored
   check_units_restored "$mode"
   check_packages_kept
+  check_f2b_stays_disabled
   f2b_mainconf_as_package
   case "$mode" in
     timeout) check_restore_time ;;
