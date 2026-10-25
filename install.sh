@@ -267,7 +267,7 @@ main() {
   if grep -qx 'status=applied' "$STATE_FILE" 2>/dev/null; then
     info '安装没有改变已应用的配置。下一步：vps-hardening verify 核对配置，vps-hardening status 查看记录'
   else
-    info '安装没有执行 preflight 或 apply。下一步：vps-hardening preflight --open <公开端口>'
+    info '安装没有执行 preflight 或 apply。下一步：vps-hardening preflight'
   fi
 }
 

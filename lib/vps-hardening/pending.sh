@@ -140,6 +140,17 @@ disarm_restore() {
   [ "$errors" -eq 0 ]
 }
 
+# f2b_unmask MODE: remove the runtime mask that apply puts on fail2ban.service
+# while it installs the package, if the state records one. A reboot removes
+# the mask by itself, so at boot only the record is cleared.
+f2b_unmask() {
+  [ "$(state_get f2b_install_mask)" = yes ] || return 0
+  if [ "$1" != boot ]; then
+    bounded_change systemctl unmask --runtime --quiet fail2ban.service >>"$VH_LOG_FILE" 2>&1 || return 1
+  fi
+  state_set f2b_install_mask no
+}
+
 # Put unit enablement and activity back as recorded before package
 # installation. A unit that did not exist then ends disabled and stopped.
 # At boot the manager is not reloaded, and activity before the reboot does
@@ -147,7 +158,9 @@ disarm_restore() {
 # apply's enabling queued for the others is cancelled without waiting.
 restore_units() {
   local mode="$1" unit exists enabled active nr=() errors=0
-  [ -f "$VH_UNITS_FILE" ] || return 0
+  # An apply interrupted while installing packages may have left the mask.
+  f2b_unmask "$mode" || errors=$((errors + 1))
+  [ -f "$VH_UNITS_FILE" ] || return "$errors"
   [ "$mode" != boot ] || nr=(--no-reload)
   while read -r unit exists enabled active; do
     if [ "$exists" = no ]; then

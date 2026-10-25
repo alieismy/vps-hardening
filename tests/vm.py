@@ -832,6 +832,8 @@ def hardened(ctx, image):
         guest.phase('prepare')
         guest.phase('m2-prepare', script='m2.sh')
         guest.phase('m2-baseline', script='m2.sh')
+        # VT-36: failures in the journal before apply installs fail2ban.
+        m3('m3-backlog-before')
         with Probe(guest, 'hardened') as probe:
             status, output = guest.interactive('apply', f'{VH} apply')
             check(status == 0 and APPLIED in output, 'apply finished and awaits confirmation')
@@ -839,7 +841,8 @@ def hardened(ctx, image):
             status, output = guest.command('confirm', f'{VH} confirm')
             check(status == 0 and '已确认' in output, 'confirm from a new root session, then verify passes')
             guest.phase('m4-flow-ssh-only', script='m4.sh')
-            for name in ('m3-fail2ban', 'm3-regex', 'm3-ban', 'm3-manual-ban', 'm3-agent', 'm3-updates', 'm3-xui'):
+            for name in ('m3-backlog', 'm3-fail2ban', 'm3-regex', 'm3-ban', 'm3-manual-ban', 'm3-agent', 'm3-updates',
+                         'm3-xui'):
                 m3(name)
             status, output = guest.interactive(
                 'xui-ports', f'{VH} ports --add 443/tcp --add 2096/tcp; echo "ports-rc=$?"')

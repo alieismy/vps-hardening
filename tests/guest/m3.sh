@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # Guest side of the M3 VM tests (docs/verification-plan.md 4.4 to 4.7:
-# VT-30 to VT-35, VT-40, VT-50 after installing 3X-UI, VT-51, VT-55 and the
-# 3X-UI part of VT-71). tests/vm.py hardens and confirms the guest first, then
-# runs one phase of this script per SSH session; VT-51 runs on overlays of the
-# disk after VT-55, one drift each.
+# VT-30 to VT-36, VT-40, VT-50 after installing 3X-UI, VT-51, VT-55 and the
+# 3X-UI part of VT-71). tests/vm.py runs the first phase of VT-36 before apply,
+# hardens and confirms the guest, then runs one phase of this script per SSH
+# session; VT-51 runs on overlays of the disk after VT-55, one drift each.
 
 # shellcheck source=m2.sh
 . "${BASH_SOURCE[0]%/*}/m2.sh"
@@ -23,7 +23,8 @@ apt_idle() {
 # Second-source addresses of the M3 cases, one per case so that neither a
 # Fail2ban ban nor Debian 13's sshd penalties carry over between cases.
 readonly REGEX_SRC=192.0.2.6 BAN_SRC=192.0.2.7 INC_SRC=192.0.2.8 AGENT_SRC=192.0.2.9 PREAUTH_SRC=192.0.2.10
-readonly M3_SOURCES="$REGEX_SRC $BAN_SRC $INC_SRC $AGENT_SRC $PREAUTH_SRC"
+readonly BACKLOG_SRC=192.0.2.11
+readonly M3_SOURCES="$REGEX_SRC $BAN_SRC $INC_SRC $AGENT_SRC $PREAUTH_SRC $BACKLOG_SRC"
 # VT-32: a documentation address that never sends traffic.
 readonly MANUAL_BAN=203.0.113.123
 # Invalid-user attempts this far apart stay below Debian 13's sshd penalties
@@ -231,6 +232,34 @@ phase_m3_regex() {
   [ "$matched" -ge "$attempts" ] || fail "fail2ban-regex matched $matched failures for $attempts samples"
   [ "$matched" -eq "$counted" ] || fail "fail2ban-regex matched $matched failures, the jail counted $counted"
   ! banned "$REGEX_SRC" || fail "$REGEX_SRC was banned"
+}
+
+# VT-36, before apply: maxretry failures from a second source while fail2ban
+# is not installed yet, for apply's first start of the jail to find in the
+# journal.
+phase_m3_backlog_before() {
+  local n
+  [ "$(dpkg-query -W -f='${db:Status-Status}' fail2ban 2>/dev/null)" != installed ] ||
+    fail 'fail2ban is installed before apply; the case needs apply to install it'
+  m3_netns_up
+  for n in 1 2 3 4 5; do
+    invalid_attempt "$BACKLOG_SRC" "$n"
+    [ "$n" -eq 5 ] || sleep "$ATTEMPT_GAP"
+  done
+  log "5 failures from $BACKLOG_SRC before apply"
+}
+
+# VT-36, after apply and confirm: the backlog source is banned with FR-08's
+# bantime, not the package's own 600 s from the jail it ran during the
+# install (design 8.8).
+phase_m3_backlog() {
+  local seconds
+  wait_fail2ban
+  trap unban_test_addresses EXIT
+  banned "$BACKLOG_SRC" || fail "$BACKLOG_SRC from the backlog is not banned"
+  seconds="$(ban_seconds "$BACKLOG_SRC")"
+  printf 'backlog ban %s s\n' "$seconds" | tee "$phase_dir/ban-time.txt"
+  [ "$seconds" -ge 86400 ] && [ "$seconds" -le 87000 ] || fail "backlog ban of $seconds s, expected bantime 86400 s"
 }
 
 # VT-33 and VT-35: a source with more than maxretry failures is banned for
@@ -565,6 +594,8 @@ m3_main() {
   rm -rf "$phase_dir"
   install -d -m 0700 "$phase_dir"
   case "$phase" in
+    m3-backlog-before) phase_m3_backlog_before ;;
+    m3-backlog) phase_m3_backlog ;;
     m3-fail2ban) phase_m3_fail2ban ;;
     m3-regex) phase_m3_regex ;;
     m3-ban) phase_m3_ban ;;
