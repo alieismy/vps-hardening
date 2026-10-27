@@ -246,6 +246,7 @@ phase_m4_reapplied() {
 # boot unit); off removes the doubles.
 phase_vt27_fault() {
   local cmd condition real
+  # shellcheck disable=SC2016 # the conditions expand in the double, not here.
   case "$1" in
     off)
       rm -f /usr/local/sbin/install /usr/local/sbin/awk /usr/local/sbin/systemctl
