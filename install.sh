@@ -13,8 +13,8 @@ export PATH LC_ALL
 # Set together at each release; tests/static.sh checks the version and the
 # asset list against bin/vps-hardening. An empty digest means this copy is not
 # bound to a release and installs nothing.
-INSTALLER_VERSION='0.1.0'
-RELEASE_TAG='v0.1.0'
+INSTALLER_VERSION='0.1.1'
+RELEASE_TAG='v0.1.1'
 REPOSITORY='alieismy/vps-hardening'
 EXPECTED_MANIFEST_SHA256=''
 
