@@ -795,16 +795,73 @@ def negative(ctx, image):
             guest.phase('m2-rolled-back', 'failure', script='m2.sh')
             # VT-64: once the cause is gone, apply runs the normal flow again.
             guest.phase('m4-unmask', script='m4.sh')
+            vt27_apply(guest)
             status, output = guest.interactive('vt64-reapply', f'{VH} apply --open 443/tcp')
             check(status == 0 and APPLIED in output, 'VT-64: apply after the rolled-back failure awaits confirmation')
             status, output = guest.command('vt64-reapply-confirm', f'{VH} confirm')
             check(status == 0 and '已确认' in output, 'VT-64: confirm from a new root session, then verify passes')
             guest.phase('m4-reapplied', script='m4.sh')
+            vt27_ports(guest)
+            vt27_rollback(ctx, guest)
 
     # VT-72, local part: the release installer on a host the tool never touched.
     with Guest(ctx, 'vt72', ctx.overlay(prepared, 'vt72.qcow2')) as guest:
         guest.ready()
         guest.phase('m4-installer', script='m4.sh')
+
+
+def vt27_apply(guest):
+    """VT-27: apply whose snapshot copy or marker write fails stops before any
+    change, or restores everything (requirements D55)."""
+    def m4(*args):
+        guest.phase(*args, script='m4.sh')
+    m4('vt27-before', 'apply')
+    m4('vt27-fault', 'snapshot')
+    status, output = guest.interactive('vt27-apply-snapshot', f'{VH} apply --open 443/tcp')
+    m4('vt27-fault', 'off')
+    check(status == 1 and '无法记录受管文件的快照' in output and '正在恢复应用前的配置' not in output,
+          'VT-27: apply whose snapshot copy fails stops before any change, exit status 1')
+    m4('vt27-same', 'apply', 'prepare')
+    m4('vt27-fault', 'marker-session')
+    status, output = guest.interactive('vt27-apply-marker', f'{VH} apply --open 443/tcp')
+    m4('vt27-fault', 'off')
+    check(status == 1 and '无法布置自动恢复' in output and '已恢复到应用前的配置' in output,
+          'VT-27: apply whose marker write fails restores everything, exit status 1')
+    guest.must_login('root', 'after the failed arming')
+    m4('vt27-same', 'apply', 'changing')
+
+
+def vt27_ports(guest):
+    """VT-27: ports whose snapshot copy fails changes no rule."""
+    def m4(*args):
+        guest.phase(*args, script='m4.sh')
+    m4('vt27-before', 'ports')
+    m4('vt27-fault', 'ports-snapshot')
+    status, output = guest.interactive('vt27-ports-snapshot', f'{VH} ports --add 8443/tcp')
+    m4('vt27-fault', 'off')
+    check(status == 1 and '无法记录 UFW 规则文件的快照' in output,
+          'VT-27: ports whose snapshot copy fails changes no rule, exit status 1')
+    m4('vt27-same', 'ports', 'ports')
+
+
+def vt27_rollback(ctx, guest):
+    """VT-27: rollback that cannot write its records says so and leaves the
+    state file as it was; rolling back again completes."""
+    def m4(*args):
+        guest.phase(*args, script='m4.sh')
+    m4('vt27-state', 'save')
+    m4('vt27-fault', 'state-write')
+    status, output = guest.interactive('vt27-rollback-record', f'{VH} rollback')
+    m4('vt27-fault', 'off')
+    check(status == 1 and '恢复未全部完成（状态记录）' in output,
+          'VT-27: rollback that cannot write its records says so, exit status 1')
+    m4('vt27-state', 'kept')
+    guest.must_login('root', 'after the rollback without its records')
+    status, output = guest.interactive('vt27-rollback', f'{VH} rollback')
+    check(status == 0 and '已恢复到应用前的配置' in output, 'VT-27: rollback run again completes')
+    m4('vt27-rolled-back')
+    guest.must_login('root', 'after the second rollback')
+    guest.must_login(ctx.user, 'after the second rollback')
 
 
 def panel(ctx, guest, template):

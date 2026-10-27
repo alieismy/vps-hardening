@@ -40,20 +40,24 @@ state_get() {
   KEY="$1" awk 'index($0, ENVIRON["KEY"] "=") == 1 && !seen { print substr($0, length(ENVIRON["KEY"]) + 2); seen = 1 }' "$file"
 }
 
-# state_set KEY VALUE [FILE]: replace or add one line, atomically.
+# state_set KEY VALUE [FILE]: replace or add one line, atomically. Callers in
+# a condition run without errexit, so a new file that could not be written
+# never replaces the old one, and the status says whether the line was set.
 state_set() {
   local file="${3:-$VH_STATE_FILE}"
   case "$2" in
     *$'\n'*) internal_error "状态值含换行：$1" ;;
   esac
   [ -e "$file" ] || : >"$file"
-  KEY="$1" VALUE="$2" awk '
+  if ! KEY="$1" VALUE="$2" awk '
     index($0, ENVIRON["KEY"] "=") == 1 { if (!done) print ENVIRON["KEY"] "=" ENVIRON["VALUE"]; done = 1; next }
     { print }
     END { if (!done) print ENVIRON["KEY"] "=" ENVIRON["VALUE"] }
-  ' "$file" >"$file.new"
-  mv -f -- "$file.new" "$file"
-  sync -- "$file"
+  ' "$file" >"$file.new"; then
+    rm -f -- "$file.new"
+    return 1
+  fi
+  mv -f -- "$file.new" "$file" && sync -- "$file"
 }
 
 utc_now() {
@@ -86,23 +90,27 @@ state_dir_init() {
 
 # snapshot_take DIR PATH...: record each file: presence, digest, mode and
 # owner, plus a private copy. Index lines: "N present DIGEST MODE:UID:GID PATH"
-# or "N absent - - PATH".
+# or "N absent - - PATH". Called in a condition, where errexit is off: every
+# step is checked, so that a snapshot that is not complete fails apply or
+# ports before the first change.
 snapshot_take() {
-  local dir="$1" i=0 path
+  local dir="$1" i=0 path digest meta
   shift
-  rm -rf -- "$dir"
-  install -d -m 0700 -- "$dir"
+  rm -rf -- "$dir" || return 1
+  install -d -m 0700 -- "$dir" || return 1
   for path in "$@"; do
     if [ -L "$path" ] || { [ -e "$path" ] && [ ! -f "$path" ]; }; then
       printf '%s 不是普通文件，本工具不处理这种情况\n' "$path"
       return 1
     fi
     if [ -f "$path" ]; then
-      install -m 0600 -- "$path" "$dir/$i"
-      printf '%s present %s %s %s\n' "$i" "$(file_digest "$path")" "$(stat -c '%a:%u:%g' -- "$path")" "$path"
+      install -m 0600 -- "$path" "$dir/$i" || return 1
+      digest="$(file_digest "$path")" || return 1
+      meta="$(stat -c '%a:%u:%g' -- "$path")" || return 1
+      printf '%s present %s %s %s\n' "$i" "$digest" "$meta" "$path"
     else
       printf '%s absent - - %s\n' "$i" "$path"
-    fi >>"$dir/index"
+    fi >>"$dir/index" || return 1
     i=$((i + 1))
   done
   sync -f -- "$dir/index"
@@ -159,7 +167,7 @@ record_digest() {
   local i
   for i in "${!VH_MANAGED_FILES[@]}"; do
     [ "${VH_MANAGED_FILES[$i]}" = "$1" ] || continue
-    state_set "digest.$i" "$(file_digest "$1") $1"
+    state_set "digest.$i" "$(file_digest "$1") $1" || return 1
   done
 }
 

@@ -78,7 +78,7 @@ jobs:
           retention-days: 14
 
   # Architecture-independent logic on the three platforms (amd64): VT-02,
-  # VT-03 (S1-S4) and VT-04, plus the UFW path check, and VT-23.
+  # VT-03 (S1-S4) and VT-04, plus the UFW path check, VT-23 and VT-27.
   negative:
     name: negative ${{ matrix.platform }} amd64
     strategy:

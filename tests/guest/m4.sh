@@ -2,10 +2,10 @@
 # shellcheck source-path=SCRIPTDIR
 # Guest side of the M4 VM tests (docs/verification-plan.md 4.8: VT-61, VT-63,
 # VT-64 and the local part of VT-72; VT-60 runs in the lifecycle flow with the
-# M2 phases). tests/vm.py runs rollback, ports, apply and confirm over SSH as
-# an administrator would, and one phase of this script per SSH session in
-# between. The hardened suite also runs the two port-flow phases of VT-55
-# from here, for the UFW helpers.
+# M2 phases), and of VT-27 (4.3). tests/vm.py runs rollback, ports, apply and
+# confirm over SSH as an administrator would, and one phase of this script per
+# SSH session in between. The hardened suite also runs the two port-flow
+# phases of VT-55 from here, for the UFW helpers.
 
 # shellcheck source=m2.sh
 . "${BASH_SOURCE[0]%/*}/m2.sh"
@@ -238,6 +238,86 @@ phase_m4_reapplied() {
   verify_passes vt64-verify
 }
 
+# VT-27 (requirements D55): writes the tool cannot complete. A test double,
+# first on the tool's PATH, fails one kind of call; every other call goes to
+# the real command. NAME is snapshot or ports-snapshot (the copy into the
+# snapshot of apply or ports), marker-session (the marker's session line),
+# state-write (any rewrite of the state file) or boot-disable (disabling the
+# boot unit); off removes the doubles.
+phase_vt27_fault() {
+  local cmd condition real
+  case "$1" in
+    off)
+      rm -f /usr/local/sbin/install /usr/local/sbin/awk /usr/local/sbin/systemctl
+      return 0
+      ;;
+    snapshot) cmd=install condition='case "$*" in *" '"$STATE_DIR"'/snapshot/"[0-9]) true ;; *) false ;; esac' ;;
+    ports-snapshot) cmd=install condition='case "$*" in *" '"$STATE_DIR"'/snapshot-ports/"[0-9]) true ;; *) false ;; esac' ;;
+    marker-session) cmd=awk condition='[ "${KEY-}" = session ] && [ "$(readlink /proc/$$/fd/1)" = '"$STATE_DIR"'/pending.new ]' ;;
+    state-write) cmd=awk condition='[ "$(readlink /proc/$$/fd/1)" = '"$STATE_DIR"'/state.new ]' ;;
+    boot-disable) cmd=systemctl condition='case " $* " in *" disable "*" '"$BOOT_UNIT"' "*) true ;; *) false ;; esac' ;;
+    *) fail "unknown fault: $1" ;;
+  esac
+  real="$(PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v "$cmd")" || fail "no $cmd"
+  [ ! -e "/usr/local/sbin/$cmd" ] || fail "/usr/local/sbin/$cmd exists"
+  install -d -m 0755 /usr/local/sbin
+  printf '#!/bin/sh\nif %s; then exit 1; fi\nexec %s "$@"\n' "$condition" "$real" >"/usr/local/sbin/$cmd"
+  chmod 0755 "/usr/local/sbin/$cmd"
+  cat "/usr/local/sbin/$cmd"
+}
+
+# vt27-before LABEL: what vt27-same LABEL compares with.
+phase_vt27_before() {
+  record_state "$phase_dir/state"
+}
+
+# vt27-same LABEL KIND: the host as at vt27-before LABEL after a failure of
+# KIND: prepare (apply, before any change), changing (apply, fully restored)
+# or ports (ports, before any rule change).
+phase_vt27_same() {
+  local file
+  record_state "$phase_dir/state"
+  for file in sshd-root.txt "sshd-$(default_user).txt" ufw.txt files.txt units.txt access.txt; do
+    diff -u "$EVIDENCE/vt27-before-$1/state/$file" "$phase_dir/state/$file" || fail "$file changed since vt27-before $1"
+  done
+  case "$2" in
+    prepare | changing)
+      [ "$(state_value status)" = rolled-back ] || fail "status is $(state_value status), expected rolled-back"
+      ;;
+    ports)
+      [ "$(state_value status)" = applied ] || fail "status is $(state_value status), expected applied"
+      [ ! -e "$STATE_DIR/snapshot-ports" ] || fail 'the port snapshot is left'
+      ;;
+  esac
+  case "$2" in
+    prepare) state_value rollback_reason | grep -qF '尚未修改配置' || fail "rollback reason: $(state_value rollback_reason)" ;;
+    changing) state_value rollback_reason | grep -qF '应用失败' || fail "rollback reason: $(state_value rollback_reason)" ;;
+    ports) state_value ports_rollback_reason | grep -qF '尚未修改规则' || fail "reason: $(state_value ports_rollback_reason)" ;;
+    *) fail "unknown kind: $2" ;;
+  esac
+  no_restore_armed
+  log "as at vt27-before $1 after a $2 failure"
+}
+
+# vt27-state save | kept: a rollback that could not write its records left
+# the state file as it was.
+phase_vt27_state() {
+  case "$1" in
+    save) sha256sum "$STATE_DIR/state" | tee "$phase_dir/state.sha256" ;;
+    kept)
+      sha256sum -c "$EVIDENCE/vt27-state-save/state.sha256" || fail 'the state file changed'
+      [ ! -e "$STATE_DIR/state.new" ] || fail 'state.new is left'
+      ;;
+    *) fail "unknown step: $1" ;;
+  esac
+}
+
+phase_vt27_rolled_back() {
+  [ "$(state_value status)" = rolled-back ] || fail "status is $(state_value status), expected rolled-back"
+  [ "$(state_value rollback_reason)" = '手工回滚' ] || fail "rollback reason: $(state_value rollback_reason)"
+  no_restore_armed
+}
+
 # VT-72, local part: a release directory as the release workflow will make it.
 release_dir() {
   install -d -m 0755 "$1"
@@ -430,6 +510,11 @@ m4_main() {
     m4-ufw-drift) phase_m4_ufw_drift ;;
     m4-unmask) phase_m4_unmask ;;
     m4-reapplied) phase_m4_reapplied ;;
+    vt27-fault) phase_vt27_fault "$@" ;;
+    vt27-before) phase_vt27_before ;;
+    vt27-same) phase_vt27_same "$@" ;;
+    vt27-state) phase_vt27_state "$@" ;;
+    vt27-rolled-back) phase_vt27_rolled_back ;;
     m4-installer) phase_m4_installer ;;
     *) fail "unknown phase: $phase" ;;
   esac

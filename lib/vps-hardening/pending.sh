@@ -91,15 +91,15 @@ stop_timers() {
 arm_restore() {
   local timeout_s="$1" unit deadline
   deadline=$(($(date +%s) + timeout_s))
-  : >"$VH_PENDING_FILE"
-  state_set kind "$2" "$VH_PENDING_FILE"
-  state_set session "$VH_APPLY_SESSION" "$VH_PENDING_FILE"
-  state_set deadline "$deadline" "$VH_PENDING_FILE"
+  : >"$VH_PENDING_FILE" || return 1
+  state_set kind "$2" "$VH_PENDING_FILE" || return 1
+  state_set session "$VH_APPLY_SESSION" "$VH_PENDING_FILE" || return 1
+  state_set deadline "$deadline" "$VH_PENDING_FILE" || return 1
   if [ ! -f "$VH_BOOT_UNIT_FILE" ] || [ "$(boot_unit_content)" != "$(cat "$VH_BOOT_UNIT_FILE")" ]; then
-    boot_unit_content >"$VH_BOOT_UNIT_FILE.new"
-    chmod 0644 "$VH_BOOT_UNIT_FILE.new"
-    mv -f -- "$VH_BOOT_UNIT_FILE.new" "$VH_BOOT_UNIT_FILE"
-    bounded_change systemctl daemon-reload
+    boot_unit_content >"$VH_BOOT_UNIT_FILE.new" || return 1
+    chmod 0644 "$VH_BOOT_UNIT_FILE.new" || return 1
+    mv -f -- "$VH_BOOT_UNIT_FILE.new" "$VH_BOOT_UNIT_FILE" || return 1
+    bounded_change systemctl daemon-reload || return 1
   fi
   bounded_change systemctl enable --quiet "$VH_BOOT_UNIT"
   unit_enabled "$VH_BOOT_UNIT" || return 1
@@ -110,7 +110,8 @@ arm_restore() {
 }
 
 # Step 10 of apply: give the administrator the full confirmation time. The
-# new timer starts before the old one stops, so one is always running.
+# new timer starts before the old one stops, so one is always running. Called
+# in a condition, like arm_restore.
 rearm_timer() {
   local timeout_s="$1" old unit
   old="$(state_get timer "$VH_PENDING_FILE")"
@@ -118,7 +119,7 @@ rearm_timer() {
   systemctl is-active --quiet "$unit.timer" || return 1
   state_set timer "$unit" "$VH_PENDING_FILE"
   [ "$(state_get timer "$VH_PENDING_FILE")" = "$unit" ] || return 1
-  state_set deadline "$(($(date +%s) + timeout_s))" "$VH_PENDING_FILE"
+  state_set deadline "$(($(date +%s) + timeout_s))" "$VH_PENDING_FILE" || return 1
   bounded_change systemctl stop "$old.timer" >/dev/null 2>&1 || true
 }
 
@@ -235,17 +236,20 @@ restore_all() {
   if [ "${#failed[@]}" -eq 0 ]; then
     # A port change pending at the time is undone with everything else.
     rm -rf -- "$VH_PORTS_SNAPSHOT_DIR"
-    state_set status rolled-back
-    state_set rolled_back_at "$(utc_now)"
-    state_set rollback_reason "$reason"
-    vh_log "restore ($mode) done"
-    return 0
+    # The status goes last: preflight and rollback act on it.
+    if state_set rolled_back_at "$(utc_now)" && state_set rollback_reason "$reason" &&
+      state_set status rolled-back; then
+      vh_log "restore ($mode) done"
+      return 0
+    fi
+    failed+=('状态记录')
   fi
   restore_failed "$mode" "$reason" "${failed[@]}"
 }
 
 # restore_failed MODE REASON FAILED...: keep the marker and boot unit so that
-# a reboot tries again.
+# a reboot tries again. Only when the final records failed are they already
+# gone; the status then still allows rollback.
 restore_failed() {
   local mode="$1" reason="$2"
   shift 2
@@ -280,11 +284,12 @@ restore_ports() {
   fi
   if [ "${#failed[@]}" -eq 0 ]; then
     rm -rf -- "$VH_PORTS_SNAPSHOT_DIR"
-    state_set status applied
-    state_set ports_rolled_back_at "$(utc_now)"
-    state_set ports_rollback_reason "$reason"
-    vh_log "port restore ($mode) done"
-    return 0
+    if state_set ports_rolled_back_at "$(utc_now)" && state_set ports_rollback_reason "$reason" &&
+      state_set status applied; then
+      vh_log "port restore ($mode) done"
+      return 0
+    fi
+    failed+=('状态记录')
   fi
   restore_failed "$mode" "端口变更：$reason" "${failed[@]}"
 }
