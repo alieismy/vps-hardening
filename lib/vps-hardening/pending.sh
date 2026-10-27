@@ -123,23 +123,28 @@ rearm_timer() {
   bounded_change systemctl stop "$old.timer" >/dev/null 2>&1 || true
 }
 
-# disarm_restore [boot]: stop the timers, disable the boot unit, remove the
-# marker. At boot no timer exists and the manager is not reloaded: only the
-# symlink changes, which matters from the next boot on. An apply interrupted
-# before step 6 never wrote the unit, and disabling a missing unit fails.
-disarm_restore() {
-  local errors=0 nr=()
+# disarm_triggers [boot]: stop the timers and disable the boot unit. At boot
+# no timer exists and the manager is not reloaded: only the symlink changes,
+# which matters from the next boot on. An apply interrupted before step 6
+# never wrote the unit, and disabling a missing unit fails.
+disarm_triggers() {
+  local nr=()
   if [ "${1-}" = boot ]; then
     nr=(--no-reload)
   else
     stop_timers || true
   fi
-  if [ -e "$VH_BOOT_UNIT_FILE" ]; then
-    bounded_change systemctl "${nr[@]}" disable --quiet "$VH_BOOT_UNIT" >/dev/null 2>&1 || errors=$((errors + 1))
-  fi
-  rm -f -- "$VH_PENDING_FILE" || errors=$((errors + 1))
+  [ ! -e "$VH_BOOT_UNIT_FILE" ] ||
+    bounded_change systemctl "${nr[@]}" disable --quiet "$VH_BOOT_UNIT" >/dev/null 2>&1
+}
+
+# disarm_restore [boot]: disarm_triggers, then remove the marker. While the
+# boot unit could not be disabled the marker stays, so that a reboot still
+# restores.
+disarm_restore() {
+  disarm_triggers "${1-}" || return 1
+  rm -f -- "$VH_PENDING_FILE" || return 1
   sync
-  [ "$errors" -eq 0 ]
 }
 
 # f2b_hold: while apply installs fail2ban, a drop-in in /run gives
@@ -357,7 +362,7 @@ cmd_restore() {
 }
 
 cmd_confirm() {
-  local status loginuid sessionid kind command=apply
+  local status loginuid sessionid kind command=apply record=confirmed_at
   [ "$#" -eq 0 ] || usage_error "confirm 不接受参数：$1"
   [ "$(id -u)" -eq 0 ] || refuse '需要 root 权限：请用 root 的密钥登录后执行'
   # No temporary directory here: the final exec would skip its EXIT trap.
@@ -385,15 +390,21 @@ cmd_confirm() {
   fi
   session_from_sshd || refuse '当前会话不是经 SSH 登录的；确认要证明 root 的密钥登录可用'
 
-  disarm_restore || internal_error '撤除自动恢复失败；状态未改变，请重试'
-  state_set status applied
+  # The marker goes last: until then the status stays pending and confirm
+  # can be run again (design 2.6).
+  disarm_triggers ||
+    internal_error '撤除自动恢复失败：状态仍为待确认，自动恢复可能已部分撤除，例如定时器已经停止。请重新执行 confirm'
+  [ "$kind" != ports ] || record=ports_confirmed_at
+  if ! state_set "$record" "$(utc_now)" || ! state_set status applied; then
+    internal_error '无法记录确认：状态仍为待确认，自动恢复可能已部分撤除。请重新执行 confirm'
+  fi
+  rm -f -- "$VH_PENDING_FILE"
+  sync
   if [ "$kind" = ports ]; then
     rm -rf -- "$VH_PORTS_SNAPSHOT_DIR"
-    state_set ports_confirmed_at "$(utc_now)"
     vh_log "port change confirmed from session $sessionid"
     printf '已确认，端口变更生效：公开端口 %s。自动恢复已撤除。\n\n' "$(open_ports_text "$(state_get open)")"
   else
-    state_set confirmed_at "$(utc_now)"
     vh_log "confirmed from session $sessionid"
     printf '已确认，加固生效。自动恢复已撤除。\n\n'
   fi

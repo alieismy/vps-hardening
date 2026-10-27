@@ -832,7 +832,8 @@ def vt27_apply(guest):
 
 
 def vt27_ports(guest):
-    """VT-27: ports whose snapshot copy fails changes no rule."""
+    """VT-27: ports whose snapshot copy fails changes no rule; a confirm that
+    fails to disable the boot unit or to write its records can be run again."""
     def m4(*args):
         guest.phase(*args, script='m4.sh')
     m4('vt27-before', 'ports')
@@ -842,6 +843,18 @@ def vt27_ports(guest):
     check(status == 1 and '无法记录 UFW 规则文件的快照' in output,
           'VT-27: ports whose snapshot copy fails changes no rule, exit status 1')
     m4('vt27-same', 'ports', 'ports')
+    status, output = guest.interactive('vt27-ports', f'{VH} ports --add 8443/tcp')
+    check(status == 0 and PORTS_CHANGED in output, 'VT-27: the port change awaits confirmation')
+    for fault, boot in (('boot-disable', 'enabled'), ('state-write', 'disabled')):
+        m4('vt27-fault', fault)
+        status, output = guest.command(f'vt27-confirm-{fault}', f'{VH} confirm')
+        m4('vt27-fault', 'off')
+        check(status == 3 and '状态仍为待确认' in output and '请重新执行 confirm' in output,
+              f'VT-27: confirm with {fault} failing exits 3 and says to run it again')
+        m4('vt27-unconfirmed', boot)
+    status, output = guest.command('vt27-confirm', f'{VH} confirm')
+    check(status == 0 and '已确认' in output, 'VT-27: confirm run again completes, then verify passes')
+    m4('vt27-confirmed')
 
 
 def vt27_rollback(ctx, guest):

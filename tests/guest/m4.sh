@@ -299,6 +299,27 @@ phase_vt27_same() {
   log "as at vt27-before $1 after a $2 failure"
 }
 
+# vt27-unconfirmed BOOT: a confirm that failed left the change pending, with
+# the marker in place, no timer running and the boot unit BOOT (enabled or
+# disabled), so that confirm can be run again.
+phase_vt27_unconfirmed() {
+  [ "$(state_value status)" = ports-pending ] || fail "status is $(state_value status), expected ports-pending"
+  [ -e "$STATE_DIR/pending" ] || fail 'the pending marker is missing'
+  [ -e "$STATE_DIR/snapshot-ports" ] || fail 'the port snapshot is missing'
+  [ "$(systemctl is-enabled "$BOOT_UNIT" 2>/dev/null || true)" = "$1" ] || fail "$BOOT_UNIT is not $1"
+  [ -z "$(systemctl list-units --no-legend --state=active 'vps-hardening-timeout-*.timer')" ] ||
+    fail 'a restore timer is still active'
+}
+
+phase_vt27_confirmed() {
+  [ "$(state_value status)" = applied ] || fail "status is $(state_value status), expected applied"
+  [ "$(state_value open)" = '443/tcp/both 8443/tcp/both' ] || fail "open ports: $(state_value open)"
+  [ -n "$(state_value ports_confirmed_at)" ] || fail 'ports_confirmed_at is missing'
+  [ ! -e "$STATE_DIR/snapshot-ports" ] || fail 'the port snapshot is left'
+  no_restore_armed
+  ufw_rules_are 443/tcp 8443/tcp
+}
+
 # vt27-state save | kept: a rollback that could not write its records left
 # the state file as it was.
 phase_vt27_state() {
@@ -513,6 +534,8 @@ m4_main() {
     vt27-fault) phase_vt27_fault "$@" ;;
     vt27-before) phase_vt27_before ;;
     vt27-same) phase_vt27_same "$@" ;;
+    vt27-unconfirmed) phase_vt27_unconfirmed "$@" ;;
+    vt27-confirmed) phase_vt27_confirmed ;;
     vt27-state) phase_vt27_state "$@" ;;
     vt27-rolled-back) phase_vt27_rolled_back ;;
     m4-installer) phase_m4_installer ;;
