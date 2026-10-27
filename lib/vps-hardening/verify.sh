@@ -195,13 +195,15 @@ verify_ufw() {
   fi
   report PASS ufw.installed 'UFW 已安装'
   status="$(bounded ufw status verbose 2>/dev/null)" || status=''
-  if ! printf '%s\n' "$status" | grep -qx 'Status: active'; then
+  # Here-strings, not printf into a pipe: printf writes line by line, and
+  # under pipefail grep -q leaving at the first match fails it with SIGPIPE.
+  if ! grep -qx 'Status: active' <<<"$status"; then
     report FAIL ufw.active 'UFW 未启用'
   else
     report PASS ufw.active 'UFW 已启用'
     # While the kernel does not forward, ufw shows the routed policy as
     # "disabled"; the configured policy is in /etc/default/ufw either way.
-    if printf '%s\n' "$status" | grep -qxE 'Default: deny \(incoming\), allow \(outgoing\), (deny|disabled) \(routed\)' &&
+    if grep -qxE 'Default: deny \(incoming\), allow \(outgoing\), (deny|disabled) \(routed\)' <<<"$status" &&
       grep -qx 'DEFAULT_FORWARD_POLICY="DROP"' /etc/default/ufw 2>/dev/null; then
       report PASS ufw.defaults '默认拒绝入站、允许出站、拒绝转发'
     else

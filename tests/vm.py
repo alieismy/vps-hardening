@@ -397,7 +397,7 @@ class Context:
             line.encode() for line in (self.work / 'client').read_text().splitlines()
             if line and not line.startswith('-----')] + [value.encode() for value in self.private]
         for path in self.evidence.rglob('*'):
-            if path.is_file() and path.name != 'serial.log':
+            if path.is_file():
                 data = path.read_bytes()
                 if any(needle in data for needle in needles):
                     raise RuntimeError(f'test secret found in {path.relative_to(self.evidence)}')
@@ -471,6 +471,8 @@ class Probe:
         self.name = name
         self.records = []
         self.windows = []
+        # An exception that ended the probe thread, raised again in __exit__.
+        self.error = None
         self.stopped = threading.Event()
         self.start = time.monotonic()
         # Offsets in the records count from here; the tool's log uses UTC.
@@ -481,13 +483,16 @@ class Probe:
         return round(time.monotonic() - self.start, 1)
 
     def run(self):
-        while not self.stopped.is_set():
-            began = self.now()
-            error = self.guest.login_error()
-            ok = error is None or (time.sleep(1) is None and self.guest.login_ok())
-            self.records.append({'from': began, 'to': self.now(), 'ok': ok, 'retried': error is not None,
-                                 'error': error})
-            self.stopped.wait(PROBE_INTERVAL)
+        try:
+            while not self.stopped.is_set():
+                began = self.now()
+                error = self.guest.login_error()
+                ok = error is None or (time.sleep(1) is None and self.guest.login_ok())
+                self.records.append({'from': began, 'to': self.now(), 'ok': ok, 'retried': error is not None,
+                                     'error': error})
+                self.stopped.wait(PROBE_INTERVAL)
+        except Exception as e:
+            self.error = e
 
     def outage(self, reason):
         self.windows.append({'reason': reason, 'from': self.now(), 'to': None})
@@ -509,10 +514,13 @@ class Probe:
         failures = [r for r in self.records if not r['ok'] and not self.expected(r)]
         result = {'started_utc': self.started_utc, 'interval_s': PROBE_INTERVAL, 'probes': len(self.records),
                   'retried': sum(r['retried'] for r in self.records), 'outages': self.windows,
-                  'unexpected_failures': failures, 'records': self.records}
+                  'unexpected_failures': failures, 'error': repr(self.error) if self.error else None,
+                  'records': self.records}
         (self.guest.evidence / f'probe-{self.name}.json').write_text(json.dumps(result, indent=2))
         print(f'probe {self.name}: {result["probes"]} probes, {result["retried"]} retried, '
               f'{len(failures)} unexpected failures, outages {self.windows}', flush=True)
+        if exc_type is None and self.error:
+            raise RuntimeError(f'VT-25: the probe stopped after {len(self.records)} probes') from self.error
         if exc_type is None and failures:
             raise RuntimeError(f'VT-25: logins failed outside the outage windows: {failures}')
         return False
@@ -795,16 +803,86 @@ def negative(ctx, image):
             guest.phase('m2-rolled-back', 'failure', script='m2.sh')
             # VT-64: once the cause is gone, apply runs the normal flow again.
             guest.phase('m4-unmask', script='m4.sh')
+            vt27_apply(guest)
             status, output = guest.interactive('vt64-reapply', f'{VH} apply --open 443/tcp')
             check(status == 0 and APPLIED in output, 'VT-64: apply after the rolled-back failure awaits confirmation')
             status, output = guest.command('vt64-reapply-confirm', f'{VH} confirm')
             check(status == 0 and '已确认' in output, 'VT-64: confirm from a new root session, then verify passes')
             guest.phase('m4-reapplied', script='m4.sh')
+            vt27_ports(guest)
+            vt27_rollback(ctx, guest)
 
     # VT-72, local part: the release installer on a host the tool never touched.
     with Guest(ctx, 'vt72', ctx.overlay(prepared, 'vt72.qcow2')) as guest:
         guest.ready()
         guest.phase('m4-installer', script='m4.sh')
+
+
+def vt27_apply(guest):
+    """VT-27: apply whose snapshot copy or marker write fails stops before any
+    change, or restores everything (requirements D55)."""
+    def m4(*args):
+        guest.phase(*args, script='m4.sh')
+    m4('vt27-before', 'apply')
+    m4('vt27-fault', 'snapshot')
+    status, output = guest.interactive('vt27-apply-snapshot', f'{VH} apply --open 443/tcp')
+    m4('vt27-fault', 'off')
+    check(status == 1 and '无法记录受管文件的快照' in output and '正在恢复应用前的配置' not in output,
+          'VT-27: apply whose snapshot copy fails stops before any change, exit status 1')
+    m4('vt27-same', 'apply', 'prepare')
+    m4('vt27-fault', 'marker-session')
+    status, output = guest.interactive('vt27-apply-marker', f'{VH} apply --open 443/tcp')
+    m4('vt27-fault', 'off')
+    check(status == 1 and '无法布置自动恢复' in output and '已恢复到应用前的配置' in output,
+          'VT-27: apply whose marker write fails restores everything, exit status 1')
+    guest.must_login('root', 'after the failed arming')
+    m4('vt27-same', 'apply', 'changing')
+
+
+def vt27_ports(guest):
+    """VT-27: ports whose snapshot copy fails changes no rule; a confirm that
+    fails to disable the boot unit or to write its records can be run again."""
+    def m4(*args):
+        guest.phase(*args, script='m4.sh')
+    m4('vt27-before', 'ports')
+    m4('vt27-fault', 'ports-snapshot')
+    status, output = guest.interactive('vt27-ports-snapshot', f'{VH} ports --add 8443/tcp')
+    m4('vt27-fault', 'off')
+    check(status == 1 and '无法记录 UFW 规则文件的快照' in output,
+          'VT-27: ports whose snapshot copy fails changes no rule, exit status 1')
+    m4('vt27-same', 'ports', 'ports')
+    status, output = guest.interactive('vt27-ports', f'{VH} ports --add 8443/tcp')
+    check(status == 0 and PORTS_CHANGED in output, 'VT-27: the port change awaits confirmation')
+    for fault, boot in (('boot-disable', 'enabled'), ('state-write', 'disabled')):
+        m4('vt27-fault', fault)
+        status, output = guest.command(f'vt27-confirm-{fault}', f'{VH} confirm')
+        m4('vt27-fault', 'off')
+        check(status == 3 and '状态仍为待确认' in output and '请重新执行 confirm' in output,
+              f'VT-27: confirm with {fault} failing exits 3 and says to run it again')
+        m4('vt27-unconfirmed', boot)
+    status, output = guest.command('vt27-confirm', f'{VH} confirm')
+    check(status == 0 and '已确认' in output, 'VT-27: confirm run again completes, then verify passes')
+    m4('vt27-confirmed')
+
+
+def vt27_rollback(ctx, guest):
+    """VT-27: rollback that cannot write its records says so and leaves the
+    state file as it was; rolling back again completes."""
+    def m4(*args):
+        guest.phase(*args, script='m4.sh')
+    m4('vt27-state', 'save')
+    m4('vt27-fault', 'state-write')
+    status, output = guest.interactive('vt27-rollback-record', f'{VH} rollback')
+    m4('vt27-fault', 'off')
+    check(status == 1 and '恢复未全部完成（状态记录）' in output,
+          'VT-27: rollback that cannot write its records says so, exit status 1')
+    m4('vt27-state', 'kept')
+    guest.must_login('root', 'after the rollback without its records')
+    status, output = guest.interactive('vt27-rollback', f'{VH} rollback')
+    check(status == 0 and '已恢复到应用前的配置' in output, 'VT-27: rollback run again completes')
+    m4('vt27-rolled-back')
+    guest.must_login('root', 'after the second rollback')
+    guest.must_login(ctx.user, 'after the second rollback')
 
 
 def panel(ctx, guest, template):
@@ -932,8 +1010,11 @@ def main():
     ctx = Context(args)
     image = ctx.timings.measure('image', ctx.image)
     ctx.seed()
-    {'matrix': matrix, 'recovery': recovery, 'negative': negative, 'hardened': hardened}[args.suite](ctx, image)
-    ctx.leak_scan()
+    try:
+        {'matrix': matrix, 'recovery': recovery, 'negative': negative, 'hardened': hardened}[args.suite](ctx, image)
+    finally:
+        # Verification plan 6: the whole archive, of a failed run too, before the upload.
+        ctx.leak_scan()
     (ctx.evidence / 'COMPLETED').write_text(f'PASS {args.suite} {args.platform} {args.arch}\n')
     print('PASS', args.suite, args.platform, args.arch, flush=True)
 
