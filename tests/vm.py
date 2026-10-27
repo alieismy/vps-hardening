@@ -397,7 +397,7 @@ class Context:
             line.encode() for line in (self.work / 'client').read_text().splitlines()
             if line and not line.startswith('-----')] + [value.encode() for value in self.private]
         for path in self.evidence.rglob('*'):
-            if path.is_file() and path.name != 'serial.log':
+            if path.is_file():
                 data = path.read_bytes()
                 if any(needle in data for needle in needles):
                     raise RuntimeError(f'test secret found in {path.relative_to(self.evidence)}')
@@ -471,6 +471,8 @@ class Probe:
         self.name = name
         self.records = []
         self.windows = []
+        # An exception that ended the probe thread, raised again in __exit__.
+        self.error = None
         self.stopped = threading.Event()
         self.start = time.monotonic()
         # Offsets in the records count from here; the tool's log uses UTC.
@@ -481,13 +483,16 @@ class Probe:
         return round(time.monotonic() - self.start, 1)
 
     def run(self):
-        while not self.stopped.is_set():
-            began = self.now()
-            error = self.guest.login_error()
-            ok = error is None or (time.sleep(1) is None and self.guest.login_ok())
-            self.records.append({'from': began, 'to': self.now(), 'ok': ok, 'retried': error is not None,
-                                 'error': error})
-            self.stopped.wait(PROBE_INTERVAL)
+        try:
+            while not self.stopped.is_set():
+                began = self.now()
+                error = self.guest.login_error()
+                ok = error is None or (time.sleep(1) is None and self.guest.login_ok())
+                self.records.append({'from': began, 'to': self.now(), 'ok': ok, 'retried': error is not None,
+                                     'error': error})
+                self.stopped.wait(PROBE_INTERVAL)
+        except Exception as e:
+            self.error = e
 
     def outage(self, reason):
         self.windows.append({'reason': reason, 'from': self.now(), 'to': None})
@@ -509,10 +514,13 @@ class Probe:
         failures = [r for r in self.records if not r['ok'] and not self.expected(r)]
         result = {'started_utc': self.started_utc, 'interval_s': PROBE_INTERVAL, 'probes': len(self.records),
                   'retried': sum(r['retried'] for r in self.records), 'outages': self.windows,
-                  'unexpected_failures': failures, 'records': self.records}
+                  'unexpected_failures': failures, 'error': repr(self.error) if self.error else None,
+                  'records': self.records}
         (self.guest.evidence / f'probe-{self.name}.json').write_text(json.dumps(result, indent=2))
         print(f'probe {self.name}: {result["probes"]} probes, {result["retried"]} retried, '
               f'{len(failures)} unexpected failures, outages {self.windows}', flush=True)
+        if exc_type is None and self.error:
+            raise RuntimeError(f'VT-25: the probe stopped after {len(self.records)} probes') from self.error
         if exc_type is None and failures:
             raise RuntimeError(f'VT-25: logins failed outside the outage windows: {failures}')
         return False
@@ -1002,8 +1010,11 @@ def main():
     ctx = Context(args)
     image = ctx.timings.measure('image', ctx.image)
     ctx.seed()
-    {'matrix': matrix, 'recovery': recovery, 'negative': negative, 'hardened': hardened}[args.suite](ctx, image)
-    ctx.leak_scan()
+    try:
+        {'matrix': matrix, 'recovery': recovery, 'negative': negative, 'hardened': hardened}[args.suite](ctx, image)
+    finally:
+        # Verification plan 6: the whole archive, of a failed run too, before the upload.
+        ctx.leak_scan()
     (ctx.evidence / 'COMPLETED').write_text(f'PASS {args.suite} {args.platform} {args.arch}\n')
     print('PASS', args.suite, args.platform, args.arch, flush=True)
 
