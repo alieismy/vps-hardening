@@ -62,7 +62,7 @@ Baseline security hardening for Debian/Ubuntu VPS. **Status: release [v0.1.1](ht
 
 需求 v1.11、方案设计 v1.7、验证计划 v1.10 和详细设计 v0.15 草案待评审（需求 D59～D61）：记录 Astra 对 `v0.1.1` 的评审、自检、复核和修复（[第 8.26 节](docs/detailed-design.md#826-astra-对-v011-的评审和修复)）；FR-03 中可以经 SSH 登录的账户按 sshd 的判定确定，新增 VT-65。是否发布 `v0.1.2` 在 CI 通过之后由用户决定。
 
-详细设计 v0.14 已批准（2026-10-27，需求 D58）：记录正式版 `v0.1.1` 的发布、VT-72 的公开部分和在测试 VPS 上从 `v0.1.0` 的升级（[第 8.25 节](docs/detailed-design.md#825-正式版-v011-和-vt-72-的公开部分)）。本仓库目前没有待用户决定的事项，已知限制和后续事项见[详细设计第 9 节](docs/detailed-design.md#9-已知限制与后续)；后续的工作转到配套仓库 vps-proxy-setup（需求 D58）。
+详细设计 v0.14 已批准（2026-10-27，需求 D58）：记录正式版 `v0.1.1` 的发布、VT-72 的公开部分和在测试 VPS 上从 `v0.1.0` 的升级（[第 8.25 节](docs/detailed-design.md#825-正式版-v011-和-vt-72-的公开部分)）。当时本仓库没有待用户决定的事项，已知限制和后续事项见[详细设计第 9 节](docs/detailed-design.md#9-已知限制与后续)；后续的工作转到配套仓库 vps-proxy-setup（需求 D58）。
 
 验证计划 v1.9 和详细设计 v0.13 已批准（2026-10-27，需求 D57）：记录 Astra 对 `v0.1.0` 的评审、复核和修复（[第 8.24 节](docs/detailed-design.md#824-astra-对-v010-的评审和修复)，需求 D54～D56），新增 VT-27。修复随正式版 `v0.1.1` 发布。
 

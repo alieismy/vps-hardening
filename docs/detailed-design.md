@@ -452,7 +452,7 @@ WantedBy=sysinit.target
 | `sshd.dropin-order` | 片段排序 | 排在 `00-vps-hardening.conf` 之前的片段设置了受管选项或 `Match`，或本工具的片段已存在 |
 | `sshd.match` | `Match` 块 | 主配置或它包含的任何文件中有 `Match` 行，不论位置和条件（需求 D36）。包含的文件按 `Include` 递归展开，相对路径以 `/etc/ssh` 为基准；注释行不计。每一行按 sshd 的规则读取（第 6 节）：带引号的关键字、带引号或转义空格的 `Include` 路径与普通写法相同（v0.7，需求 D40） |
 | `root.key`、`root.keys` | root 的公钥（需求 FR-01、FR-03） | root 的 `authorized_keys`（按 root 的 `AuthorizedKeysFile` 生效值展开）中没有可用的公钥。可用指同时满足：行首就是密钥类型，不带选项（cloud-init 用 `command=` 前缀禁止 root 登录时，这样的行不算）；能被 `ssh-keygen -l -E sha256` 解析；算法在 `pubkeyacceptedalgorithms` 中（`ssh-rsa` 密钥以 `rsa-sha2-*` 判定）。按指纹去重，每把可用的公钥输出一行 `INFO root.key`（类型和指纹）；有未计入的行时，`root.keys` 注明行数 |
-| `sudo.nopasswd-accounts` | 免密账户 | 只报告（`INFO`）：有 SSH 密钥且免密 sudo 的登录账户，应用时将被禁止 SSH 登录（需求 D13）。登录账户与 OpenSSH `auth.c` 中 `allowed_user()` 的判定相同：除 root 外，登录 shell（为空时按 `/bin/sh`）是有执行位的普通文件；不看 `/etc/shells`，`nologin` 等也算在内（v0.15，需求 D61；此前只算 shell 列在 `/etc/shells` 中的账户）。sshd 在 `ChrootDirectory` 下不检查 shell，`sshd.match` 不允许 `Match` 块，新机上不会有这样的配置 |
+| `sudo.nopasswd-accounts` | 免密账户 | 只报告（`INFO`）：有 SSH 密钥且免密 sudo 的登录账户，应用时将被禁止 SSH 登录（需求 D13）。登录账户与 OpenSSH `auth.c` 中 `allowed_user()` 的判定相同：除 root 外，登录 shell（为空时按 `/bin/sh`）是有执行位的普通文件；不看 `/etc/shells`，`nologin` 等也算在内（v0.15，需求 D61；此前只算 shell 列在 `/etc/shells` 中的账户）。`ChrootDirectory` 不为 `none` 时，sshd 不检查 shell，这时除 root 外的账户都算在内；`sshd.match` 不允许 `Match` 块，所以只读 root 的生效值。`sshd -T` 失败时仍按 shell 判定，失败由 sshd 的检查项报告 |
 | `apt.idle` | 包管理器 | dpkg、apt 或 unattended-upgrades 的锁被持有，或 apt、dpkg 进程在运行 |
 | `apt.candidates` | 软件包来源 | `ufw`、`fail2ban`、`nftables`、`python3-systemd`、`unattended-upgrades` 中有没有候选版本的 |
 | `apt.fail2ban-version` | Ubuntu 的 fail2ban | 候选版本低于 `1.0.2-3ubuntu0.1` |
@@ -1559,6 +1559,7 @@ VT-02 的新步骤（第 7.3 节）也在这台主机上用 `m1.sh` 中的函数
 | `33f0f12` | 第 1 项：`authorized_keys_files`、`scan_root_keys`、`check_root_keys` 可以读一份 `sshd -T` 输出；`rollback_checks` 先求回滚后的配置，再用它检查公钥（第 2.10 节）。VT-65 |
 | `adf09a1` | 第 4 项：`record_digest` 先单独取摘要；入口 ERR 陷阱的注释（第 6 节） |
 | `8e37aa6` | 第 5 项：`collect` 在套件正常结束时严格检查，已带着异常时尽力收集（第 7.1 节） |
+| `40d57ab` | CodeRabbit 的意见（见下文）：设置了 `ChrootDirectory` 时，`login_accounts` 不看 shell（第 3 节） |
 
 **本地核对。** 在 Windows 的 Git Bash 中进行，用替身代替 Debian 的命令，证据层次低于虚拟机：
 - 修复前的 `record_digest` 在 `set -Eeuo pipefail` 和与入口相同的 ERR 陷阱下，`sha256sum` 失败时返回 0，状态文件中写入 `digest.0= <路径>`；修复后返回 1，不写记录。
@@ -1572,6 +1573,12 @@ VT-02 的新步骤（第 7.3 节）也在这台主机上用 `m1.sh` 中的函数
 - matrix，三个平台相同：shell 没有登记的账户 `vhshell` 在应用前能用它的密钥从第二来源登录（对照），预检的 `sudo.nopasswd-accounts` 列出默认用户和它；应用后两者的 `ssh.denied` 都通过，用它的密钥登录被拒绝，`accounts.nopasswd` 通过。`ufw.service`、`f2b.service`、`uu.timers` 在确认后和重启后都通过；未加固时（VT-50）`uu.timers` 仍不符合，原因同第 8.1 节，Ubuntu 上 `ufw.service` 已通过（UFW 预装且已启用）。客体证据的归档各有 123～124 个条目。
 - hardened，三个平台相同：`ufw-disable`、`ufw-mask` 的 `verify` 以退出码 1 结束，不符合项只有 `ufw.service`（"为 disabled／masked，不是 enabled"），UFW 仍为启用；`shell-account` 只有 `accounts.nopasswd`。VT-65 的 `rollback` 退出码为 1：`root.keys` 不符合（"回滚后的配置下，root 的 authorized_keys 中没有公钥"），`rollback.snapshot`、`rollback.sshd`、`rollback.ufw` 通过，`rollback.password` 为警告，输出"回滚前检查有不符合项，未做任何变更"，没有出现确认提示；前后的工具记录相同。放回之后 `verify` 退出码为 0，随后 VT-61 的回滚完成（退出码 0）。
 - 作业时长：matrix 4～6 分钟，recovery 和 negative 5～6 分钟，hardened 19～21 分钟，离 45 分钟的上限很远。
+- 之后的运行，都在第一次尝试全部通过：只改文档的 `1243642` 上，VM 运行 `40821017141`、静态检查 `40821017140`，只看了作业结果；`40d57ab`（见下文的代码评审）上，VM 运行 `40823898098`、静态检查 `40823898096`。`40823898098` 的 6 个 matrix 和 hardened 构件都有 `COMPLETED`，上面几项的结果相同。
+
+**代码评审。** CodeRabbit 对 #31（`1243642`）提了三处意见，经核实都成立：
+- Major：OpenSSH 的 `allowed_user()` 只在 `ChrootDirectory` 为空或 `none` 时检查 shell，`login_accounts` 却总按 shell 判定。复核在综合评估中认为预检不允许 `Match` 块就排除了这种配置，这一判断不成立：全局的 `ChrootDirectory` 不在 `Match` 块中。`40d57ab` 改为与 sshd 相同：读 root 的生效值，不为 `none` 时除 root 外的账户都算在内（第 3 节，需求 D61）。这种配置在新机上很少见，它同样把 root 的会话限制在那个目录中；有这种配置时，shell 在主机上不存在的账户登录后也在那个目录中，能否用主机上的 sudo 取决于目录中的内容（推断）。本地核对：值为 `none`、`NONE`、没有这一项和 `sshd -T` 失败时，列出的账户不变；值为 `/srv/%u` 时，shell 不存在或没有执行位的账户也列出。虚拟机中没有这种配置的用例。
+- Minor：需求 v1.11 的状态中漏了 FR-13（受管文件摘要的记录），已补上。
+- Minor：README"待定事项"中 v0.14 一段的"本仓库目前没有待用户决定的事项"与新加的一段矛盾，改为"当时"。
 
 这一轮没有对照运行：修复前的行为以复核的源码分析、Astra 的隔离复现和本地复现为依据，CI 中没有用修复前的代码跑这些新用例。
 
@@ -1636,7 +1643,7 @@ VT-02 的新步骤（第 7.3 节）也在这台主机上用 `m1.sh` 中的函数
   - ufw 软件包升级如果改变了重写文件的格式，下一次 `ufw reload`、`ufw enable` 或增删规则后 `ufw.userrules` 会报告不符合（推断，目前没有观察到）。
 - `apply` 只在 `ufw.service` 不是启用状态时执行 `systemctl enable`，这里仍用较宽的 `unit_enabled`（第 2.5 节）。应用前为 `enabled-runtime` 等时不写入开机链接，应用后 `ufw.service` 不符合（v0.15，第 4 节）。新机上 UFW 软件包安装后即为 `enabled`（第 8.4 节），这种情况要管理员事先以 `--runtime` 启用；结果是报告不符合而不是漏报，所以只记录、不修改。
 - `ufw.service` 只检查启用状态（需求 D60）。`disable` 或 `mask` 之后下次开机不加载规则，依据的是 Debian 的单元文件和 Astra 自检对 SysV 脚本的核对，没有做重启实测；VT-51 只核对 `verify` 的报告。另有单元经 `Wants=` 拉起 `ufw.service` 时，`disabled` 的它开机仍会启动，`verify` 照样报告不符合，偏向报错。
-- 登录账户按 `allowed_user()` 中 shell 的判定确定（需求 D61），sshd 因其他原因拒绝的账户（锁定、过期、`AllowUsers` 等）也算在内，有公钥和免密 sudo 时同样写入 `DenyUsers`，多拒绝没有坏处。判定依据 OpenSSH 9.2p1 的源码，Debian 13 和 Ubuntu 24.04 的 OpenSSH 中这段代码没有逐一核对；三个平台上 shell 没有登记的账户都能登录，是行为上的证据（第 8.26 节）。
+- 登录账户按 `allowed_user()` 中 shell 的判定确定（需求 D61），sshd 因其他原因拒绝的账户（锁定、过期、`AllowUsers` 等）也算在内，有公钥和免密 sudo 时同样写入 `DenyUsers`，多拒绝没有坏处。判定依据 OpenSSH 9.2p1 的源码，Debian 13 和 Ubuntu 24.04 的 OpenSSH 中这段代码没有逐一核对；三个平台上 shell 没有登记的账户都能登录，是行为上的证据（第 8.26 节）。设置了 `ChrootDirectory` 时不看 shell 的分支只有本地核对，虚拟机中没有这样的配置。
 - VT-65 只改了 `AuthorizedKeysFile`；在片段中改算法（`PubkeyAcceptedAlgorithms`）走同一条路径（回滚后的配置），没有单独测试。`record_digest` 的修复只有本地核对，没有虚拟机中的注入用例（需求 D60，第 8.26 节）。
 
 ## 附录 A arm64 参考结果
