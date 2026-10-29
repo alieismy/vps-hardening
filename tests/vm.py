@@ -102,6 +102,7 @@ class Guest:
         self.evidence.mkdir()
         self.vm = None
         self.serial = None
+        self.collected = False
 
     def __enter__(self):
         ctx = self.ctx
@@ -118,10 +119,12 @@ class Guest:
         self.vm = subprocess.Popen(qemu, stdout=self.serial, stderr=subprocess.STDOUT)
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, exc_type, *exc):
         try:
             if self.vm.poll() is None:
-                self.collect()
+                self.collect(strict=exc_type is None)
+            elif exc_type is None and not self.collected:
+                raise RuntimeError(f'{self.label}: QEMU exited before the guest evidence was collected')
         finally:
             if self.vm.poll() is None:
                 self.vm.terminate()
@@ -267,13 +270,29 @@ class Guest:
         print(f'--- {self.label} {name}: exit {proc.returncode}\n{text}', flush=True)
         return proc.returncode, text
 
-    def collect(self):
+    def collect(self, strict=True):
+        """The guest's evidence as guest-evidence.tar. On a normal end (STRICT)
+        an archive that could not be made or read fails the run, so that no
+        completion marker stands for missing evidence (verification plan 6,
+        requirements D60). After a failure, collect what can be and keep the
+        original error."""
+        self.collected = True
+        path = self.evidence / 'guest-evidence.tar'
         try:
-            with (self.evidence / 'guest-evidence.tar').open('wb') as f:
-                subprocess.run(self.ctx.ssh + ['tar -cf - -C /root vh-evidence'], stdout=f,
-                               stderr=subprocess.DEVNULL, timeout=60)
-        except subprocess.TimeoutExpired:
-            pass
+            with path.open('wb') as f:
+                result = subprocess.run(self.ctx.ssh + ['tar -cf - -C /root vh-evidence'], stdout=f,
+                                        stderr=subprocess.PIPE, timeout=60)
+            if result.returncode != 0:
+                raise RuntimeError(f'exit status {result.returncode}: '
+                                   f'{result.stderr.decode(errors="replace").strip()[-200:]}')
+            with tarfile.open(path) as tar:
+                if not any(name.startswith('vh-evidence/') for name in tar.getnames()):
+                    raise RuntimeError('the archive has no vh-evidence/')
+        except Exception as e:
+            message = f'{self.label}: guest evidence not collected: {e!r}'
+            if strict:
+                raise RuntimeError(message) from e
+            print(message, flush=True)
 
     def poweroff(self):
         self.collect()
