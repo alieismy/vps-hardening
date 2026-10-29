@@ -72,12 +72,24 @@ login_accounts() {
   done < <(getent passwd)
 }
 
-# Expand AuthorizedKeysFile tokens (%h %u %U %%) for one user.
+# sshd_config_of USER [FILE]: sshd -T output for USER, read from FILE when
+# given (rollback evaluates the configuration the restore leaves), otherwise
+# the current configuration.
+sshd_config_of() {
+  if [ -n "${2-}" ]; then
+    cat -- "$2"
+  else
+    sshd_effective "$1"
+  fi
+}
+
+# authorized_keys_files USER [FILE]: expand AuthorizedKeysFile tokens
+# (%h %u %U %%) for one user, under the configuration sshd_config_of gives.
 authorized_keys_files() {
-  local user="$1" home uid token path
+  local user="$1" config="${2-}" home uid token path
   home="$(getent passwd "$user" | cut -d: -f6)"
   uid="$(id -u "$user" 2>/dev/null)" || return 0
-  sshd_effective "$user" | sshd_values authorizedkeysfile | while IFS= read -r token; do
+  sshd_config_of "$user" "$config" | sshd_values authorizedkeysfile | while IFS= read -r token; do
     [ "$token" != none ] || continue
     path="${token//%%/$'\001'}"
     path="${path//%h/$home}"
@@ -124,11 +136,12 @@ key_type_accepted() {
 # whose algorithm sshd accepts. Lines with options do not count: cloud-init
 # disables root login with a command= prefix. Other non-comment lines are
 # counted in VH_ROOT_KEYS_SKIPPED. Sets globals, so call it in the main shell.
+# With FILE, the files and algorithms come from that sshd -T output.
 VH_ROOT_KEYS=()
 VH_ROOT_KEYS_SKIPPED=0
 scan_root_keys() {
-  local file line type fpr accepted keyfile="$VH_TMP/root-key" seen=' '
-  accepted=" $(sshd_effective root | sshd_value pubkeyacceptedalgorithms | tr ',' ' ') "
+  local config="${1-}" file line type fpr accepted keyfile="$VH_TMP/root-key" seen=' '
+  accepted=" $(sshd_config_of root "$config" | sshd_value pubkeyacceptedalgorithms | tr ',' ' ') "
   while IFS= read -r file; do
     [ -f "$file" ] || continue
     while IFS= read -r line || [ -n "$line" ]; do
@@ -155,7 +168,7 @@ scan_root_keys() {
       seen="$seen$fpr "
       VH_ROOT_KEYS+=("$type $fpr")
     done <"$file"
-  done < <(authorized_keys_files root)
+  done < <(authorized_keys_files root "$config")
   rm -f -- "$keyfile"
 }
 
