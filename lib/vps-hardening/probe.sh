@@ -58,15 +58,20 @@ sshd_value() {
 # Accounts other than root whose shell lets sshd log them in, as allowed_user()
 # in OpenSSH's auth.c decides: the shell (empty means /bin/sh) is a regular
 # file with an execute bit; -x tests that as root. /etc/shells plays no part
-# there (requirements D61). sshd skips the shell test under ChrootDirectory,
-# which the Match check and a new host rule out. Accounts sshd refuses for
-# other reasons stay in: denying them as well changes nothing.
+# there (requirements D61). Like sshd, skip the shell test when ChrootDirectory
+# is set: then every account counts. The Match check leaves only a global
+# value, so root's evaluation stands for all; when sshd -T fails, the shell
+# test applies and the sshd checks report the failure. Accounts sshd refuses
+# for other reasons stay in: denying them as well changes nothing.
 login_accounts() {
-  local name _pw _uid _gid _gecos _home shell
+  local name _pw _uid _gid _gecos _home shell chroot
+  chroot="$(sshd_effective root | sshd_value chrootdirectory)" || chroot=''
   while IFS=: read -r name _pw _uid _gid _gecos _home shell; do
     [ "$name" != root ] || continue
     shell="${shell:-/bin/sh}"
-    if [ -f "$shell" ] && [ -x "$shell" ]; then
+    if [ -n "$chroot" ] && [ "${chroot,,}" != none ]; then
+      printf '%s\n' "$name"
+    elif [ -f "$shell" ] && [ -x "$shell" ]; then
       printf '%s\n' "$name"
     fi
   done < <(getent passwd)
