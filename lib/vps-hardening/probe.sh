@@ -16,6 +16,13 @@ unit_enabled() {
   return 1
 }
 
+# True when the unit is enabled in /etc and so starts at every boot. Unlike
+# unit_enabled, enabled-runtime (gone after a reboot), static and the like do
+# not count: the managed units are enabled by apply (requirements D60).
+unit_enabled_at_boot() {
+  [ "$(systemctl is-enabled -- "$1" 2>/dev/null)" = enabled ]
+}
+
 unit_active() {
   systemctl is-active --quiet -- "$1"
 }
@@ -48,13 +55,20 @@ sshd_value() {
   awk -v key="$1" '$1 == key && !seen { print $2; seen = 1 }'
 }
 
-# Login accounts other than root: a shell listed in /etc/shells.
+# Accounts other than root whose shell lets sshd log them in, as allowed_user()
+# in OpenSSH's auth.c decides: the shell (empty means /bin/sh) is a regular
+# file with an execute bit; -x tests that as root. /etc/shells plays no part
+# there (requirements D61). sshd skips the shell test under ChrootDirectory,
+# which the Match check and a new host rule out. Accounts sshd refuses for
+# other reasons stay in: denying them as well changes nothing.
 login_accounts() {
   local name _pw _uid _gid _gecos _home shell
   while IFS=: read -r name _pw _uid _gid _gecos _home shell; do
     [ "$name" != root ] || continue
-    grep -qxF -- "$shell" /etc/shells 2>/dev/null || continue
-    printf '%s\n' "$name"
+    shell="${shell:-/bin/sh}"
+    if [ -f "$shell" ] && [ -x "$shell" ]; then
+      printf '%s\n' "$name"
+    fi
   done < <(getent passwd)
 }
 

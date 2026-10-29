@@ -57,7 +57,8 @@ LIFECYCLE_OPEN = '--open 443/tcp --open 2096/tcp/ipv6 --open 8443/udp/ipv4'
 HARDENED_OPEN = '--open 443/tcp --open 2096/tcp'
 # VT-51, one overlay each; tests/guest/m3.sh injects them.
 DRIFTS = ('firewall-install', 'firewall-reinstall', 'iplimit', 'listen-all', 'bbr', 'ufw-rule', 'nftables',
-          'sshd-dropin', 'sshd-match', 'ufw-framework', 'ufw-userrules', 'reboot-required')
+          'sshd-dropin', 'sshd-match', 'ufw-framework', 'ufw-userrules', 'reboot-required', 'ufw-disable',
+          'ufw-mask', 'shell-account')
 APPLY_PROMPT = '两项都满足请输入 yes'.encode()
 APPLIED = '加固已应用，等待确认'
 PORTS_CHANGED = '端口变更已生效，等待确认'
@@ -589,6 +590,8 @@ def lifecycle(ctx, guest):
         guest.phase(name, *args, script='m2.sh')
 
     m2('m2-prepare')
+    # Requirements D61: a second account apply has to deny.
+    m2('m2-shell-account')
     m2('m2-baseline')
     m2('m2-listen', '443', '2096', '2053', '8080', '80')
     m2('m2-before')
