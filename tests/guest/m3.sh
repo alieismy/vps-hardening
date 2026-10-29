@@ -25,6 +25,7 @@ apt_idle() {
 readonly REGEX_SRC=192.0.2.6 BAN_SRC=192.0.2.7 INC_SRC=192.0.2.8 AGENT_SRC=192.0.2.9 PREAUTH_SRC=192.0.2.10
 readonly BACKLOG_SRC=192.0.2.11
 readonly M3_SOURCES="$REGEX_SRC $BAN_SRC $INC_SRC $AGENT_SRC $PREAUTH_SRC $BACKLOG_SRC"
+# 192.0.2.12 is m2.sh's BAD_SHELL_KEY.
 # VT-32: a documentation address that never sends traffic.
 readonly MANUAL_BAN=203.0.113.123
 # Invalid-user attempts this far apart stay below Debian 13's sshd penalties
@@ -564,6 +565,18 @@ phase_m3_drift() {
       touch /var/run/reboot-required
       want_rc=0
       want_warn='reboot.required'
+      ;;
+    ufw-disable | ufw-mask)
+      # Requirements D60: the rules stay loaded and ufw.active passes, but the
+      # next boot no longer starts ufw.service, which loads them.
+      systemctl "${drift#ufw-}" ufw.service
+      grep -qx 'Status: active' <<<"$(ufw status)" || fail 'UFW is no longer active'
+      want_fail='ufw.service'
+      ;;
+    shell-account)
+      # Requirements D61: an account sshd admits whose shell /etc/shells does not list.
+      add_shell_account
+      want_fail='accounts.nopasswd'
       ;;
     *) fail "unknown drift: $drift" ;;
   esac

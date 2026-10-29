@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # rollback (FR-12, design 7.3): restore the configuration from before apply.
 # The lockout checks run first, on the configuration the restore will leave:
-# root's keys, the sshd configuration evaluated with the drop-in as it was
-# before apply, and UFW. Nothing changes unless all of them pass.
+# root's keys and the sshd values, both from the sshd configuration evaluated
+# with the drop-in as it was before apply, and UFW. Nothing changes unless all
+# of them pass.
 
 cmd_rollback() {
   local status
@@ -47,8 +48,14 @@ rollback_checks() {
   else
     report FAIL rollback.snapshot "应用前的快照不完整或被修改（$VH_SNAPSHOT_DIR），无法完整回滚"
   fi
-  check_root_keys
-  rollback_check_sshd
+  # The key files and algorithms can differ from the current ones when this
+  # tool's drop-in was changed after apply (requirements D60).
+  if rollback_sshd_eval; then
+    check_root_keys "$VH_TMP/sshd-T.rollback" '回滚后的配置下，'
+    rollback_check_sshd
+  else
+    report FAIL rollback.sshd "无法评估回滚后的 sshd 配置：$(head -n 1 "$VH_TMP/sshd-T.rollback.err" 2>/dev/null)"
+  fi
   # New hosts start with UFW inactive (FR-02), so the restore disables it.
   if [ "$(state_get ufw_was_active)" = yes ]; then
     report FAIL rollback.ufw '记录显示应用前 UFW 已启用，与新机条件不符（FR-02）：无法预先确认回滚后放行 22/tcp'
@@ -82,13 +89,10 @@ rollback_sshd_eval() {
     >"$VH_TMP/sshd-T.rollback" 2>"$VH_TMP/sshd-T.rollback.err"
 }
 
-# FR-12: after the restore root can still log in on 22 with a key.
+# FR-12: after the restore root can still log in on 22 with a key. Reads the
+# output of rollback_sshd_eval.
 rollback_check_sshd() {
   local file="$VH_TMP/sshd-T.rollback" prl pubkey password
-  if ! rollback_sshd_eval; then
-    report FAIL rollback.sshd "无法评估回滚后的 sshd 配置：$(head -n 1 "$VH_TMP/sshd-T.rollback.err" 2>/dev/null)"
-    return 0
-  fi
   prl="$(sshd_value permitrootlogin <"$file")"
   pubkey="$(sshd_value pubkeyauthentication <"$file")"
   password="$(sshd_value passwordauthentication <"$file")"

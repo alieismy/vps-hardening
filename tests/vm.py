@@ -57,7 +57,8 @@ LIFECYCLE_OPEN = '--open 443/tcp --open 2096/tcp/ipv6 --open 8443/udp/ipv4'
 HARDENED_OPEN = '--open 443/tcp --open 2096/tcp'
 # VT-51, one overlay each; tests/guest/m3.sh injects them.
 DRIFTS = ('firewall-install', 'firewall-reinstall', 'iplimit', 'listen-all', 'bbr', 'ufw-rule', 'nftables',
-          'sshd-dropin', 'sshd-match', 'ufw-framework', 'ufw-userrules', 'reboot-required')
+          'sshd-dropin', 'sshd-match', 'ufw-framework', 'ufw-userrules', 'reboot-required', 'ufw-disable',
+          'ufw-mask', 'shell-account')
 APPLY_PROMPT = '两项都满足请输入 yes'.encode()
 APPLIED = '加固已应用，等待确认'
 PORTS_CHANGED = '端口变更已生效，等待确认'
@@ -101,6 +102,7 @@ class Guest:
         self.evidence.mkdir()
         self.vm = None
         self.serial = None
+        self.collected = False
 
     def __enter__(self):
         ctx = self.ctx
@@ -117,10 +119,12 @@ class Guest:
         self.vm = subprocess.Popen(qemu, stdout=self.serial, stderr=subprocess.STDOUT)
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, exc_type, *exc):
         try:
             if self.vm.poll() is None:
-                self.collect()
+                self.collect(strict=exc_type is None)
+            elif exc_type is None and not self.collected:
+                raise RuntimeError(f'{self.label}: QEMU exited before the guest evidence was collected')
         finally:
             if self.vm.poll() is None:
                 self.vm.terminate()
@@ -266,13 +270,29 @@ class Guest:
         print(f'--- {self.label} {name}: exit {proc.returncode}\n{text}', flush=True)
         return proc.returncode, text
 
-    def collect(self):
+    def collect(self, strict=True):
+        """The guest's evidence as guest-evidence.tar. On a normal end (STRICT)
+        an archive that could not be made or read fails the run, so that no
+        completion marker stands for missing evidence (verification plan 6,
+        requirements D60). After a failure, collect what can be and keep the
+        original error."""
+        self.collected = True
+        path = self.evidence / 'guest-evidence.tar'
         try:
-            with (self.evidence / 'guest-evidence.tar').open('wb') as f:
-                subprocess.run(self.ctx.ssh + ['tar -cf - -C /root vh-evidence'], stdout=f,
-                               stderr=subprocess.DEVNULL, timeout=60)
-        except subprocess.TimeoutExpired:
-            pass
+            with path.open('wb') as f:
+                result = subprocess.run(self.ctx.ssh + ['tar -cf - -C /root vh-evidence'], stdout=f,
+                                        stderr=subprocess.PIPE, timeout=60)
+            if result.returncode != 0:
+                raise RuntimeError(f'exit status {result.returncode}: '
+                                   f'{result.stderr.decode(errors="replace").strip()[-200:]}')
+            with tarfile.open(path) as tar:
+                if not any(name.startswith('vh-evidence/') for name in tar.getnames()):
+                    raise RuntimeError('the archive has no vh-evidence/')
+        except Exception as e:
+            message = f'{self.label}: guest evidence not collected: {e!r}'
+            if strict:
+                raise RuntimeError(message) from e
+            print(message, flush=True)
 
     def poweroff(self):
         self.collect()
@@ -589,6 +609,8 @@ def lifecycle(ctx, guest):
         guest.phase(name, *args, script='m2.sh')
 
     m2('m2-prepare')
+    # Requirements D61: a second account apply has to deny.
+    m2('m2-shell-account')
     m2('m2-baseline')
     m2('m2-listen', '443', '2096', '2053', '8080', '80')
     m2('m2-before')
@@ -939,11 +961,32 @@ def hardened(ctx, image):
         with Guest(ctx, f'vt51-{drift}', ctx.overlay(disk, f'vt51-{drift}.qcow2')) as guest:
             guest.ready()
             guest.phase('m3-drift', drift, script='m3.sh')
-    for name, case in (('vt61', vt61), ('vt63', vt63), ('vt64', vt64)):
+    # VT-65 runs first on the VT-61 overlay: once it has put the keys and the
+    # drop-in back, the rollback of VT-61 is its control.
+    for name, cases in (('vt61', (vt65, vt61)), ('vt63', (vt63,)), ('vt64', (vt64,))):
         with Guest(ctx, name, ctx.overlay(disk, f'{name}.qcow2')) as guest:
             guest.ready()
             guest.phase('m4-setup', script='m4.sh')
-            case(ctx, guest)
+            for case in cases:
+                case(ctx, guest)
+
+
+def vt65(ctx, guest):
+    """VT-65: rollback checks root's keys under the configuration it leaves
+    (requirements D60). With the keys only in a file that the changed drop-in
+    names, it refuses before asking anything and changes nothing."""
+    guest.phase('vt65-keys-moved', script='m4.sh')
+    # A connection right after sshd reloads can be reset (design 8.4).
+    guest.wait()
+    guest.must_login('root', 'with the keys in the file the drop-in names')
+    status, output = guest.interactive('vt65-rollback', f'{VH} rollback; echo "rollback-rc=$?"')
+    check('rollback-rc=1' in output and '[FAIL] root.keys' in output and '回滚前检查有不符合项' in output
+          and APPLY_PROMPT.decode() not in output,
+          'VT-65: rollback refuses: root has no usable key under the configuration it would leave')
+    check('[PASS] rollback.sshd' in output, 'VT-65: the other values of that configuration pass')
+    guest.phase('vt65-restored', script='m4.sh')
+    guest.wait()
+    guest.must_login('root', 'with the keys and the drop-in put back')
 
 
 def vt61(ctx, guest):

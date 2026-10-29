@@ -164,22 +164,24 @@ preflight_sshd() {
 
 # Root is the only administrative login (D22), so applying without a usable
 # root key would lock the administrator out. verify runs the same check.
+# check_root_keys [FILE PREFIX]: rollback passes the sshd -T output of the
+# configuration the restore leaves, and a prefix that says so (FR-12).
 check_root_keys() {
-  local entry
-  scan_root_keys
+  local entry where="${2-}"
+  scan_root_keys "${1-}"
   for entry in "${VH_ROOT_KEYS[@]}"; do
     report INFO root.key "$entry"
   done
   if [ "${#VH_ROOT_KEYS[@]}" -gt 0 ]; then
     if [ "$VH_ROOT_KEYS_SKIPPED" -gt 0 ]; then
-      report PASS root.keys "root 有 ${#VH_ROOT_KEYS[@]} 把可用的公钥（另有 $VH_ROOT_KEYS_SKIPPED 行未计入）"
+      report PASS root.keys "${where}root 有 ${#VH_ROOT_KEYS[@]} 把可用的公钥（另有 $VH_ROOT_KEYS_SKIPPED 行未计入）"
     else
-      report PASS root.keys "root 有 ${#VH_ROOT_KEYS[@]} 把可用的公钥"
+      report PASS root.keys "${where}root 有 ${#VH_ROOT_KEYS[@]} 把可用的公钥"
     fi
   elif [ "$VH_ROOT_KEYS_SKIPPED" -gt 0 ]; then
-    report FAIL root.keys "root 没有可用的公钥：$VH_ROOT_KEYS_SKIPPED 行带选项（如 command=）、无法解析，或算法不被 sshd 接受。请先为 root 配置不带选项的公钥"
+    report FAIL root.keys "${where}root 没有可用的公钥：$VH_ROOT_KEYS_SKIPPED 行带选项（如 command=）、无法解析，或算法不被 sshd 接受。请先为 root 配置不带选项的公钥"
   else
-    report FAIL root.keys 'root 的 authorized_keys 中没有公钥。请先为 root 配置公钥'
+    report FAIL root.keys "${where}root 的 authorized_keys 中没有公钥。请先为 root 配置公钥"
   fi
 }
 

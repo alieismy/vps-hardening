@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # Guest side of the M4 VM tests (docs/verification-plan.md 4.8: VT-61, VT-63,
-# VT-64 and the local part of VT-72; VT-60 runs in the lifecycle flow with the
+# VT-64, VT-65 and the local part of VT-72; VT-60 runs in the lifecycle flow with the
 # M2 phases), and of VT-27 (4.3). tests/vm.py runs rollback, ports, apply and
 # confirm over SSH as an administrator would, and one phase of this script per
 # SSH session in between. The hardened suite also runs the two port-flow
@@ -224,6 +224,39 @@ phase_m4_unchanged() {
 phase_m4_ufw_drift() {
   ufw allow 8080/tcp
   tool_record >"$phase_dir/record.txt"
+}
+
+# VT-65 (requirements D60): root's keys only in a file that this tool's drop-in
+# names after a change made after apply. Logins work now, but the rollback
+# removes the drop-in, and sshd then reads the emptied authorized_keys: the
+# rollback must refuse and change nothing.
+readonly VT65_KEYS=/root/.ssh/vh-keys
+readonly VT65_DROPIN=/etc/ssh/sshd_config.d/00-vps-hardening.conf
+phase_vt65_keys_moved() {
+  cp -p /root/.ssh/authorized_keys "$PRIVATE/vt65-authorized_keys"
+  cp -p "$VT65_DROPIN" "$PRIVATE/vt65-dropin"
+  install -m 0600 /root/.ssh/authorized_keys "$VT65_KEYS"
+  printf 'AuthorizedKeysFile .ssh/vh-keys\n' >>"$VT65_DROPIN"
+  /usr/sbin/sshd -t || fail 'sshd -t fails with the changed drop-in'
+  /usr/sbin/sshd -T -C 'user=root,host=vh-test.invalid,addr=198.51.100.10,laddr=192.0.2.1,lport=22' \
+    >"$phase_dir/sshd-root.txt"
+  grep -qx 'authorizedkeysfile .ssh/vh-keys' "$phase_dir/sshd-root.txt" || fail 'sshd does not read the moved keys'
+  systemctl try-reload-or-restart ssh.service
+  : >/root/.ssh/authorized_keys
+  tool_record >"$phase_dir/record.txt"
+  log "root's keys only in $VT65_KEYS, named by the tool's drop-in; authorized_keys emptied"
+}
+
+phase_vt65_restored() {
+  tool_record >"$phase_dir/record.txt"
+  diff -u "$EVIDENCE/vt65-keys-moved/record.txt" "$phase_dir/record.txt" || fail 'the refused rollback changed something'
+  [ ! -s /root/.ssh/authorized_keys ] || fail 'authorized_keys is not empty'
+  cp -p "$PRIVATE/vt65-authorized_keys" /root/.ssh/authorized_keys
+  cp -p "$PRIVATE/vt65-dropin" "$VT65_DROPIN"
+  systemctl try-reload-or-restart ssh.service
+  rm -f "$VT65_KEYS"
+  verify_passes vt65-verify
+  log 'keys and drop-in put back; verify passes'
 }
 
 phase_m4_unmask() {
@@ -531,6 +564,8 @@ m4_main() {
     m4-unchanged) phase_m4_unchanged "$@" ;;
     m4-ufw-drift) phase_m4_ufw_drift ;;
     m4-unmask) phase_m4_unmask ;;
+    vt65-keys-moved) phase_vt65_keys_moved ;;
+    vt65-restored) phase_vt65_restored ;;
     m4-reapplied) phase_m4_reapplied ;;
     vt27-fault) phase_vt27_fault "$@" ;;
     vt27-before) phase_vt27_before ;;

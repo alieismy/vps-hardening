@@ -2,9 +2,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | v0.14 已批准：新增第 8.25 节（正式版 `v0.1.1` 的发布、VT-72 的公开部分和测试 VPS 上从 `v0.1.0` 的升级），并修改证据状态、第 8 节导言和第 9 节；按 CodeRabbit 对拉取请求 #28 的意见，第 8.24 节结论中 `confirm` 可以再次执行的说法同样收窄。用户于 2026-10-27 评审通过（需求 U39、D58）。v0.13 已批准：按需求 D54～D56 修改第 2.5～2.8、6、7.1、7.3、9 节和第 8 节导言，更正第 8.7 节的一处判断，新增第 8.24 节（Astra 对 `v0.1.0` 的评审和复核、修复和运行结果）。快照、待确认标记和状态记录的写入逐步核实，写不进时 `apply` 和 `ports` 在第一项变更之前失败或完整恢复；`confirm` 最后删除标记，状态改为"已应用"之前失败时可以重新执行；恢复最后的记录写不进时报告失败；`verify` 改从 here-string 匹配 UFW 的状态；negative 套件增加 VT-27，泄露扫描覆盖失败的运行和串口日志，探测线程的异常算作失败。用户于 2026-10-27 评审通过（需求 U38、D57）。评审之后按 CodeRabbit 对拉取请求 #28 的意见收窄上面的一处概述：`confirm` 只在状态改为"已应用"之前失败时可以重新执行，之后的失败是第 9 节记录的情形。其余内容不变；这处修改随 v0.14 经用户评审通过（需求 D58）。v0.12 已批准：新增第 8.23 节（正式版 `v0.1.0` 的发布、VT-72 的公开部分和测试 VPS 上的升级），第 2.12 节写明正式版设为 Latest（需求 D52），并修改证据状态、第 8 节导言和第 9 节。用户于 2026-10-26 评审通过（需求 U36、D53）。v0.11 已批准：新增第 8.21 节（`v0.1.0-rc.4` 的发布和 VT-72 的公开部分）、第 8.22 节（按需求 D50 在测试 VPS 上复核 D47 的修复，第一次在真实主机上执行 `rollback`），附录 A 增加 arm64 参考运行 `40258689597`，并修改第 8 节导言、第 8.20 节末尾和第 9 节。用户于 2026-10-26 评审通过（需求 U35、D51）。v0.10 已批准：按需求 v1.10（D47）修改第 2.5、2.12、7、9 节，新增第 8.20 节（运行结果）：由本工具安装 fail2ban 时，安装期间在 `/run` 下加一个条件永不成立的 drop-in，跳过软件包安装脚本中的启动，第一次启动就使用 FR-08 的值；状态记录增加 `f2b_install_hold`，各恢复路径都会撤除这个 drop-in；安装脚本在没有应用过的主机上提示执行不带 `--open` 的 `preflight`；hardened 套件增加 VT-36，恢复后的核对增加 VT-26。用户于 2026-10-25 评审通过（需求 U32、D48）。v0.9 已批准：新增第 8.18 节（`v0.1.0-rc.3` 的发布和 VT-72 的公开部分）、第 8.19 节（真实主机验收 M5），并修改第 9 节：M5 发现的问题（安装脚本结尾的提示仍是 `preflight --open <公开端口>`），M5 再次观察到的 fail2ban 过渡状态，外部探测改为在 VPS 上抓包，真实主机验收的范围。用户于 2026-10-24 评审通过（需求 U31、D46）。评审之后更正一处：fail2ban 的过渡状态（应用时按软件包自带配置产生的封禁只有 600 秒）不是 M5 新发现的问题，第 8.8 节和第 9 节已有记录，当时判断影响小、不修改；第 8.19、9 节改为"再次观察到"，其余内容不变。v0.8 已批准：按需求 v1.9（D41～D43）修改第 2.4、3、7.3、9 节，新增第 8.17 节（运行结果）：推荐流程中 `apply` 不声明公开端口，没有公开端口时 `inputs.open` 通过；预检增加 `reboot.required`，待重启时只警告；hardened 套件改为不声明公开端口加固，安装 3X-UI 后用 `ports` 开放 443/tcp、2096/tcp 并确认；VT-01 增加放置待重启标记的预检。用户于 2026-10-24 评审通过（需求 U28、D44）。v0.7 已批准：按需求 v1.8（D40）修复 `v0.1.0-rc.1` 发布后核实的四个问题，涉及第 1、2.12、3、4、6、7.3、9 节，新增第 8.15 节：检查 sshd 配置时按 sshd 的规则读取每一行，带引号的关键字、带引号或转义空格的 `Include` 路径不再漏查；安装脚本的"未做变更"还要求属主和权限相同；替换文件的过程中失败或被中断时，恢复为安装前的文件。合并之后发布预发行版 `v0.1.0-rc.2`，增补第 8.16 节（发布与 VT-72 的公开部分）。用户于 2026-10-24 与 v0.8 一并评审通过（需求 U28、D44）。v0.6 已批准：按需求 v1.7（D34～D36）修复评审发现的缺口，涉及第 1～4、6、7、9 节，新增第 8.13 节：预检和 `verify` 拒绝 sshd 配置中的 `Match` 块；UFW 未启用时，预检也拒绝已添加的规则和被改动的 before/after 框架文件，`verify` 比较同样的框架文件；`ufw.rules` 和 `ports.rules` 改为与声明比较，不再记录规则行；公开端口不能是 80/tcp；安装脚本按状态提示下一步。按需求 D37，`verify` 增加 `ufw.userrules`，`ports` 增加变更前检查 `ports.userrules`：`user.rules`、`user6.rules` 须与记录的摘要相同。合并之后发布预发行版 `v0.1.0-rc.1`，增补第 2.12 节的发布步骤和第 8.14 节（发布与 VT-72 的公开部分）。用户于 2026-10-22 评审通过（需求 U25、D39）。v0.5 已批准：增补里程碑 M4（`status`、`rollback`、`ports`、已应用时的 `apply`、发行版安装脚本）的契约、状态记录、测试和运行证据（第 8.10～8.12 节），涉及第 1～9 节；按需求 v1.6（D32）把测试中的 3X-UI 改为 v3.10.2。用户于 2026-10-22 评审通过（需求 U24、D38），并要求安装脚本在已应用的主机上的结尾提示在发布前修复，已在 v0.6 中修复（第 2.12 节）。v0.4 已批准：增补里程碑 M3 的检查项（第 4 节）、测试（第 7 节）和运行证据（第 8.7～8.9 节），涉及第 1、4、7～9 节。超出 v0.3 第 1 节所列 M3 范围的三个检查项（`f2b.config`、`f2b.files`、`uu.dropin`）已经用户确认（需求 U18、D30）。用户于 2026-10-20 评审通过（需求 U19、D31）。评审之后，按拉取请求 #9 的代码评审意见修复三处忽略 `dpkg --verify` 退出码的判定，第 4、6 节和第 8.7 节随之补充。v0.3 已批准：增补里程碑 M2（`apply`、`confirm`、自动恢复）的契约、状态记录、测试和运行证据，涉及第 1～9 节；M3、M4 实现时继续增补。第 1 节的范围调整（Fail2ban 和自动更新的写入提前到 M2）偏离方案设计 v1.1 第 10 节，已经评审通过，方案设计 v1.2 第 10 节随之修改。按需求 v1.4（D26），arm64 改为按需运行的参考，M2 的 arm64 结果放在附录 A。增补第 8.6 节：在用户提供的一台测试 VPS 上试运行 M2 开发版，不是 M5 的验收。用户于 2026-10-20 评审通过（需求 U16、D28），包括第 1 节的范围调整和 VT-25 的判定方式。此前的版本：v0.1 于 2026-10-20 经用户评审，除第 2.4 节的 `--maxretry` 和第 4 节 `ssh.permitrootlogin` 的期望值两处外通过；v0.2 按需求 v1.3（D22、D23）修改第 2.2、2.4、3～7、9 节，删除管理用户和公钥文件参数、sudo 条件检查，新增 root 公钥检查 `root.keys`，于同日经用户评审通过（需求 U13、D25） |
-| 日期 | 2026-10-27（v0.1 为 2026-10-13） |
-| 上游 | [需求规格说明 v1.10](requirements.md)（已批准）、[方案设计 v1.6](solution-design.md)（已批准）、[验证计划 v1.9](verification-plan.md)（已批准） |
+| 状态 | v0.15 草案：按需求 D59～D61 修改第 2.10、3、4、6、7.1、7.3、9 节和第 8 节导言，新增第 8.26 节（Astra 对 `v0.1.1` 的评审、自检和复核，修复和运行结果）。回滚前按回滚后的 sshd 配置检查 root 的公钥；可以经 SSH 登录的账户按 sshd 的判定确定，不看 `/etc/shells`；`verify` 新增 `ufw.service`，`f2b.service`、`uu.timers` 的启用只接受 `enabled`；受管文件的摘要算不出时 `apply` 和 `ports` 失败；测试框架收集不到客体证据时判为失败；matrix 套件在应用前加一个 shell 没有登记的账户，hardened 套件增加 VT-65 和 VT-51 的三项漂移。待用户评审。v0.14 已批准：新增第 8.25 节（正式版 `v0.1.1` 的发布、VT-72 的公开部分和测试 VPS 上从 `v0.1.0` 的升级），并修改证据状态、第 8 节导言和第 9 节；按 CodeRabbit 对拉取请求 #28 的意见，第 8.24 节结论中 `confirm` 可以再次执行的说法同样收窄。用户于 2026-10-27 评审通过（需求 U39、D58）。v0.13 已批准：按需求 D54～D56 修改第 2.5～2.8、6、7.1、7.3、9 节和第 8 节导言，更正第 8.7 节的一处判断，新增第 8.24 节（Astra 对 `v0.1.0` 的评审和复核、修复和运行结果）。快照、待确认标记和状态记录的写入逐步核实，写不进时 `apply` 和 `ports` 在第一项变更之前失败或完整恢复；`confirm` 最后删除标记，状态改为"已应用"之前失败时可以重新执行；恢复最后的记录写不进时报告失败；`verify` 改从 here-string 匹配 UFW 的状态；negative 套件增加 VT-27，泄露扫描覆盖失败的运行和串口日志，探测线程的异常算作失败。用户于 2026-10-27 评审通过（需求 U38、D57）。评审之后按 CodeRabbit 对拉取请求 #28 的意见收窄上面的一处概述：`confirm` 只在状态改为"已应用"之前失败时可以重新执行，之后的失败是第 9 节记录的情形。其余内容不变；这处修改随 v0.14 经用户评审通过（需求 D58）。v0.12 已批准：新增第 8.23 节（正式版 `v0.1.0` 的发布、VT-72 的公开部分和测试 VPS 上的升级），第 2.12 节写明正式版设为 Latest（需求 D52），并修改证据状态、第 8 节导言和第 9 节。用户于 2026-10-26 评审通过（需求 U36、D53）。v0.11 已批准：新增第 8.21 节（`v0.1.0-rc.4` 的发布和 VT-72 的公开部分）、第 8.22 节（按需求 D50 在测试 VPS 上复核 D47 的修复，第一次在真实主机上执行 `rollback`），附录 A 增加 arm64 参考运行 `40258689597`，并修改第 8 节导言、第 8.20 节末尾和第 9 节。用户于 2026-10-26 评审通过（需求 U35、D51）。v0.10 已批准：按需求 v1.10（D47）修改第 2.5、2.12、7、9 节，新增第 8.20 节（运行结果）：由本工具安装 fail2ban 时，安装期间在 `/run` 下加一个条件永不成立的 drop-in，跳过软件包安装脚本中的启动，第一次启动就使用 FR-08 的值；状态记录增加 `f2b_install_hold`，各恢复路径都会撤除这个 drop-in；安装脚本在没有应用过的主机上提示执行不带 `--open` 的 `preflight`；hardened 套件增加 VT-36，恢复后的核对增加 VT-26。用户于 2026-10-25 评审通过（需求 U32、D48）。v0.9 已批准：新增第 8.18 节（`v0.1.0-rc.3` 的发布和 VT-72 的公开部分）、第 8.19 节（真实主机验收 M5），并修改第 9 节：M5 发现的问题（安装脚本结尾的提示仍是 `preflight --open <公开端口>`），M5 再次观察到的 fail2ban 过渡状态，外部探测改为在 VPS 上抓包，真实主机验收的范围。用户于 2026-10-24 评审通过（需求 U31、D46）。评审之后更正一处：fail2ban 的过渡状态（应用时按软件包自带配置产生的封禁只有 600 秒）不是 M5 新发现的问题，第 8.8 节和第 9 节已有记录，当时判断影响小、不修改；第 8.19、9 节改为"再次观察到"，其余内容不变。v0.8 已批准：按需求 v1.9（D41～D43）修改第 2.4、3、7.3、9 节，新增第 8.17 节（运行结果）：推荐流程中 `apply` 不声明公开端口，没有公开端口时 `inputs.open` 通过；预检增加 `reboot.required`，待重启时只警告；hardened 套件改为不声明公开端口加固，安装 3X-UI 后用 `ports` 开放 443/tcp、2096/tcp 并确认；VT-01 增加放置待重启标记的预检。用户于 2026-10-24 评审通过（需求 U28、D44）。v0.7 已批准：按需求 v1.8（D40）修复 `v0.1.0-rc.1` 发布后核实的四个问题，涉及第 1、2.12、3、4、6、7.3、9 节，新增第 8.15 节：检查 sshd 配置时按 sshd 的规则读取每一行，带引号的关键字、带引号或转义空格的 `Include` 路径不再漏查；安装脚本的"未做变更"还要求属主和权限相同；替换文件的过程中失败或被中断时，恢复为安装前的文件。合并之后发布预发行版 `v0.1.0-rc.2`，增补第 8.16 节（发布与 VT-72 的公开部分）。用户于 2026-10-24 与 v0.8 一并评审通过（需求 U28、D44）。v0.6 已批准：按需求 v1.7（D34～D36）修复评审发现的缺口，涉及第 1～4、6、7、9 节，新增第 8.13 节：预检和 `verify` 拒绝 sshd 配置中的 `Match` 块；UFW 未启用时，预检也拒绝已添加的规则和被改动的 before/after 框架文件，`verify` 比较同样的框架文件；`ufw.rules` 和 `ports.rules` 改为与声明比较，不再记录规则行；公开端口不能是 80/tcp；安装脚本按状态提示下一步。按需求 D37，`verify` 增加 `ufw.userrules`，`ports` 增加变更前检查 `ports.userrules`：`user.rules`、`user6.rules` 须与记录的摘要相同。合并之后发布预发行版 `v0.1.0-rc.1`，增补第 2.12 节的发布步骤和第 8.14 节（发布与 VT-72 的公开部分）。用户于 2026-10-22 评审通过（需求 U25、D39）。v0.5 已批准：增补里程碑 M4（`status`、`rollback`、`ports`、已应用时的 `apply`、发行版安装脚本）的契约、状态记录、测试和运行证据（第 8.10～8.12 节），涉及第 1～9 节；按需求 v1.6（D32）把测试中的 3X-UI 改为 v3.10.2。用户于 2026-10-22 评审通过（需求 U24、D38），并要求安装脚本在已应用的主机上的结尾提示在发布前修复，已在 v0.6 中修复（第 2.12 节）。v0.4 已批准：增补里程碑 M3 的检查项（第 4 节）、测试（第 7 节）和运行证据（第 8.7～8.9 节），涉及第 1、4、7～9 节。超出 v0.3 第 1 节所列 M3 范围的三个检查项（`f2b.config`、`f2b.files`、`uu.dropin`）已经用户确认（需求 U18、D30）。用户于 2026-10-20 评审通过（需求 U19、D31）。评审之后，按拉取请求 #9 的代码评审意见修复三处忽略 `dpkg --verify` 退出码的判定，第 4、6 节和第 8.7 节随之补充。v0.3 已批准：增补里程碑 M2（`apply`、`confirm`、自动恢复）的契约、状态记录、测试和运行证据，涉及第 1～9 节；M3、M4 实现时继续增补。第 1 节的范围调整（Fail2ban 和自动更新的写入提前到 M2）偏离方案设计 v1.1 第 10 节，已经评审通过，方案设计 v1.2 第 10 节随之修改。按需求 v1.4（D26），arm64 改为按需运行的参考，M2 的 arm64 结果放在附录 A。增补第 8.6 节：在用户提供的一台测试 VPS 上试运行 M2 开发版，不是 M5 的验收。用户于 2026-10-20 评审通过（需求 U16、D28），包括第 1 节的范围调整和 VT-25 的判定方式。此前的版本：v0.1 于 2026-10-20 经用户评审，除第 2.4 节的 `--maxretry` 和第 4 节 `ssh.permitrootlogin` 的期望值两处外通过；v0.2 按需求 v1.3（D22、D23）修改第 2.2、2.4、3～7、9 节，删除管理用户和公钥文件参数、sudo 条件检查，新增 root 公钥检查 `root.keys`，于同日经用户评审通过（需求 U13、D25） |
+| 日期 | 2026-10-28（v0.1 为 2026-10-13） |
+| 上游 | [需求规格说明 v1.11 草案](requirements.md)（v1.10 已批准）、[方案设计 v1.7 草案](solution-design.md)（v1.6 已批准）、[验证计划 v1.10 草案](verification-plan.md)（v1.9 已批准） |
 | 下游 | 实现、测试 |
 | 深度 | 命令契约、检查项目录、模块划分、实现约束和测试框架；不重复上游已有的决策理由 |
 
@@ -376,7 +376,7 @@ WantedBy=sysinit.target
 | 编号 | 判定 |
 |---|---|
 | `rollback.snapshot` | 应用前快照的索引列出 8 个文件，每个副本的摘要与索引一致；否则不符合，无法完整回滚。状态为"应用中"且没有待确认标记时为 `INFO`：应用在布置自动恢复（第 6 步）之前中断，还没有修改配置，回滚只恢复服务状态 |
-| `root.key`、`root.keys` | 同 preflight：root 至少有一把可用的公钥 |
+| `root.key`、`root.keys` | 判定同 preflight，但按回滚后的 sshd 配置（见下文）求值：root 的 `authorized_keys` 按回滚后的 `AuthorizedKeysFile` 展开，算法按回滚后的 `pubkeyacceptedalgorithms` 判定，至少有一把可用的公钥；`root.keys` 的说明以"回滚后的配置下"开头。回滚后的配置无法求值时不输出这两项，由 `rollback.sshd` 报告不符合（v0.15，需求 D60）。v0.14 及以前按当前配置求值：在本工具的片段中改了 `AuthorizedKeysFile` 时，当前配置下有公钥、回滚后没有，检查照样通过（第 8.26 节） |
 | `rollback.sshd` | 回滚后的 sshd 配置（见下文）以 root 求值：`permitrootlogin` 为 `yes`、`without-password` 或 `prohibit-password`，`pubkeyauthentication` 为 `yes`，`port` 含 22；无法求值时不符合 |
 | `rollback.password` | 不判定不符合：回滚后 `passwordauthentication` 为 `yes` 时为警告（公网主机上的密码猜测会随即开始），否则为 `INFO` |
 | `rollback.ufw` | 记录中应用前 UFW 未启用。已启用时不符合：新机不会出现这种情况（FR-02），回滚后的规则也无法预先确认放行 22/tcp |
@@ -385,7 +385,7 @@ WantedBy=sysinit.target
 5. 与 `apply` 相同的两项确认（当前会话保持到回滚完成、服务商控制台可用），输入 `yes` 才继续。
 6. 在运行中的系统上执行第 2.7 节的完整恢复，原因记为"手工回滚"。成功时退出码为 0，提示另开终端确认 root 仍可登录；恢复未全部完成时退出码为 1，状态为"恢复失败"，提示从服务商控制台检查。
 
-`rollback.sshd` 在变更之前评估回滚后的配置：把 `/etc/ssh/sshd_config.d` 复制到临时目录，用快照中的版本替换本工具的片段（应用前不存在时删除），然后在私有挂载命名空间中（`unshare --mount --propagation private`）把副本绑定挂载到原目录上，执行 `sshd -t` 和 `sshd -T -C`（连接参数见第 6 节）。真实目录不变。主配置和其他片段不是受管文件，回滚不改变它们，所以这样求得的就是回滚后的生效配置。
+`rollback.sshd` 在变更之前评估回滚后的配置：把 `/etc/ssh/sshd_config.d` 复制到临时目录，用快照中的版本替换本工具的片段（应用前不存在时删除），然后在私有挂载命名空间中（`unshare --mount --propagation private`）把副本绑定挂载到原目录上，执行 `sshd -t` 和 `sshd -T -C`（连接参数见第 6 节）。真实目录不变。主配置和其他片段不是受管文件，回滚不改变它们，所以这样求得的就是回滚后的生效配置。`root.key`、`root.keys` 读同一份结果（v0.15）。
 
 应用在布置自动恢复之前中断时，开机兜底单元可能还没有写入。撤除自动恢复时跳过不存在的单元，不把"停用不存在的单元"算作失败，所以这种情况下的回滚也能完成。
 
@@ -452,7 +452,7 @@ WantedBy=sysinit.target
 | `sshd.dropin-order` | 片段排序 | 排在 `00-vps-hardening.conf` 之前的片段设置了受管选项或 `Match`，或本工具的片段已存在 |
 | `sshd.match` | `Match` 块 | 主配置或它包含的任何文件中有 `Match` 行，不论位置和条件（需求 D36）。包含的文件按 `Include` 递归展开，相对路径以 `/etc/ssh` 为基准；注释行不计。每一行按 sshd 的规则读取（第 6 节）：带引号的关键字、带引号或转义空格的 `Include` 路径与普通写法相同（v0.7，需求 D40） |
 | `root.key`、`root.keys` | root 的公钥（需求 FR-01、FR-03） | root 的 `authorized_keys`（按 root 的 `AuthorizedKeysFile` 生效值展开）中没有可用的公钥。可用指同时满足：行首就是密钥类型，不带选项（cloud-init 用 `command=` 前缀禁止 root 登录时，这样的行不算）；能被 `ssh-keygen -l -E sha256` 解析；算法在 `pubkeyacceptedalgorithms` 中（`ssh-rsa` 密钥以 `rsa-sha2-*` 判定）。按指纹去重，每把可用的公钥输出一行 `INFO root.key`（类型和指纹）；有未计入的行时，`root.keys` 注明行数 |
-| `sudo.nopasswd-accounts` | 免密账户 | 只报告（`INFO`）：有 SSH 密钥且免密 sudo 的账户，应用时将被禁止 SSH 登录（需求 D13） |
+| `sudo.nopasswd-accounts` | 免密账户 | 只报告（`INFO`）：有 SSH 密钥且免密 sudo 的登录账户，应用时将被禁止 SSH 登录（需求 D13）。登录账户与 OpenSSH `auth.c` 中 `allowed_user()` 的判定相同：除 root 外，登录 shell（为空时按 `/bin/sh`）是有执行位的普通文件；不看 `/etc/shells`，`nologin` 等也算在内（v0.15，需求 D61；此前只算 shell 列在 `/etc/shells` 中的账户）。`ChrootDirectory` 不为 `none` 时，sshd 不检查 shell，这时除 root 外的账户都算在内；`sshd.match` 不允许 `Match` 块，所以只读 root 的生效值。`sshd -T` 失败时仍按 shell 判定，失败由 sshd 的检查项报告 |
 | `apt.idle` | 包管理器 | dpkg、apt 或 unattended-upgrades 的锁被持有，或 apt、dpkg 进程在运行 |
 | `apt.candidates` | 软件包来源 | `ufw`、`fail2ban`、`nftables`、`python3-systemd`、`unattended-upgrades` 中有没有候选版本的 |
 | `apt.fail2ban-version` | Ubuntu 的 fail2ban | 候选版本低于 `1.0.2-3ubuntu0.1` |
@@ -475,23 +475,26 @@ WantedBy=sysinit.target
 | `ufw.panel` | 没有放行面板端口的规则，不论协议；判定方法与 `ufw.port80` 相同 | M2 已实现；没有应用记录时跳过 |
 | `uu.dropin` | 本工具的 APT 配置 `/etc/apt/apt.conf.d/52vps-hardening` 的 SHA-256 等于应用时的记录 | M3 新增；没有应用记录时跳过 |
 | `boundary.panel-listen` | 安装了 3X-UI 时（判定同 `new-host.xui`），应用时声明的面板端口上的 TCP 监听地址都是回环地址（`127.0.0.0/8`、`::1`、`::ffff:127.0.0.0/104`）；有非回环地址时不符合；端口上没有监听时为警告，无法核对 | M3 实现；未安装 3X-UI 时为 `INFO`，没有应用记录时跳过 |
-| `accounts.nopasswd` | 有密钥、免密 sudo、又不在 `DenyUsers` 中的登录账户 | 已实现 |
+| `accounts.nopasswd` | 有密钥、免密 sudo、又不在 `DenyUsers` 中的登录账户（登录账户同 preflight 的 `sudo.nopasswd-accounts`） | 已实现；v0.15 改为按 sshd 的判定确定登录账户（需求 D61） |
 | `ssh.permitrootlogin`、`ssh.passwordauthentication`、`ssh.kbdinteractive`、`ssh.pubkey`、`ssh.forwarding`、`ssh.port` | 以 root 身份执行 `sshd -T -C` 的生效值：`without-password` 或 `prohibit-password`（`sshd -T` 用旧名 `without-password` 输出 `prohibit-password`）、`no`、`no`、`yes`、`yes` 或 `local`、`22` | 已实现；被禁账户另由 `ssh.denied` 检查 |
 | `ssh.match` | 同 preflight 的 `sshd.match`：主配置及其包含的文件中没有 `Match` 块。有 `Match` 块时，上一行以 root 求得的值不代表所有来源 | v0.6 新增（需求 D36）；v0.7 按 sshd 的规则读取（需求 D40） |
 | `root.key`、`root.keys` | 同 preflight：root 至少有一把可用的公钥 | 已实现 |
 | `ssh.listen` | 22 端口在 IPv4 上监听为必需；没有 IPv6 时为警告 | 已实现 |
 | `ufw.installed`、`ufw.active`、`ufw.defaults`、`ufw.ipv6`、`ufw.port80` | 已安装并启用；默认拒绝入站、允许出站、拒绝转发；`IPV6=yes`；没有放行 80/tcp 的入站规则（不限协议的 80 也算，只放行 80/udp 的不算，需求 D35）。转发策略：`ufw status verbose` 显示 `deny (routed)` 或 `disabled (routed)`，并且 `/etc/default/ufw` 中为 `DEFAULT_FORWARD_POLICY="DROP"`。内核没有开启转发时，ufw 把转发策略显示为 `disabled`（第 8.4 节） | 已实现；转发策略的判定在 M2 修改；`ufw.port80` 在 v0.6 改为只判 80/tcp |
+| `ufw.service` | `systemctl is-enabled ufw.service` 的输出为 `enabled`：开机时由 `multi-user.target` 拉起，加载规则。不要求正在运行：Debian 13 应用后为启用、未运行（第 8.4 节）。`disabled`、`masked`、`enabled-runtime` 等都不符合（见下文）。UFW 未安装时不输出 | v0.15 新增（需求 D60） |
 | `ufw.framework` | 同 preflight 的 `new-host.ufw-framework`：6 个框架文件与 `/usr/share/ufw` 中的原始文件相同。UFW 未安装时，与 UFW 的其他检查项一样不输出（`ufw.installed` 不符合） | v0.6 新增（需求 D34） |
-| `f2b.installed`、`f2b.service`、`f2b.jails`、`f2b.mainconf` | 已安装；服务启用且运行；jail 只有 `sshd`；`jail.conf`、`fail2ban.conf` 未改动 | 已实现 |
+| `f2b.installed`、`f2b.service`、`f2b.jails`、`f2b.mainconf` | 已安装；服务启用（`enabled`）且运行；jail 只有 `sshd`；`jail.conf`、`fail2ban.conf` 未改动 | 已实现；v0.15 起启用只接受 `enabled`（需求 D60） |
 | `f2b.config` | `fail2ban-client -t` 成功 | M3 新增 |
 | `f2b.values` | 服务有响应时，读取 14 项生效值，逐项等于 FR-08（见下文）；服务没有响应时不符合 | M3 实现；期望值都是常量，不需要应用记录 |
 | `f2b.files` | 本工具的 `jail.d/99-vps-hardening.local` 和 `fail2ban.local` 的 SHA-256 等于应用时的记录；`/etc/fail2ban` 下没有软件包和本工具以外的文件；`dpkg --verify fail2ban` 没有报告 `jail.conf`、`fail2ban.conf` 以外的改动（这两个文件由 `f2b.mainconf` 报告） | M3 新增；没有应用记录时跳过 |
 | `nft.service` | `nftables.service` 未启用 | 已实现 |
-| `uu.installed`、`uu.periodic`、`uu.reboot`、`uu.origins`、`uu.timers` | 已安装；两个 `APT::Periodic` 值为 1；不自动重启；来源列表与 FR-09 一致；两个 APT 定时器启用且运行 | 已实现 |
+| `uu.installed`、`uu.periodic`、`uu.reboot`、`uu.origins`、`uu.timers` | 已安装；两个 `APT::Periodic` 值为 1；不自动重启；来源列表与 FR-09 一致；两个 APT 定时器启用（`enabled`）且运行 | 已实现；v0.15 起启用只接受 `enabled`（需求 D60） |
 | `boundary.container`、`boundary.xui-bbr` | 没有 Docker 或 Podman；没有 `/etc/sysctl.d/99-bbr-x-ui.conf` | 已实现 |
 | `reboot.required` | 存在 `/var/run/reboot-required` | 警告 |
 
 `ufw.rules` 用 `ufw status` 而不用 `ufw show added`：后者丢失地址族，只放行 IPv4 的 `proto udp to 0.0.0.0/0 port 8443` 显示为 `ufw allow 8443/udp`，与两个地址族都放行的规则无法区分（第 8.4 节）。`ufw status` 只在 UFW 启用时列出规则，未启用时 `ufw.rules` 与 `ufw.active` 一起报告不符合。预检的 `new-host.ufw` 反过来用 `ufw show added`：UFW 未启用时 `ufw status` 不列出规则，而预检只需要知道有没有已添加的规则，不需要地址族。
+
+受管单元的启用（v0.15，需求 D60）：`ufw.service`、`f2b.service`、`uu.timers` 只接受 `systemctl is-enabled` 输出的 `enabled`。应用后这 4 个单元都是 `enabled`（第 2.5 节；`ufw.service` 的例外见第 9 节），其他值都与应用后的状态不同：`enabled-runtime` 重启后消失；`disabled`、`masked` 开机不再启动；`static`、`indirect` 等不经 `[Install]` 的链接开机启动。不论改动是否已经造成危害都判不符合，与摘要的判定相同。v0.14 及以前 `ufw.service` 没有检查，另两项把这些值都算作启用：`disable` 或 `mask` 而不加 `--now` 时，当前的规则和服务照常，`verify` 通过，下次开机才失效（第 8.26 节）。`nft.service` 判定的是未启用，仍用较宽的判定，把这些值都算作启用，偏向报错。
 
 Fail2ban 各项的输出顺序为 `f2b.installed`、`f2b.service`、`f2b.config`、`f2b.jails`、`f2b.values`、`f2b.files`、`f2b.mainconf`。`f2b.values` 的读取和比较：
 
@@ -536,7 +539,7 @@ Fail2ban 各项的输出顺序为 `f2b.installed`、`f2b.service`、`f2b.config`
 - **管道与 `pipefail`。** 读取端不提前退出（不用 `head`、`grep -q` 截断输出），否则写入端会因 SIGPIPE 失败，在 `pipefail` 下被误判。输出短也一样：Bash 的 `printf` 逐行写出，十几行的文本就会出现（第 8.24 节）。已取得的文本用 here-string 匹配（v0.13，需求 D56）。剩下的 `grep -q` 都读 awk 的短输出（`sshd_values`）或只有一行的输出（`find -quit`）：Debian 13 的 mawk 输出 15 行接 `grep -q`，重复 20000 次没有漏判（第 8.24 节）。`apt-config dump` 的输出缓存后复用。
 - **sshd 生效值。** 用 `sshd -T -C user=<用户>,host=vps-hardening.invalid,addr=192.0.2.1,laddr=192.0.2.2,lport=22` 按用户求值，结果按用户缓存。地址取自文档保留地址。按一个连接求值不能代表所有来源，所以有 `Match` 块的配置被拒绝（`sshd.match`、`ssh.match`，需求 D36）；没有 `Match` 块时，求得的值与这些连接参数无关。v0.5 写的是"使 `Match Address` 块按普通外部来源求值"，这只覆盖了一个来源（需求 D34）。
 - **包管理器是否在运行。** 以锁的持有者（`lslocks`）为准，再加 apt、dpkg 进程名。进程名逐个交给 `pgrep -x`：整个模式超过 15 个字符时 pgrep 不匹配任何进程，用 `|` 拼接的模式会静默失效。不能用进程名判断 unattended-upgrades：它的关机辅助进程常驻，进程名截断后与升级进程相同。
-- **ERR 陷阱。** 只在主 shell 中把意外失败转换为退出码 3。`$(...)` 和管道中的命令也会触发陷阱，其中包括预期的非零状态（如查询未安装的单元），所以子 shell 中不处理；真正的失败经退出状态回到主 shell 后再判定。
+- **ERR 陷阱。** 只在主 shell 中把意外失败转换为退出码 3。`$(...)` 和管道中的命令也会触发陷阱，其中包括预期的非零状态（如查询未安装的单元），所以子 shell 中不处理；真正的失败经退出状态回到主 shell 后再判定。只有单独赋值的 `$(...)` 能这样回到主 shell：作为另一个命令的参数时（如 `state_set k "$(f)"`），其中的失败不改变那个命令的状态。要检查的值先赋给单独声明的变量（`local` 与赋值写在同一行时，状态是 `local` 的），再检查（v0.15，需求 D60，第 8.26 节）。
 - **启发式判定。** `root.keys` 只计入格式明确的公钥行（带选项的行即使实际能登录也不计入），`new-host.fail2ban` 以文件存在为准，`dpkg --verify` 无法校验时视为有改动。两者在不确定时都判为不符合，宁可误拒，不会误放行。
 - **awk 的正则。** awk 程序中不用正则区间（`{n}`、`{m,n}`）：Debian 12 默认的 mawk 1.3.4 20200120 不支持，这样的模式匹配不到定长的文本（第 8.10 节）。需要定长时用 `length()` 加字符类判断。Bash 的 `[[ =~ ]]` 不受影响。
 - **sshd 配置的读取（v0.7）。** `preflight.sh` 中的 `VH_SSHD_AWK` 是一组 awk 函数，`sshd.include`、`sshd.dropin-order`、`sshd.match` 和 `ssh.match` 都用它读取 sshd 配置，按 sshd 的规则（需求第 10.1 节）：`sshd_keyword` 照 `load_server_config()` 和 `process_server_config_line_depth()` 去掉首尾空白，照 `strdelim()` 取出关键字并转为小写；`sshd_args` 照 `argv_split()` 拆分其余部分。这几段代码在 OpenSSH 9.2p1、9.6p1、10.0p2 中相同；Debian、Ubuntu 的补丁是否改动了它们没有逐一核对，VT-02 在三个平台上用 `sshd -T -C` 确认 sshd 应用了这些写法的块（第 7.3 节）。`sshd_config_files` 按行记录已列出的文件，路径中的空白不会使两个文件混同。函数在 bash 的单引号字符串中，单引号写作 `"\047"`。
@@ -547,11 +550,11 @@ Fail2ban 各项的输出顺序为 `f2b.installed`、`f2b.service`、`f2b.config`
 
 | 文件 | 作用 |
 |---|---|
-| `tests/vm.py` | 运行器侧：下载并校验官方云镜像，生成 cloud-init 种子，启动 QEMU，按阶段在客体中执行测试，收集证据。改编自 vps-tuning 的 `tests/platform-vm.py` |
+| `tests/vm.py` | 运行器侧：下载并校验官方云镜像，生成 cloud-init 种子，启动 QEMU，按阶段在客体中执行测试，收集证据。改编自 vps-tuning 的 `tests/platform-vm.py`。套件正常结束时，收集证据的命令返回非零、超时、归档不能读取或不含 `vh-evidence/`，以及虚拟机已经退出、没有收集过证据，都使测试失败，不写完成标记 `COMPLETED`；套件已经失败时仍尽力收集，收集失败只记录，保留原来的错误（v0.15，需求 D60） |
 | `tests/guest/m1.sh` | 客体侧：M1 各阶段的准备、用例和判定，以及 `apply` 被预检拒绝的用例 |
 | `tests/guest/m2.sh` | 客体侧：M2 的状态记录、第二来源、登录和端口检查、恢复后的核对；复用 `m1.sh` 的函数 |
 | `tests/guest/m3.sh` | 客体侧：M3 的 Fail2ban、自动更新、3X-UI 共存和漂移用例；复用 `m2.sh` 的函数 |
-| `tests/guest/m4.sh` | 客体侧：VT-27、VT-61、VT-63、VT-64 和 VT-72 本地部分的准备、用例和判定；复用 `m2.sh` 的函数。VT-60 在 matrix 的主流程中执行，回滚后的核对复用 `m2.sh` 的阶段 |
+| `tests/guest/m4.sh` | 客体侧：VT-27、VT-61、VT-63、VT-64、VT-65 和 VT-72 本地部分的准备、用例和判定；复用 `m2.sh` 的函数。VT-60 在 matrix 的主流程中执行，回滚后的核对复用 `m2.sh` 的阶段 |
 | `tests/platform-images.json` | 镜像 URL 和摘要，与 vps-tuning 同源 |
 | `tests/static.sh` | 不需要虚拟机的检查：shell 和 Python 语法、安装脚本的资产清单和版本（第 2.12 节）、LF 行尾、通用秘密特征 |
 | `.github/workflows/static.yml` | 运行 `tests/static.sh` 和 ShellCheck 0.11.0（固定容器镜像）。ShellCheck 只报告命令行列出的文件，不报告经 `-x` 跟随的文件，所以列出全部模块和 `install.sh` |
@@ -601,10 +604,10 @@ M4 的测试再增加以下内容：
 
 | 套件 | 平台 | 内容 |
 |---|---|---|
-| matrix | 三平台 amd64；arm64 按需（参考） | 准备；核实转发连接在客体中的来源地址；VT-01；VT-50 的未加固部分；sshd 探测研究。然后在同一客体上执行 M2 的主流程：应用 → 三种被拒绝的确认 → 从新会话确认 → 核对 → 隧道 → 重启后核对 → 回滚（VT-60）。待确认、确认后和回滚后各执行一次 `status` |
+| matrix | 三平台 amd64；arm64 按需（参考） | 准备；核实转发连接在客体中的来源地址；VT-01；VT-50 的未加固部分；sshd 探测研究。然后在同一客体上执行 M2 的主流程：记录基线之前加一个 shell 没有登记、有公钥和免密 sudo 的账户（v0.15，需求 D61）；应用 → 三种被拒绝的确认 → 从新会话确认 → 核对 → 隧道 → 重启后核对 → 回滚（VT-60）。待确认、确认后和回滚后各执行一次 `status` |
 | recovery | 三平台 amd64；arm64 按需（参考） | 准备好的磁盘为底，两个覆盖层：确认超时（时限 3 分钟，应用后不确认）；待确认期间从应用会话重启 |
 | negative | 三平台 amd64 | 准备；VT-02、VT-04；关机后以准备好的磁盘为底，S1～S4 各用一个覆盖层磁盘启动（VT-03），S2 的覆盖层在启用 UFW 之前先检查两种未启用时的情形；S2 中检查 UFW 是否过滤转发连接；再用一个覆盖层执行 VT-23，之后在这个覆盖层上解除对 `fail2ban.service` 的屏蔽，执行 VT-27 的 `apply` 部分，再次应用并确认（VT-64 的第四种情况），然后执行 VT-27 的 `ports`、`confirm` 和 `rollback` 部分（v0.13），这个覆盖层上从 VT-23 起全程持续探测（VT-25）；最后用一个覆盖层执行 VT-72 的本地部分 |
-| hardened | 三平台 amd64；arm64 按需（参考） | 准备，记录基线；不声明公开端口执行 `apply`，从新会话确认，核对记录中没有公开端口、UFW 只放行 22/tcp（v0.8，需求 D41）；VT-30、VT-31、VT-33 和 VT-35、VT-32、VT-34、VT-40；安装 3X-UI（VT-55 第一部分、VT-50、VT-71）；`ports --add 443/tcp --add 2096/tcp`（3X-UI 的入站和订阅端口），从新会话确认，核对状态为"已应用"、声明为 `443/tcp/both 2096/tcp/both`、没有残留的自动恢复、UFW 规则与声明逐条一致，`verify` 通过（v0.8）；经隧道打开面板；重启后核对（VT-55 第二部分）。以上全程持续探测（VT-25）。关机后以这块磁盘为底，12 个覆盖层各注入一项漂移（VT-51）；另有 VT-61、VT-63、VT-64 各一个覆盖层 |
+| hardened | 三平台 amd64；arm64 按需（参考） | 准备，记录基线；不声明公开端口执行 `apply`，从新会话确认，核对记录中没有公开端口、UFW 只放行 22/tcp（v0.8，需求 D41）；VT-30、VT-31、VT-33 和 VT-35、VT-32、VT-34、VT-40；安装 3X-UI（VT-55 第一部分、VT-50、VT-71）；`ports --add 443/tcp --add 2096/tcp`（3X-UI 的入站和订阅端口），从新会话确认，核对状态为"已应用"、声明为 `443/tcp/both 2096/tcp/both`、没有残留的自动恢复、UFW 规则与声明逐条一致，`verify` 通过（v0.8）；经隧道打开面板；重启后核对（VT-55 第二部分）。以上全程持续探测（VT-25）。关机后以这块磁盘为底，15 个覆盖层各注入一项漂移（VT-51，v0.15 增加 3 项）；另有 VT-61、VT-63、VT-64 各一个覆盖层，VT-61 的覆盖层上先执行 VT-65（v0.15） |
 
 M1 用例的判定要点：
 
@@ -618,7 +621,7 @@ M1 用例的判定要点：
 M2 用例的判定要点（验证计划第 4.2、4.3 节）：
 
 - VT-10：`apply` 退出码为 0，输出"加固已应用，等待确认"；从新的 root 会话执行 `confirm`，输出"已确认"，随后的 `verify` 退出码为 0；状态为"已应用"，标记、开机兜底单元和定时器都已撤除；重启后 boot ID 改变，`verify` 退出码仍为 0。
-- VT-11：默认用户用自己的密钥从第二来源登录被拒绝；root 的 `authorized_keys`、`/etc/sudoers`、`/etc/sudoers.d` 的摘要和 `sudo -l -U <默认用户>` 的输出与基线一致。
+- VT-11：默认用户用自己的密钥从第二来源登录被拒绝；root 的 `authorized_keys`、`/etc/sudoers`、`/etc/sudoers.d` 的摘要和 `sudo -l -U <默认用户>` 的输出与基线一致。v0.15 增加一个账户（需求 D61）：shell 为 `/bin/bash` 的副本 `/usr/local/bin/vh-shell`（不在 `/etc/shells` 中），有一把 Ed25519 公钥和 `NOPASSWD` 规则；应用前用这把密钥从第二来源能登录（对照），应用后记录中的被禁账户正好是默认用户和它，以它的身份执行 `sshd -T -C`，它在 `DenyUsers` 中、密码认证为 `no`，用这把密钥登录被拒绝。
 - VT-12：测试密码和客体私钥的内容不出现在状态目录、客体证据和基线之后的 journal 中；状态目录中不出现 root 的完整公钥；测试驱动另外扫描全部证据，查找测试密码和客户端私钥。v0.13 起这项扫描在套件失败时也执行，并包括串口日志（需求 D55）。
 - VT-13：以 root 和默认用户分别执行 `sshd -T -C`：密码和键盘交互认证为 `no`，root 的 `permitrootlogin` 为 `without-password`、`pubkeyauthentication` 为 `yes`，默认用户在 `DenyUsers` 中；`50-cloud-init.conf` 仍含 `PasswordAuthentication yes`；从第二来源，root 密钥登录在 IPv4 和 IPv6 上都成功，root 密码、默认用户密码和密钥登录都被拒绝；22 端口的监听地址与基线一致。
 - VT-14：`ufw status verbose` 的默认策略符合第 4 节；规则与声明的 6 条完全一致（`--open 443/tcp --open 2096/tcp/ipv6 --open 8443/udp/ipv4`）；从第二来源，443 在 IPv4 和 IPv6 上都可达，2096 只在 IPv6 上可达，2053、8080、80 在两个地址族上都不可达；从运行器经 QEMU 转发，只有 443 可达。
@@ -667,6 +670,9 @@ M3 用例的判定要点（验证计划第 4.4～4.7 节）：
 | `ufw-framework` | 在 `before6.rules` 的 `COMMIT` 之前加一条放行 8081/tcp 的规则（v0.6） | `ufw.framework` |
 | `ufw-userrules` | 在 `user.rules` 的 `COMMIT` 之前直接写入一条放行 8081/tcp 的规则，没有 tuple 注释（v0.6） | `ufw.userrules`；`ufw.rules` 仍通过 |
 | `reboot-required` | 创建 `/var/run/reboot-required` | 退出码 0，只有警告 `reboot.required` |
+| `ufw-disable` | `systemctl disable ufw.service`，不加 `--now`；之后 UFW 仍为启用（v0.15） | `ufw.service` |
+| `ufw-mask` | `systemctl mask ufw.service`，不加 `--now`；之后 UFW 仍为启用（v0.15） | `ufw.service` |
+| `shell-account` | 新建与 matrix 套件相同的账户：shell 没有登记，有公钥和免密 sudo（v0.15） | `accounts.nopasswd` |
 
   菜单经标准输入应答，使用安装时已校验的 `/usr/bin/x-ui`（等于 tag 中的 `x-ui.sh`，验证计划第 3.5 节）；菜单在输入意外时会递归调用自身，所以每次限时 300 秒。
 
@@ -675,6 +681,7 @@ M4 用例的判定要点（验证计划第 4.8、4.9 节）：
 - VT-60：在 matrix 主流程的重启核对之后执行，全程持续探测。标准输入不是终端时退出码为 2；经伪终端回滚，输出"已恢复到应用前的配置"和保留的软件包，并有 `[WARN] rollback.password`（测试镜像应用前允许密码认证，第 7.2 节）；root 和默认用户都能用密钥登录。随后按 VT-20 的判据核对，原因为"手工回滚"：没有残留的自动恢复，`sshd -T`、UFW、受管文件、受管单元与基线一致，软件包保留，没有秘密泄露。`status` 显示"已回滚"和原因；再次回滚退出码为 1，输出"已经回滚"。
 - `status`（VT-62 的 M4 部分）：待确认时退出码为 0，显示"待确认"和确认截止时间；确认后显示"已应用"、受管文件的前后摘要和隧道命令（`ssh -N -L`）。
 - VT-61：回滚前记录 3X-UI 的文件摘要（`/usr/local/x-ui`、`/usr/bin/x-ui`、`/etc/x-ui`、`x-ui.service` 及其 drop-in 目录；排除数据库、指标文件和运行中生成的 Xray 配置 `bin/config.json`）和 `x-ui.service` 的启用、运行状态；回滚全程持续探测；回滚后按 VT-60 的判据核对，3X-UI 的文件和服务状态不变，面板只监听 `127.0.0.1:2053`。
+- VT-65（v0.15，需求 D60）：在 VT-61 的覆盖层上、VT-61 之前执行。把 root 的 `authorized_keys` 复制为 `/root/.ssh/vh-keys`，在本工具的 SSH 片段末尾加 `AuthorizedKeysFile .ssh/vh-keys`（`sshd -t` 通过，`sshd -T` 给出这个值），重新加载 sshd，清空 `authorized_keys`；root 仍能用密钥登录。经伪终端执行 `rollback`：退出码为 1，`root.keys` 不符合，输出"回滚前检查有不符合项"，没有出现两项确认的提示，`rollback.sshd` 通过；前后的工具记录相同，`authorized_keys` 仍为空。之后放回 `authorized_keys` 和片段，重新加载 sshd，删除 `vh-keys`，`verify` 通过，root 能登录。随后 VT-61 的回滚通过，作为对照。
 - VT-63：变更前 UFW 正好放行 22、443、2096（各两个地址族），从第二来源 443、2096 可达，8443、9443、2053 不可达。8 种请求被拒绝或取消：标准输入不是终端、`--add 22/tcp`、`--add 2053/tcp`、`--add 80/tcp`（v0.6）、`--add 443/tcp/ipv4`、`--remove 8080/tcp` 的退出码为 2；在 `user6.rules` 的 `COMMIT` 之前直接写入一条规则后 `--add 8443/tcp`，退出码为 1，`ports.userrules` 不符合、`ports.rules` 通过，之后放回原文件（v0.6）；在提示处取消的为 1；前后的工具记录相同（第 7.2 节）。`--add 8443/tcp --remove 2096/tcp` 输出"端口变更已生效，等待确认"，待确认期间 root 能登录；从新会话确认后状态为"已应用"，声明为 `443/tcp/both 8443/tcp/both`，没有残留的自动恢复和端口变更的快照，UFW 规则与声明逐条一致，443、8443 可达，2096、2053、9443 不可达，`verify` 通过，前后摘要一致。再执行 `--add 9443/tcp --confirm-timeout 3` 而不确认：状态为"端口变更待确认"，标记的种类为 `ports`，9443 可达，`status` 显示变更前的公开端口，`verify` 退出码为 0（`state` 警告，`ufw.rules` 通过）；测试驱动最多等 900 秒，状态回到"已应用"，原因为"确认超时"，两个规则文件的摘要等于确认后的，9443 不可达，`verify` 通过。全程持续探测。
 - VT-64：用与记录一致的参数（`--open 443/tcp --open 2096/tcp`；v0.8 起这两个端口在 hardened 套件中由 `ports` 新增）再次 `apply`，退出码为 0，输出"未做任何变更"，没有出现两项确认的提示；只换公开端口（`--open 443/tcp`），退出码为 1，`apply.inputs` 不符合；手工 `ufw allow 8080/tcp` 后再次 `apply`，退出码为 1，`ufw.rules` 和 `ufw.userrules` 不符合。每次前后的工具记录相同。第四种情况在 negative 套件中：VT-23 回退后解除屏蔽，`apply --open 443/tcp` 进入待确认，从新会话确认后状态为"已应用"，上次的回滚记录已删除，没有残留的自动恢复，`verify` 通过。
 - VT-72（本地部分）：在从未运行过本工具的覆盖层上执行（状态目录和 `/usr/local/bin/vps-hardening` 都不存在）。未绑定的安装脚本退出码为 1，相对路径为 2；正常安装为 0，入口和模块目录为 0755，12 个模块为 0644，属主 root，没有残留的临时文件，与发行版目录逐个相同，版本正确，已安装的工具与仓库副本的 `preflight` 输出和退出码相同；重复安装输出"未做变更"；被篡改的资产、被篡改的清单（重新生成而没有更新内置摘要）、缺少的资产、存在待确认标记、操作锁被占用，都以退出码 1 拒绝，已安装的文件不变；本地改动一个已安装的模块后再次安装，恢复为发行版的内容。正常安装的结尾提示下一步执行 `preflight`；最后一种情况执行前写入只含 `status=applied` 的状态文件，结尾提示改为 `verify`，之后删除状态目录（v0.6）。v0.7 增加 8 种情况（需求 D40），都以安装后的记录（权限、属主、摘要和残留的临时文件）判定。重复安装之后，依次把 `common.sh` 改为 0600、模块目录改为 0700、入口的属主改为 65534:65534，每次安装都输出"安装完成"，记录与正常安装后相同。故障用测试替身 `/usr/local/sbin/mv` 注入：安装脚本的 PATH 以 `/usr/local/sbin` 开头；环境变量 `VH_TEST_FAULT` 为 `lib-fail`、`lib-term`、`bin-fail`、`bin-term` 时，替身让暂存目录或临时入口的改名失败，或在改名后向安装脚本发 SIGTERM，其余调用都交给 `/bin/mv`。在新机上用 `bin-fail` 安装：退出码为 1，输出"已恢复为安装前的状态"，入口、模块目录和临时文件都不存在。替换之前先在已安装的 `status.sh` 末尾加一行，记下记录，四种故障各安装一次：退出码都为 1，输出同上，记录都与故障前相同。
@@ -711,7 +718,7 @@ VT-61 比较 3X-UI 的文件时同样排除数据库和指标文件，另排除�
 
 来源：GitHub Actions 运行 `39389558685`（v0.2 的代码，commit `e3de443`，2026-10-20），9 个作业全部通过；只改动文档的复核运行 `39391825013`（commit `4925946`）同样全部通过，VT-01～VT-04、VT-50 的结果一致。v0.1 的代码对应运行 `38438964687`（commit `63dda79`，2026-10-13）和代码未变的复核运行 `38503522626`（commit `7ef6e0f`），同样全部通过。证据构件 `vm-matrix-*`、`vm-negative-*` 保留 14 天。按验证计划第 6 节逐项核对了构件，不以 CI 状态为准。证据层次为"虚拟机生命周期"，不代表真实主机。除注明的以外，第 8.1 节的结果来自运行 `39389558685`。
 
-第 8.1～8.3 节是 M1 的证据，第 8.4～8.6 节是 M2 的证据，第 8.7～8.9 节是 M3 的证据，第 8.10～8.12 节是 M4 的证据，第 8.13 节是修复（v0.6）的证据，第 8.14 节是预发行版和 VT-72 公开部分的证据，第 8.15 节是发布后修复（v0.7）的证据，第 8.16 节是预发行版 `v0.1.0-rc.2` 和 VT-72 公开部分的证据，第 8.17 节是推荐流程（v0.8）的证据，第 8.18 节是预发行版 `v0.1.0-rc.3` 和 VT-72 公开部分的证据，第 8.19 节是真实主机验收（M5）的证据，第 8.20 节是需求 D47 的修复（v0.10）的证据，第 8.21 节是预发行版 `v0.1.0-rc.4` 和 VT-72 公开部分的证据，第 8.22 节是在测试 VPS 上复核这一修复的证据，第 8.23 节是正式版 `v0.1.0`、VT-72 公开部分和在测试 VPS 上升级的证据，第 8.24 节是 Astra 对 `v0.1.0` 的评审之后的修复（v0.13）的证据，第 8.25 节是正式版 `v0.1.1`、VT-72 公开部分和在测试 VPS 上升级的证据。按需求 D26，arm64 只作参考：第 8.1、8.2 节按当时的需求记录了 M1 的 arm64 结果，保持原样；M2 起 arm64 的结果放在附录 A。
+第 8.1～8.3 节是 M1 的证据，第 8.4～8.6 节是 M2 的证据，第 8.7～8.9 节是 M3 的证据，第 8.10～8.12 节是 M4 的证据，第 8.13 节是修复（v0.6）的证据，第 8.14 节是预发行版和 VT-72 公开部分的证据，第 8.15 节是发布后修复（v0.7）的证据，第 8.16 节是预发行版 `v0.1.0-rc.2` 和 VT-72 公开部分的证据，第 8.17 节是推荐流程（v0.8）的证据，第 8.18 节是预发行版 `v0.1.0-rc.3` 和 VT-72 公开部分的证据，第 8.19 节是真实主机验收（M5）的证据，第 8.20 节是需求 D47 的修复（v0.10）的证据，第 8.21 节是预发行版 `v0.1.0-rc.4` 和 VT-72 公开部分的证据，第 8.22 节是在测试 VPS 上复核这一修复的证据，第 8.23 节是正式版 `v0.1.0`、VT-72 公开部分和在测试 VPS 上升级的证据，第 8.24 节是 Astra 对 `v0.1.0` 的评审之后的修复（v0.13）的证据，第 8.25 节是正式版 `v0.1.1`、VT-72 公开部分和在测试 VPS 上升级的证据，第 8.26 节是 Astra 对 `v0.1.1` 的评审之后的修复（v0.15）的证据。按需求 D26，arm64 只作参考：第 8.1、8.2 节按当时的需求记录了 M1 的 arm64 结果，保持原样；M2 起 arm64 的结果放在附录 A。
 
 ### 8.1 结果
 
@@ -1530,6 +1537,54 @@ VT-02 的新步骤（第 7.3 节）也在这台主机上用 `m1.sh` 中的函数
 - 结论：公开地址上的资产与标签所在的提交一致；从 `v0.1.0` 升级只替换文件，不改变已应用的配置和状态记录。
 - 置信度：高。资产逐字节比较；升级在一台真实主机上执行，升级前后的输出和摘要直接比较。
 
+### 8.26 Astra 对 v0.1.1 的评审和修复
+
+**评审。** 用户于 2026-10-28 转来 Astra 对本仓库的评审和它随后的自检（需求 U40）。基线为 `e921bdc`（拉取请求 #30 的合并提交），其中 `bin`、`lib`、`tests`、`.github` 和 `install.sh` 与 `v0.1.1` 的标签提交 `22cedcc` 相同。评审共 3 项 Major、2 项 Minor，Astra 没有修改仓库，也没有操作 VPS。复核逐项对照源码核实，5 项都成立；自检没有撤回任何一项，收窄了第 1、3、5 项的说法（需求 D59）：
+
+| 项 | 位置（基线） | 评审意见和自检 | 复核 |
+|---|---|---|---|
+| 1，Major | `lib/vps-hardening/rollback.sh:50`、`rollback.sh:92`、`probe.sh:115` | 回滚前的公钥检查按当前配置求值；回滚后的配置只检查 `permitrootlogin`、`pubkeyauthentication` 和 `port`。自检收窄为：本工具的片段中有与密钥相关的改动之后回滚 | 成立。`rollback.sh` 的头注释写的是按回滚后的配置检查，第 2.10 节的表却写"同 preflight"，代码随了表。预检要求片段在应用前不存在，片段也不写 `AuthorizedKeysFile` 和算法，所以两份配置只在片段被手工改动后才不同；这种改动报告为 `ssh.dropin` 不符合，而工具对漂移的提示正是回滚。回滚前要求保持当前会话，新会话登录失败时可以从它修复 |
+| 2，Major | `probe.sh:51`、`verify.sh:104` | `login_accounts` 只算 shell 列在 `/etc/shells` 中的账户，而 sshd 不看这个文件；有公钥和免密 sudo、shell 没有登记的账户不被禁止登录，`verify` 也不报告。自检核对了三个平台的软件包和默认 PAM 配置 | 成立。OpenSSH 9.2p1 `auth.c` 第 119～140 行（`allowed_user()`）只检查 shell 存在、是普通文件、有执行位，shell 为空时按 `/bin/sh`；Debian 12 的 sshd PAM 模板中没有 `pam_shells`。复核补充：shell 为空的账户同样被跳过。镜像默认用户的 shell 是 `/bin/bash`，实际暴露主要在应用之后新建的账户，即 `verify` 的漂移检查 |
+| 3，Major | `verify.sh:189`、`probe.sh:12` | `verify_ufw` 不检查 `ufw.service` 的开机启用；`unit_enabled` 把 `enabled-runtime` 也算作启用。自检把可靠的反例收窄为持久的 `mask`，不能断言所有 `disabled` 都会失效；核对了 UFW 软件包没有网络接口的钩子，SysV 脚本也不会另生成启动入口 | 成立。应用执行 `systemctl enable ufw.service`（第 2.5 节），期望的状态有定义；`nft.service` 已检查启用状态，两处不一致。不同意收窄为 `mask`：按自检的核对，开机拉起 `ufw.service` 的只有 `multi-user.target.wants` 中的链接，`disable` 删除的正是它（推断，置信度中高，没有重启实测）。更主要的是判定依据为与应用后的状态一致，不必先证明危害（第 4 节） |
+| 4，Minor | `state.sh:170` | `state_set "digest.$i" "$(file_digest "$1") $1"` 不检查 `file_digest` 的结果，摘要算不出时写入没有摘要的记录。自检："之后的 `verify` 能发现异常摘要" | 成立，已复现（见下文）。`verify` 只对 8 个受管文件中的 6 个比较摘要：这 6 个确认之后一直报告漂移，只能回滚后重新应用；`/etc/default/ufw`、`/etc/ufw/ufw.conf` 的坏记录只显示在 `status` 中，"`verify` 能发现"对它们不成立。两种情况都偏向报错。根因是入口 ERR 陷阱的注释假设子 shell 中的失败会经退出状态回到主 shell，命令替换作为参数时不成立；其余 `state_set "$(...)"` 的调用是时间戳或有意的回退值 |
+| 5，Minor | `tests/vm.py:269`、`tests/vm.py:1013` | `Guest.collect()` 不检查返回码，超时也被忽略，之后照样写入 `COMPLETED`。自检收窄为：只在测试成功、收集失败时出现，不会把失败的测试判为成功 | 成立，与自检一致。用例的判定来自客体脚本的退出码和主机侧日志，不依赖归档；但验证计划第 6 节按归档判定，空归档加完成标记会误导。多数客体退出时不调用 `poweroff()`，成功路径上的收集在没有异常的 `Guest.__exit__` 中，所以按 `__exit__` 的异常参数区分 |
+
+**其他建议。** 区分当前配置、回滚后的配置、运行状态和重启后的状态：对第 1、3 项成立，第 2 项是登录资格的判定与 sshd 不同，不属此类。在虚拟机门禁之外加一层轻量的反例测试：不单独建，第 1～3 项依赖真实的 sshd 和 systemd，加在现有的虚拟机套件中，第 4 项以本地复现为证据，第 5 项本身就是测试框架。`ports` 单一地址族的虚拟机覆盖：成立，第 9 节已记录这一缺口，另行处理。文档拆分和 `verify --json`：暂缓。
+
+**修复。** 拉取请求 #31，分开提交（需求 D60、D61）：
+
+| 提交 | 内容 |
+|---|---|
+| `39e4a72` | 第 3 项：`verify` 新增 `ufw.service`，`f2b.service`、`uu.timers` 改用只接受 `enabled` 的 `unit_enabled_at_boot`（第 4 节）。第 2 项：`login_accounts` 按 `allowed_user()` 的 shell 判定（第 3 节）。VT-51 的 `ufw-disable`、`ufw-mask`、`shell-account`；matrix 主流程在记录基线之前加 shell 没有登记的账户（第 7.3 节） |
+| `33f0f12` | 第 1 项：`authorized_keys_files`、`scan_root_keys`、`check_root_keys` 可以读一份 `sshd -T` 输出；`rollback_checks` 先求回滚后的配置，再用它检查公钥（第 2.10 节）。VT-65 |
+| `adf09a1` | 第 4 项：`record_digest` 先单独取摘要；入口 ERR 陷阱的注释（第 6 节） |
+| `8e37aa6` | 第 5 项：`collect` 在套件正常结束时严格检查，已带着异常时尽力收集（第 7.1 节） |
+| `40d57ab` | CodeRabbit 的意见（见下文）：设置了 `ChrootDirectory` 时，`login_accounts` 不看 shell（第 3 节） |
+
+**本地核对。** 在 Windows 的 Git Bash 中进行，用替身代替 Debian 的命令，证据层次低于虚拟机：
+- 修复前的 `record_digest` 在 `set -Eeuo pipefail` 和与入口相同的 ERR 陷阱下，`sha256sum` 失败时返回 0，状态文件中写入 `digest.0= <路径>`；修复后返回 1，不写记录。
+- `login_accounts`：shell 为没有登记的可执行文件、shell 为空的账户列出，shell 不存在或没有执行位的不列出。
+- `check_root_keys`：读当前配置时通过；读回滚后的配置（`AuthorizedKeysFile` 指向没有公钥的文件）时不符合，说明为"回滚后的配置下，root 的 authorized_keys 中没有公钥"。
+- `unit_enabled_at_boot`：只有 `enabled` 为真，`enabled-runtime`、`static`、`masked`、`disabled` 和空输出都为假。
+- `tests/vm.py` 用一个导入它的脚本核对：套件正常结束时，收集命令返回 255、归档为空、超时都抛出错误，有效的归档通过；套件已带异常时只打印，`__exit__` 不吞掉原来的异常；QEMU 已经退出、没有收集过时抛出错误。
+- `tests/static.sh` 通过。
+
+**运行。** VM 运行 `40813743732`（拉取请求 #31 的头提交 `8e37aa6`，作业检出的是它合并到 `master`（`e921bdc`）的合并提交）的 12 个作业第一次尝试全部通过；静态检查运行 `40813743727`（含 ShellCheck 0.11.0）通过。证据层次为"虚拟机生命周期"，arm64 没有运行。按归档核对了 matrix 和 hardened 的 6 个构件，都有 `COMPLETED`：
+- matrix，三个平台相同：shell 没有登记的账户 `vhshell` 在应用前能用它的密钥从第二来源登录（对照），预检的 `sudo.nopasswd-accounts` 列出默认用户和它；应用后两者的 `ssh.denied` 都通过，用它的密钥登录被拒绝，`accounts.nopasswd` 通过。`ufw.service`、`f2b.service`、`uu.timers` 在确认后和重启后都通过；未加固时（VT-50）`uu.timers` 仍不符合，原因同第 8.1 节，Ubuntu 上 `ufw.service` 已通过（UFW 预装且已启用）。客体证据的归档各有 123～124 个条目。
+- hardened，三个平台相同：`ufw-disable`、`ufw-mask` 的 `verify` 以退出码 1 结束，不符合项只有 `ufw.service`（"为 disabled／masked，不是 enabled"），UFW 仍为启用；`shell-account` 只有 `accounts.nopasswd`。VT-65 的 `rollback` 退出码为 1：`root.keys` 不符合（"回滚后的配置下，root 的 authorized_keys 中没有公钥"），`rollback.snapshot`、`rollback.sshd`、`rollback.ufw` 通过，`rollback.password` 为警告，输出"回滚前检查有不符合项，未做任何变更"，没有出现确认提示；前后的工具记录相同。放回之后 `verify` 退出码为 0，随后 VT-61 的回滚完成（退出码 0）。
+- 作业时长：matrix 4～6 分钟，recovery 和 negative 5～6 分钟，hardened 19～21 分钟，离 45 分钟的上限很远。
+- 之后的运行，都在第一次尝试全部通过：只改文档的 `1243642` 上，VM 运行 `40821017141`、静态检查 `40821017140`，只看了作业结果；`40d57ab`（见下文的代码评审）上，VM 运行 `40823898098`、静态检查 `40823898096`。`40823898098` 的 6 个 matrix 和 hardened 构件都有 `COMPLETED`，上面几项的结果相同。
+
+**代码评审。** CodeRabbit 对 #31（`1243642`）提了三处意见，经核实都成立：
+- Major：OpenSSH 的 `allowed_user()` 只在 `ChrootDirectory` 为空或 `none` 时检查 shell，`login_accounts` 却总按 shell 判定。复核在综合评估中认为预检不允许 `Match` 块就排除了这种配置，这一判断不成立：全局的 `ChrootDirectory` 不在 `Match` 块中。`40d57ab` 改为与 sshd 相同：读 root 的生效值，不为 `none` 时除 root 外的账户都算在内（第 3 节，需求 D61）。这种配置在新机上很少见，它同样把 root 的会话限制在那个目录中；有这种配置时，shell 在主机上不存在的账户登录后也在那个目录中，能否用主机上的 sudo 取决于目录中的内容（推断）。本地核对：值为 `none`、`NONE`、没有这一项和 `sshd -T` 失败时，列出的账户不变；值为 `/srv/%u` 时，shell 不存在或没有执行位的账户也列出。虚拟机中没有这种配置的用例。
+- Minor：需求 v1.11 的状态中漏了 FR-13（受管文件摘要的记录），已补上。
+- Minor：README"待定事项"中 v0.14 一段的"本仓库目前没有待用户决定的事项"与新加的一段矛盾，改为"当时"。
+
+这一轮没有对照运行：修复前的行为以复核的源码分析、Astra 的隔离复现和本地复现为依据，CI 中没有用修复前的代码跑这些新用例。
+
+- 结论：回滚前按回滚后的配置检查 root 的公钥；shell 没有登记的账户同样被禁止经 SSH 登录，应用后新建的由 `verify` 报告；`ufw.service` 被停用或屏蔽时 `verify` 报告不符合；三个平台的结果相同。matrix 中的对照登录说明，三个平台上 sshd 和默认的 PAM 配置都接受 shell 没有登记在 `/etc/shells` 中的账户，与需求 D61 的依据一致。
+- 置信度：高，只到虚拟机层次。没有在真实主机上运行；`disable`、`mask` 之后没有重启，下次开机不加载规则仍是推断（第 9 节）；`record_digest` 的修复只有本地核对。
+
 ## 9. 已知限制与后续
 
 - 已在 M2 解决的 M1 遗留项：
@@ -1586,6 +1641,10 @@ VT-02 的新步骤（第 7.3 节）也在这台主机上用 `m1.sh` 中的函数
   - 直接编辑后又执行 `ufw reload` 或 `ufw enable` 的，仍然发现不了：两者先执行 `ufw-init start` 载入整个文件，再按已解析的规则重写两个文件（`frontend.py` 的 `set_enabled`，`backend_iptables.py` 的 `start_firewall` 调用 `update_logging`，2026-10-22 在测试 VPS 上的 0.36.2-9 只读核对）。结果是规则生效，文件恢复原样，摘要一致，`ufw status` 也不显示；UFW 下次启动（例如重启）时这一行不再载入。要发现这种情况得比较内核中生效的规则，其中还有 Fail2ban 等其他来源的链，没有实现。
   - `ufw logging` 改日志级别时也会重写两个文件（文件中的 `### LOGGING ###` 一节随级别变化），`ufw.userrules` 报告不符合，虽然规则没有变化。改回原来的级别（默认 `low`）后文件应当恢复原样（推断：重写的结果由规则和级别决定，VT-63 中恢复后的摘要等于确认后的，没有对日志级别单独测试）。
   - ufw 软件包升级如果改变了重写文件的格式，下一次 `ufw reload`、`ufw enable` 或增删规则后 `ufw.userrules` 会报告不符合（推断，目前没有观察到）。
+- `apply` 只在 `ufw.service` 不是启用状态时执行 `systemctl enable`，这里仍用较宽的 `unit_enabled`（第 2.5 节）。应用前为 `enabled-runtime` 等时不写入开机链接，应用后 `ufw.service` 不符合（v0.15，第 4 节）。新机上 UFW 软件包安装后即为 `enabled`（第 8.4 节），这种情况要管理员事先以 `--runtime` 启用；结果是报告不符合而不是漏报，所以只记录、不修改。
+- `ufw.service` 只检查启用状态（需求 D60）。`disable` 或 `mask` 之后下次开机不加载规则，依据的是 Debian 的单元文件和 Astra 自检对 SysV 脚本的核对，没有做重启实测；VT-51 只核对 `verify` 的报告。另有单元经 `Wants=` 拉起 `ufw.service` 时，`disabled` 的它开机仍会启动，`verify` 照样报告不符合，偏向报错。
+- 登录账户按 `allowed_user()` 中 shell 的判定确定（需求 D61），sshd 因其他原因拒绝的账户（锁定、过期、`AllowUsers` 等）也算在内，有公钥和免密 sudo 时同样写入 `DenyUsers`，多拒绝没有坏处。判定依据 OpenSSH 9.2p1 的源码，Debian 13 和 Ubuntu 24.04 的 OpenSSH 中这段代码没有逐一核对；三个平台上 shell 没有登记的账户都能登录，是行为上的证据（第 8.26 节）。设置了 `ChrootDirectory` 时不看 shell 的分支只有本地核对，虚拟机中没有这样的配置。
+- VT-65 只改了 `AuthorizedKeysFile`；在片段中改算法（`PubkeyAcceptedAlgorithms`）走同一条路径（回滚后的配置），没有单独测试。`record_digest` 的修复只有本地核对，没有虚拟机中的注入用例（需求 D60，第 8.26 节）。
 
 ## 附录 A arm64 参考结果
 

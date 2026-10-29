@@ -187,7 +187,7 @@ verify_ssh_record() {
 }
 
 verify_ufw() {
-  local status changed=()
+  local status enablement changed=()
 
   if ! have ufw; then
     report FAIL ufw.installed 'UFW 未安装'
@@ -209,6 +209,16 @@ verify_ufw() {
     else
       report FAIL ufw.defaults "默认策略不符合：$(printf '%s\n' "$status" | grep '^Default:' || printf '未知')；$(grep '^DEFAULT_FORWARD_POLICY=' /etc/default/ufw 2>/dev/null || printf 'DEFAULT_FORWARD_POLICY 未设置')"
     fi
+  fi
+  # Only ufw.service loads the rules at boot, and apply enables it. While the
+  # rules stay loaded, ufw.active passes even when the unit no longer starts
+  # (requirements D60). It need not be running: on Debian 13 it is not after
+  # `ufw enable`.
+  enablement="$(systemctl is-enabled -- ufw.service 2>/dev/null)" || true
+  if [ "$enablement" = enabled ]; then
+    report PASS ufw.service 'ufw.service 已启用，开机时加载规则'
+  else
+    report FAIL ufw.service "ufw.service 为 ${enablement:-未知}，不是 enabled：下次开机时不会加载 UFW 的规则"
   fi
 
   if grep -qx 'IPV6=yes' /etc/default/ufw 2>/dev/null; then
@@ -333,7 +343,7 @@ verify_fail2ban() {
   fi
   report PASS f2b.installed 'Fail2ban 已安装'
 
-  if unit_enabled fail2ban.service && unit_active fail2ban.service; then
+  if unit_enabled_at_boot fail2ban.service && unit_active fail2ban.service; then
     report PASS f2b.service 'fail2ban 服务已启用并在运行'
   else
     report FAIL f2b.service 'fail2ban 服务没有启用或没有运行'
@@ -487,7 +497,7 @@ verify_auto_updates() {
   fi
 
   for timer in apt-daily.timer apt-daily-upgrade.timer; do
-    if ! unit_enabled "$timer" || ! unit_active "$timer"; then
+    if ! unit_enabled_at_boot "$timer" || ! unit_active "$timer"; then
       bad+=("$timer")
     fi
   done

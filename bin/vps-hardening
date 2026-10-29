@@ -38,7 +38,9 @@ fi
 # An unexpected command failure must not look like a FAIL result (exit 1).
 # Only the main shell decides: inside $(...) or a pipeline the trap would also
 # fire for expected non-zero statuses, and a real failure there reaches the
-# main shell through the exit status anyway. Mid-apply, the hook restores first.
+# main shell through the exit status anyway, but only when $(...) is assigned
+# on its own: in the arguments of another command its status is lost, so take
+# such a value apart first (requirements D60). Mid-apply, the hook restores first.
 vh_on_error() {
   [ "$BASH_SUBSHELL" -eq 0 ] || return 0
   printf '[x] 内部错误：%s 处的命令以状态 %s 结束：%s\n' "$2" "$1" "$3" >&2

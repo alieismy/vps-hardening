@@ -16,6 +16,13 @@ unit_enabled() {
   return 1
 }
 
+# True when the unit is enabled in /etc and so starts at every boot. Unlike
+# unit_enabled, enabled-runtime (gone after a reboot), static and the like do
+# not count: the managed units are enabled by apply (requirements D60).
+unit_enabled_at_boot() {
+  [ "$(systemctl is-enabled -- "$1" 2>/dev/null)" = enabled ]
+}
+
 unit_active() {
   systemctl is-active --quiet -- "$1"
 }
@@ -48,22 +55,46 @@ sshd_value() {
   awk -v key="$1" '$1 == key && !seen { print $2; seen = 1 }'
 }
 
-# Login accounts other than root: a shell listed in /etc/shells.
+# Accounts other than root whose shell lets sshd log them in, as allowed_user()
+# in OpenSSH's auth.c decides: the shell (empty means /bin/sh) is a regular
+# file with an execute bit; -x tests that as root. /etc/shells plays no part
+# there (requirements D61). Like sshd, skip the shell test when ChrootDirectory
+# is set: then every account counts. The Match check leaves only a global
+# value, so root's evaluation stands for all; when sshd -T fails, the shell
+# test applies and the sshd checks report the failure. Accounts sshd refuses
+# for other reasons stay in: denying them as well changes nothing.
 login_accounts() {
-  local name _pw _uid _gid _gecos _home shell
+  local name _pw _uid _gid _gecos _home shell chroot
+  chroot="$(sshd_effective root | sshd_value chrootdirectory)" || chroot=''
   while IFS=: read -r name _pw _uid _gid _gecos _home shell; do
     [ "$name" != root ] || continue
-    grep -qxF -- "$shell" /etc/shells 2>/dev/null || continue
-    printf '%s\n' "$name"
+    shell="${shell:-/bin/sh}"
+    if [ -n "$chroot" ] && [ "${chroot,,}" != none ]; then
+      printf '%s\n' "$name"
+    elif [ -f "$shell" ] && [ -x "$shell" ]; then
+      printf '%s\n' "$name"
+    fi
   done < <(getent passwd)
 }
 
-# Expand AuthorizedKeysFile tokens (%h %u %U %%) for one user.
+# sshd_config_of USER [FILE]: sshd -T output for USER, read from FILE when
+# given (rollback evaluates the configuration the restore leaves), otherwise
+# the current configuration.
+sshd_config_of() {
+  if [ -n "${2-}" ]; then
+    cat -- "$2"
+  else
+    sshd_effective "$1"
+  fi
+}
+
+# authorized_keys_files USER [FILE]: expand AuthorizedKeysFile tokens
+# (%h %u %U %%) for one user, under the configuration sshd_config_of gives.
 authorized_keys_files() {
-  local user="$1" home uid token path
+  local user="$1" config="${2-}" home uid token path
   home="$(getent passwd "$user" | cut -d: -f6)"
   uid="$(id -u "$user" 2>/dev/null)" || return 0
-  sshd_effective "$user" | sshd_values authorizedkeysfile | while IFS= read -r token; do
+  sshd_config_of "$user" "$config" | sshd_values authorizedkeysfile | while IFS= read -r token; do
     [ "$token" != none ] || continue
     path="${token//%%/$'\001'}"
     path="${path//%h/$home}"
@@ -110,11 +141,12 @@ key_type_accepted() {
 # whose algorithm sshd accepts. Lines with options do not count: cloud-init
 # disables root login with a command= prefix. Other non-comment lines are
 # counted in VH_ROOT_KEYS_SKIPPED. Sets globals, so call it in the main shell.
+# With FILE, the files and algorithms come from that sshd -T output.
 VH_ROOT_KEYS=()
 VH_ROOT_KEYS_SKIPPED=0
 scan_root_keys() {
-  local file line type fpr accepted keyfile="$VH_TMP/root-key" seen=' '
-  accepted=" $(sshd_effective root | sshd_value pubkeyacceptedalgorithms | tr ',' ' ') "
+  local config="${1-}" file line type fpr accepted keyfile="$VH_TMP/root-key" seen=' '
+  accepted=" $(sshd_config_of root "$config" | sshd_value pubkeyacceptedalgorithms | tr ',' ' ') "
   while IFS= read -r file; do
     [ -f "$file" ] || continue
     while IFS= read -r line || [ -n "$line" ]; do
@@ -141,7 +173,7 @@ scan_root_keys() {
       seen="$seen$fpr "
       VH_ROOT_KEYS+=("$type $fpr")
     done <"$file"
-  done < <(authorized_keys_files root)
+  done < <(authorized_keys_files root "$config")
   rm -f -- "$keyfile"
 }
 

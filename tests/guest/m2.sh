@@ -18,6 +18,12 @@ readonly NETNS=vh-src
 # neither sshd's penalties nor a Fail2ban ban can affect a later check.
 readonly DST4=192.0.2.1 DST6=2001:db8::1 OK4=192.0.2.2 OK6=2001:db8::2
 readonly BAD_ROOT_PW=192.0.2.3 BAD_USER_PW=192.0.2.4 BAD_USER_KEY=192.0.2.5
+# After the M3 sources (tests/guest/m3.sh).
+readonly BAD_SHELL_KEY=192.0.2.12
+# Requirements D61: an account with a key and password-less sudo whose login
+# shell sshd accepts (a regular executable file) although /etc/shells does not
+# list it. The lifecycle flow adds it before apply, VT-51 after.
+readonly SHELL_USER=vhshell SHELL_PATH=/usr/local/bin/vh-shell
 # The tool's VH_MANAGED_FILES and VH_MANAGED_UNITS (lib/vps-hardening/state.sh).
 readonly MANAGED_FILES=(
   /etc/ssh/sshd_config.d/00-vps-hardening.conf
@@ -158,7 +164,7 @@ netns_up() {
   ip -6 addr add "$DST6/64" dev vh-host nodad
   ip link set vh-host up
   ip -n "$NETNS" link set lo up
-  for addr in "$OK4" "$BAD_ROOT_PW" "$BAD_USER_PW" "$BAD_USER_KEY"; do
+  for addr in "$OK4" "$BAD_ROOT_PW" "$BAD_USER_PW" "$BAD_USER_KEY" "$BAD_SHELL_KEY"; do
     ip -n "$NETNS" addr add "$addr/24" dev vh-peer
   done
   ip -n "$NETNS" -6 addr add "$OK6/64" dev vh-peer nodad
@@ -470,6 +476,23 @@ phase_m2_prepare() {
   log "guest keys added: RSA for root, Ed25519 for $user"
 }
 
+add_shell_account() {
+  install -m 0755 /bin/bash "$SHELL_PATH"
+  ! grep -qxF -- "$SHELL_PATH" /etc/shells || fail "$SHELL_PATH is listed in /etc/shells"
+  useradd -m -s "$SHELL_PATH" "$SHELL_USER"
+  install -d -m 0700 -o "$SHELL_USER" -g "$SHELL_USER" "/home/$SHELL_USER/.ssh"
+  install -m 0600 -o "$SHELL_USER" -g "$SHELL_USER" "$KEYS/ed25519.pub" "/home/$SHELL_USER/.ssh/authorized_keys"
+  printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$SHELL_USER" >/etc/sudoers.d/90-vh-shell
+  chmod 0440 /etc/sudoers.d/90-vh-shell
+  visudo -cqf /etc/sudoers.d/90-vh-shell || fail 'the sudoers file of the shell account does not parse'
+  sudo -n -l -U "$SHELL_USER" | grep -q NOPASSWD || fail "$SHELL_USER lacks password-less sudo"
+  log "$SHELL_USER: shell $SHELL_PATH (not in /etc/shells), Ed25519 key, password-less sudo"
+}
+
+phase_m2_shell_account() {
+  add_shell_account
+}
+
 phase_m2_baseline() {
   settle
   quiet_apt_upgrades
@@ -508,6 +531,8 @@ phase_m2_before() {
   expect_login ctl-root-key-v6 ok "$OK6" "root@$DST6" key rsa
   expect_login ctl-user-key ok "$BAD_USER_KEY" "$user@$DST4" key ed25519
   expect_login ctl-user-password ok "$BAD_USER_PW" "$user@$DST4" password
+  # Requirements D61: sshd lets the account in although /etc/shells does not list its shell.
+  expect_login ctl-shell-key ok "$BAD_SHELL_KEY" "$SHELL_USER@$DST4" key ed25519
   for port in 443 2096 2053 8080 80; do
     expect_port "ctl-v4-$port" open "$OK4" "$DST4" "$port"
     expect_port "ctl-v6-$port" open "$OK6" "$DST6" "$port"
@@ -546,6 +571,14 @@ phase_m2_applied() {
   sshd_is root pubkeyauthentication yes
   awk '$1 == "denyusers" { for (i = 2; i <= NF; i++) print $i }' "$phase_dir/state/sshd-$user.txt" |
     grep -qx -- "$user" || fail "$user is not in DenyUsers"
+  # Requirements D61: the account whose shell /etc/shells does not list is denied too.
+  [ "$(state_value denied_users | tr ' ' '\n' | sort | paste -sd ' ')" = "$(printf '%s\n' "$user" "$SHELL_USER" | sort | paste -sd ' ')" ] ||
+    fail "denied accounts: $(state_value denied_users), expected $user and $SHELL_USER"
+  /usr/sbin/sshd -T -C "user=$SHELL_USER,host=vh-test.invalid,addr=198.51.100.10,laddr=192.0.2.1,lport=22" \
+    >"$phase_dir/state/sshd-$SHELL_USER.txt"
+  sshd_is "$SHELL_USER" passwordauthentication no
+  awk '$1 == "denyusers" { for (i = 2; i <= NF; i++) print $i }' "$phase_dir/state/sshd-$SHELL_USER.txt" |
+    grep -qx -- "$SHELL_USER" || fail "$SHELL_USER is not in DenyUsers"
   grep -qx 'PasswordAuthentication yes' /etc/ssh/sshd_config.d/50-cloud-init.conf ||
     fail '50-cloud-init.conf was changed'
   same_as_baseline listen22.txt
@@ -579,6 +612,7 @@ phase_m2_applied() {
   expect_login root-password denied "$BAD_ROOT_PW" "root@$DST4" password
   expect_login user-password denied "$BAD_USER_PW" "$user@$DST4" password
   expect_login user-key denied "$BAD_USER_KEY" "$user@$DST4" key ed25519
+  expect_login shell-key denied "$BAD_SHELL_KEY" "$SHELL_USER@$DST4" key ed25519
 }
 
 phase_m2_rebooted() {
@@ -646,6 +680,7 @@ m2_main() {
   install -d -m 0700 "$phase_dir"
   case "$phase" in
     m2-prepare) phase_m2_prepare ;;
+    m2-shell-account) phase_m2_shell_account ;;
     m2-baseline) phase_m2_baseline ;;
     m2-listen) phase_m2_listen "$@" ;;
     m2-panel-loopback) phase_m2_panel_loopback ;;
