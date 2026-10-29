@@ -164,10 +164,13 @@ file_digest() {
 
 # record_digest PATH: the state's digest entry for one managed file (FR-13).
 record_digest() {
-  local i
+  local i digest
   for i in "${!VH_MANAGED_FILES[@]}"; do
     [ "${VH_MANAGED_FILES[$i]}" = "$1" ] || continue
-    state_set "digest.$i" "$(file_digest "$1") $1" || return 1
+    # Taken apart from state_set: in its arguments a failed digest would go
+    # unnoticed and leave an entry without one (requirements D60).
+    digest="$(file_digest "$1")" || return 1
+    state_set "digest.$i" "$digest $1" || return 1
   done
 }
 
