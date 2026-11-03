@@ -41,6 +41,7 @@ cmd_apply() {
     printf '已取消，未做任何变更。\n'
     exit "$VH_EXIT_FAIL"
   fi
+  apply_endpoint_recheck || refuse "交互期间 SSH 入口变化：$VH_SSH_ERROR；未做变更"
   apply_run
 }
 
@@ -85,8 +86,8 @@ apply_plan() {
   if [ "${#VH_DENIED_USERS[@]}" -gt 0 ]; then
     printf '；禁止 %s 经 SSH 登录（有免密 sudo）' "$(join_by '、' "${VH_DENIED_USERS[@]}")"
   fi
-  printf '\n- UFW：拒绝入站、允许出站、拒绝转发；放行 22/tcp%s；面板端口 %s 不放行\n' \
-    "$([ "${#opens[@]}" -eq 0 ] || printf '、%s' "$(join_by '、' "${opens[@]}")")" "$VH_IN_PANEL_PORT"
+  printf '\n- UFW：拒绝入站、允许出站、拒绝转发；放行 %s/tcp%s；面板端口 %s 不放行\n' \
+    "$VH_SSH_PORT" "$([ "${#opens[@]}" -eq 0 ] || printf '、%s' "$(join_by '、' "${opens[@]}")")" "$VH_IN_PANEL_PORT"
   printf -- '- Fail2ban：只保护 SSH（normal 模式，5 次失败封禁 1 天）\n'
   printf -- '- 自动安全更新：每天更新并安装安全更新，不自动重启\n'
   printf -- '- 确认时限 %s 分钟：期间须从新的 SSH 会话以 root 执行 confirm，否则自动恢复\n' "$VH_IN_TIMEOUT"
@@ -152,6 +153,9 @@ apply_run() {
   VH_APPLY_STAGE=prepare
   VH_ABORT_HOOK=apply_abort
   state_set version "$VH_VERSION"
+  state_set ssh_port "$VH_SSH_PORT"
+  state_set ssh_activation "$VH_SSH_ACTIVATION"
+  state_set ssh_listeners "$VH_SSH_LISTENERS"
   state_set started_at "$(utc_now)"
   state_set panel_port "$VH_IN_PANEL_PORT"
   state_set open "${VH_IN_OPEN[*]}"
@@ -165,6 +169,7 @@ apply_run() {
   printf '\n== 1/6 记录初始状态并安装软件包\n'
   units_record
   install_missing_packages
+  ssh_endpoint_check_record || apply_fail "软件包安装后 SSH 入口不一致：$VH_SSH_ERROR"
   snapshot_take "$VH_SNAPSHOT_DIR" "${VH_MANAGED_FILES[@]}" || apply_fail '无法记录受管文件的快照'
 
   printf '== 2/6 布置自动恢复（%s 分钟）\n' "$VH_IN_TIMEOUT"
@@ -251,8 +256,9 @@ sshd_expect() {
 
 apply_ssh() {
   local user
+  ssh_endpoint_check_record || apply_fail "SSH 写入前入口不一致：$VH_SSH_ERROR"
   sshd_dropin_content | write_managed "$VH_SSHD_DROPIN_DIR/$VH_SSHD_DROPIN_NAME"
-  bounded /usr/sbin/sshd -t >"$VH_TMP/sshd-t.err" 2>&1 ||
+  bounded /usr/sbin/sshd "${VH_SSHD_ARGS[@]}" -t >"$VH_TMP/sshd-t.err" 2>&1 ||
     apply_fail "sshd 配置检查失败：$(head -n 1 "$VH_TMP/sshd-t.err")"
   sshd_cache_clear
   sshd_effective root >/dev/null || apply_fail "无法读取 sshd 生效配置：$(head -n 1 "$VH_TMP/sshd-T.err")"
@@ -260,7 +266,6 @@ apply_ssh() {
   sshd_expect root passwordauthentication no
   sshd_expect root kbdinteractiveauthentication no
   sshd_expect root pubkeyauthentication yes
-  sshd_expect root port 22
   sshd_expect root allowtcpforwarding yes local
   for user in "${VH_DENIED_USERS[@]}"; do
     sshd_effective "$user" | sshd_values denyusers | grep -qxF -- "$user" ||
@@ -268,7 +273,9 @@ apply_ssh() {
     sshd_expect "$user" passwordauthentication no
     sshd_expect "$user" kbdinteractiveauthentication no
   done
+  ssh_endpoint_check_record || apply_fail "SSH 配置写入后入口不一致：$VH_SSH_ERROR"
   bounded_change systemctl try-reload-or-restart ssh.service || apply_fail 'sshd 重新加载失败'
+  ssh_endpoint_check_record discover-after-reload || apply_fail "SSH 重载后入口不一致：$VH_SSH_ERROR"
   printf 'sshd 已按新配置重新加载\n'
 }
 
@@ -302,16 +309,17 @@ ufw_configure() {
   bounded_change ufw default deny incoming || return 1
   bounded_change ufw default allow outgoing || return 1
   bounded_change ufw default deny routed || return 1
-  bounded_change ufw allow 22/tcp comment "$VH_UFW_COMMENT" || return 1
+  bounded_change ufw allow "$VH_SSH_PORT/tcp" comment "$VH_UFW_COMMENT" || return 1
   for spec in "${VH_IN_OPEN[@]}"; do
     ufw_port_rule "$spec" || return 1
   done
 }
 
 apply_ufw() {
+  ssh_endpoint_check_record || apply_fail "UFW 写入前 SSH 入口不一致：$VH_SSH_ERROR"
   ufw_configure >>"$VH_LOG_FILE" 2>&1 || apply_fail "UFW 规则写入失败，详见 $VH_LOG_FILE"
-  # FR-05: 22/tcp must be allowed before the firewall is enabled.
-  ufw_added_rules | ufw_rules_allow_port 22 || apply_fail 'UFW 中没有放行 22/tcp 的规则，不会启用防火墙'
+  # FR-05: both family rules must exist before enabling the firewall.
+  ufw_ssh_rules_ready || apply_fail "UFW 未完整放行 $VH_SSH_PORT/tcp，不会启用防火墙"
   if ! unit_enabled ufw.service; then
     bounded_change systemctl enable --quiet ufw.service || apply_fail '无法设置 ufw.service 开机启动'
   fi
@@ -321,11 +329,11 @@ apply_ufw() {
 }
 
 f2b_jail_content() {
-  cat <<'EOF'
+  cat <<EOF
 # Managed by vps-hardening (requirements FR-08). verify reports any change.
 [sshd]
 enabled = true
-port = 22
+port = $VH_SSH_PORT
 protocol = tcp
 backend = systemd
 journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session
@@ -376,6 +384,7 @@ apply_fail2ban() {
   f2b_expect maxretry 5
   f2b_expect findtime 600
   f2b_expect bantime 86400
+  [ "$(f2b_get sshd action nftables port)" = "$VH_SSH_PORT" ] || apply_fail "Fail2ban 运行中的封禁动作端口不是 $VH_SSH_PORT"
   printf 'Fail2ban 已启用：sshd jail\n'
 }
 
@@ -438,4 +447,40 @@ apply_done_message() {
   printf '  %s confirm\n' "$VH_SELF"
   printf '到期未确认，或在此之前重启，都会自动恢复到应用前的配置。\n\n'
   print_tunnel_hint
+}
+
+# Compare the initial read-only result again after the interactive prompt.
+apply_endpoint_recheck() {
+  local port="$VH_SSH_PORT" activation="$VH_SSH_ACTIVATION" listeners="$VH_SSH_LISTENERS"
+  ssh_endpoint_discover || return 1
+  if [ "$VH_SSH_PORT" != "$port" ] || [ "$VH_SSH_ACTIVATION" != "$activation" ] ||
+    [ "$VH_SSH_LISTENERS" != "$listeners" ]; then
+    VH_SSH_ERROR='SSH 端口、监听或启动方式与预检不一致'
+    return 1
+  fi
+}
+
+# UFW stores v4/v6 rules separately even on IPv4-only hosts. Check the rule
+# generated by `ufw allow P/tcp` in each file, not only `ufw show added` (which
+# collapses the two address families before enable).
+ufw_ssh_rules_ready() {
+  local file chain
+  for file in /etc/ufw/user.rules /etc/ufw/user6.rules; do
+    [ -r "$file" ] || return 1
+    chain=ufw-user-input
+    [ "$file" != /etc/ufw/user6.rules ] || chain=ufw6-user-input
+    awk -v p="$VH_SSH_PORT" -v chain="$chain" '
+      $1 == "-A" && $2 == chain {
+        proto=0; port=0; accept=0; restricted=0
+        for (i=3;i<NF;i++) {
+          if ($i=="-p" && $(i+1)=="tcp") proto=1
+          if ($i=="--dport" && $(i+1)==p) port=1
+          if ($i=="-j" && $(i+1)=="ACCEPT") accept=1
+          if ($i=="-s" || $i=="-d" || $i=="-i") restricted=1
+        }
+        if (proto && port && accept && !restricted) found=1
+      }
+      END {exit found ? 0 : 1}
+    ' "$file" || return 1
+  done
 }

@@ -50,12 +50,12 @@ readonly TUNING_SYSCTLS=(
 )
 # The rules `ufw status` lists, runs of spaces squeezed, for the ports
 # tests/vm.py opens in the lifecycle flow (LIFECYCLE_OPEN there).
-readonly LIFECYCLE_RULES='22/tcp ALLOW IN Anywhere # vps-hardening
+readonly LIFECYCLE_RULES="$GUEST_SSH_PORT/tcp ALLOW IN Anywhere # vps-hardening
 443/tcp ALLOW IN Anywhere # vps-hardening
 8443/udp ALLOW IN Anywhere # vps-hardening
-22/tcp (v6) ALLOW IN Anywhere (v6) # vps-hardening
+$GUEST_SSH_PORT/tcp (v6) ALLOW IN Anywhere (v6) # vps-hardening
 443/tcp (v6) ALLOW IN Anywhere (v6) # vps-hardening
-2096/tcp (v6) ALLOW IN Anywhere (v6) # vps-hardening'
+2096/tcp (v6) ALLOW IN Anywhere (v6) # vps-hardening"
 
 state_value() {
   awk -v key="$1=" 'index($0, key) == 1 { print substr($0, length(key) + 1); exit }' "$STATE_DIR/state" 2>/dev/null
@@ -101,7 +101,7 @@ record_state() {
   user="$(default_user)"
   install -d -m 0700 "$dir"
   for account in root "$user"; do
-    /usr/sbin/sshd -T -C "user=$account,host=vh-test.invalid,addr=198.51.100.10,laddr=192.0.2.1,lport=22" \
+    /usr/sbin/sshd -T -C "user=$account,host=vh-test.invalid,addr=198.51.100.10,laddr=192.0.2.1,lport=$GUEST_SSH_PORT" \
       >"$dir/sshd-$account.txt"
   done
   ufw_state >"$dir/ufw.txt"
@@ -126,7 +126,7 @@ record_state() {
     find /etc/sudoers.d -type f -print0 | sort -z | xargs -0 -r sha256sum
     sudo -n -l -U "$user"
   } >"$dir/access.txt"
-  ss -H -ltn 'sport = :22' | awk '{print $4}' | sort >"$dir/listen22.txt"
+  ss -H -ltn "sport = :$GUEST_SSH_PORT" | awk '{print $4}' | sort >"$dir/listen-ssh.txt"
   cat /proc/sys/kernel/random/boot_id >"$dir/boot_id"
 }
 
@@ -186,7 +186,7 @@ src_login() {
   for _ in $(seq 12); do
     rc=0
     out="$(ip netns exec "$NETNS" env SSH_ASKPASS="$PRIVATE/askpass" SSH_ASKPASS_REQUIRE=force \
-      ssh -b "$bind" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 \
+      ssh -p "$GUEST_SSH_PORT" -b "$bind" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 \
       -o LogLevel=ERROR "${opts[@]}" "$dest" true </dev/null 2>&1)" || rc=$?
     if [ "$rc" -eq 0 ]; then
       printf 'ok\n'
@@ -574,14 +574,14 @@ phase_m2_applied() {
   # Requirements D61: the account whose shell /etc/shells does not list is denied too.
   [ "$(state_value denied_users | tr ' ' '\n' | sort | paste -sd ' ')" = "$(printf '%s\n' "$user" "$SHELL_USER" | sort | paste -sd ' ')" ] ||
     fail "denied accounts: $(state_value denied_users), expected $user and $SHELL_USER"
-  /usr/sbin/sshd -T -C "user=$SHELL_USER,host=vh-test.invalid,addr=198.51.100.10,laddr=192.0.2.1,lport=22" \
+  /usr/sbin/sshd -T -C "user=$SHELL_USER,host=vh-test.invalid,addr=198.51.100.10,laddr=192.0.2.1,lport=$GUEST_SSH_PORT" \
     >"$phase_dir/state/sshd-$SHELL_USER.txt"
   sshd_is "$SHELL_USER" passwordauthentication no
   awk '$1 == "denyusers" { for (i = 2; i <= NF; i++) print $i }' "$phase_dir/state/sshd-$SHELL_USER.txt" |
     grep -qx -- "$SHELL_USER" || fail "$SHELL_USER is not in DenyUsers"
   grep -qx 'PasswordAuthentication yes' /etc/ssh/sshd_config.d/50-cloud-init.conf ||
     fail '50-cloud-init.conf was changed'
-  same_as_baseline listen22.txt
+  same_as_baseline listen-ssh.txt
 
   # VT-14: policies and rules as declared, checked over IPv4 and IPv6.
   ufw status verbose >"$phase_dir/ufw-status.txt"
@@ -625,7 +625,7 @@ phase_m2_rebooted() {
   no_restore_armed
   wait_fail2ban
   verify_passes vt10-reboot-verify
-  same_as_baseline sysctl.txt qdisc.txt listen22.txt
+  same_as_baseline sysctl.txt qdisc.txt listen-ssh.txt
 }
 
 # m2-rolled-back MODE: VT-20 (timeout), VT-22 (boot), VT-23 (failure), and
@@ -647,7 +647,7 @@ phase_m2_rolled_back() {
   [ "$(state_value status)" = rolled-back ] || fail "status is $(state_value status), expected rolled-back"
   state_value rollback_reason | grep -qF -- "$reason" || fail "rollback reason: $(state_value rollback_reason)"
   no_restore_armed
-  same_as_baseline sshd-root.txt "sshd-$user.txt" sysctl.txt qdisc.txt apt.txt access.txt listen22.txt
+  same_as_baseline sshd-root.txt "sshd-$user.txt" sysctl.txt qdisc.txt apt.txt access.txt listen-ssh.txt
   check_ufw_restored
   check_files_restored
   check_units_restored "$mode"

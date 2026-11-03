@@ -12,14 +12,14 @@ fail() {
   exit 1
 }
 
-mapfile -t shell_files < <(git ls-files 'bin/*' 'lib/*.sh' 'tests/*.sh' install.sh)
+mapfile -t shell_files < <(git ls-files --cached --others --exclude-standard 'bin/*' 'lib/*.sh' 'tests/*.sh' install.sh)
 [ "${#shell_files[@]}" -gt 0 ] || fail 'no shell files found'
 for file in "${shell_files[@]}"; do
   bash -n "$file" || fail "bash -n: $file"
 done
 printf '[+] bash -n: %d files\n' "${#shell_files[@]}"
 
-mapfile -t python_files < <(git ls-files '*.py')
+mapfile -t python_files < <(git ls-files --cached --others --exclude-standard '*.py')
 python3 -B -c 'import ast, sys; [ast.parse(open(p, encoding="utf-8").read(), p) for p in sys.argv[1:]]' \
   "${python_files[@]}"
 printf '[+] Python syntax\n'
@@ -28,7 +28,7 @@ printf '[+] Python syntax\n'
 # command and those modules, at the command's version (NFR-07).
 # shellcheck disable=SC2016 # the pattern matches a literal $VH_LIB_DIR
 sourced="$(sed -n 's|^\. "\$VH_LIB_DIR/\(.*\)"$|\1|p' bin/vps-hardening | sort)"
-modules="$(git ls-files 'lib/vps-hardening/*.sh' | sed 's|.*/||' | sort)"
+modules="$(git ls-files --cached --others --exclude-standard 'lib/vps-hardening/*.sh' | sed 's|.*/||' | sort)"
 [ "$sourced" = "$modules" ] || fail 'bin/vps-hardening does not source exactly the modules in lib/vps-hardening'
 assets="$(sed -n '/^assets=(/,/^)/s/^  \([^ ]*\)$/\1/p' install.sh | sort)"
 [ "$assets" = "$(printf '%s\n' vps-hardening "$sourced" | sort)" ] ||

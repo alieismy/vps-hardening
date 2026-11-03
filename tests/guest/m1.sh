@@ -15,6 +15,15 @@ readonly KEYS=/opt/vh-keys
 readonly EVIDENCE=/root/vh-evidence
 # Never archived: the 3X-UI installer prints generated panel credentials here.
 readonly PRIVATE=/root/vh-private
+# Test fixture only: the provider baseline written by cloud-init, not a product override.
+GUEST_SSH_PORT=22
+if [ -r "$PRIVATE/ssh-port" ]; then read -r GUEST_SSH_PORT <"$PRIVATE/ssh-port"; fi
+[[ "$GUEST_SSH_PORT" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$GUEST_SSH_PORT" -le 65535 ] || exit 1
+readonly GUEST_SSH_PORT
+GUEST_SSH_MODE=service
+if [ -r "$PRIVATE/ssh-mode" ]; then read -r GUEST_SSH_MODE <"$PRIVATE/ssh-mode"; fi
+case "$GUEST_SSH_MODE" in service|socket) ;; *) exit 1 ;; esac
+readonly GUEST_SSH_MODE
 readonly XUI_INSTALL_SHA256=9684bae4f769b2127fcceceb4f200045657381311867529e6ba76c6b58e2825d
 # x-ui.sh of tag v3.10.2: install.sh fetches it from the tag as /usr/bin/x-ui,
 # and the release archive carries the same file.
@@ -234,9 +243,20 @@ make_keys() {
 }
 
 # The "typical worst-case new host" of verification plan 3.2.
+assert_ssh_mode() {
+  local mode="${1:-$GUEST_SSH_MODE}"
+  if [ "$mode" = socket ]; then
+    systemctl is-active --quiet ssh.socket || fail "fixture requires active ssh.socket"
+  else
+    ! systemctl is-active --quiet ssh.socket || fail "service fixture unexpectedly has active ssh.socket"
+    systemctl is-active --quiet ssh.service || fail "fixture requires active ssh.service"
+  fi
+}
+
 check_profile() {
   local user
   user="$(default_user)"
+  assert_ssh_mode
   [ -s /root/.ssh/authorized_keys ] || fail 'profile: root has no authorized key'
   if grep -q '^[^#]*command=' /root/.ssh/authorized_keys; then
     fail 'profile: root key is restricted'
@@ -279,7 +299,7 @@ phase_matrix() {
   expect_report vt01-preflight PASS reboot.required
 
   # Requirement D43: a pending reboot only warns. Without --open, UFW is to
-  # allow 22/tcp only (requirement D41).
+  # allow P/tcp only (requirement D41).
   touch /var/run/reboot-required
   snapshot vt01-reboot-before
   capture vt01-reboot "$VH" preflight
@@ -306,7 +326,9 @@ phase_matrix() {
     ubuntu) expect_report vt50-verify FAIL ufw.active ;;
   esac
   # The images already default to PermitRootLogin prohibit-password.
-  for id in ssh.permitrootlogin root.keys ssh.pubkey ssh.port nft.service boundary.container boundary.xui-bbr; do
+  expect_report vt50-verify SKIP ssh.port
+  expect_report vt50-verify SKIP ssh.listen
+  for id in ssh.permitrootlogin root.keys ssh.pubkey nft.service boundary.container boundary.xui-bbr; do
     expect_report vt50-verify PASS "$id"
   done
 }
@@ -399,7 +421,7 @@ quoted_files() {
 # connection from ADDR, with FILE over the main sshd config.
 sshd_max_auth_tries() {
   local out
-  out="$(bound "$1" /etc/ssh/sshd_config /usr/sbin/sshd -T -C "user=root,host=vps-hardening.invalid,addr=$2,laddr=192.0.2.2,lport=22")" &&
+  out="$(bound "$1" /etc/ssh/sshd_config /usr/sbin/sshd -T -C "user=root,host=vps-hardening.invalid,addr=$2,laddr=192.0.2.2,lport=$GUEST_SSH_PORT")" &&
     awk '$1 == "maxauthtries" { print $2 }' <<<"$out"
 }
 
@@ -471,11 +493,11 @@ phase_negative() {
   expect_rc vt02-dpkgproc 1
   expect_report vt02-dpkgproc FAIL apt.idle
 
-  input_case panel-22 2 '面板端口不能是 22' preflight --panel-port 22
+  input_case panel-ssh 2 "面板端口不能是 $GUEST_SSH_PORT" preflight --panel-port "$GUEST_SSH_PORT"
   input_case panel-zero 2 '面板端口不合法' preflight --panel-port 0
   input_case panel-high 2 '面板端口不合法' preflight --panel-port 65536
   input_case open-panel 2 '与面板端口相同' preflight --open 2053/tcp
-  input_case open-22 2 '公开端口不能是 22' preflight --open 22/tcp
+  input_case open-ssh 2 "公开端口不能是 $GUEST_SSH_PORT" preflight --open "$GUEST_SSH_PORT/tcp"
   input_case open-zero 2 '公开端口格式不合法' preflight --open 0/tcp
   input_case open-high 2 '公开端口超出范围' preflight --open 65536/udp
   input_case open-noproto 2 '公开端口格式不合法' preflight --open 443
@@ -622,7 +644,7 @@ phase_s2() {
   existing_host_case s2-inactive new-host.ufw
   expect_text vt03-s2-inactive 'UFW 未启用，但已有 1 条规则'
   expect_report vt03-s2-inactive PASS new-host.ufw-framework
-  ufw allow 22/tcp
+  ufw allow "$GUEST_SSH_PORT/tcp"
   ufw allow 8080/tcp
   ufw --force enable
   existing_host_case s2 new-host.ufw

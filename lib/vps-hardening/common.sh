@@ -22,7 +22,7 @@ readonly VH_PACKAGES=(ufw fail2ban nftables python3-systemd unattended-upgrades)
 readonly VH_SSHD_MANAGED='permitrootlogin passwordauthentication kbdinteractiveauthentication pubkeyauthentication denyusers'
 # Placeholder connection for sshd -T -C, which evaluates the configuration for
 # one user. Match blocks are refused (FR-04), so the address decides nothing.
-readonly VH_SSHD_PROBE_CONN='host=vps-hardening.invalid,addr=192.0.2.1,laddr=192.0.2.2,lport=22'
+readonly VH_SSHD_PROBE_CONN='host=vps-hardening.invalid,addr=192.0.2.1,laddr=192.0.2.2'
 # UFW files whose rules `ufw status` does not show; the package keeps the
 # originals in /usr/share/ufw (FR-06).
 readonly VH_UFW_FRAMEWORK=(before.rules before6.rules after.rules after6.rules before.init after.init)

@@ -132,3 +132,58 @@ jobs:
           name: vm-hardened-${{ matrix.platform }}-${{ matrix.arch }}
           path: .tmp/vm/evidence/
           retention-days: 14
+
+  # D64: the same lifecycle/recovery/coexistence suites run with guest P=2222.
+  # E=12222 is deliberately different. The original P=22 jobs above remain.
+  non22:
+    name: non22 ${{ matrix.suite }} ${{ matrix.platform }} amd64
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [debian12, debian13, ubuntu2404]
+        suite: [matrix, recovery, negative, hardened, non22]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils
+          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
+      - name: Run with actual non-22 guest SSH
+        run: python3 tests/vm.py --suite '${{ matrix.suite }}' --platform '${{ matrix.platform }}' --arch amd64 --ssh-port 2222 --runner-ssh-port 12222
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vm-non22-${{ matrix.suite }}-${{ matrix.platform }}-amd64
+          path: .tmp/vm/evidence/
+          retention-days: 14
+
+  # VT-98 uses the released v0.1.2 code, not a new state relabelled as old.
+  # Fetch history for its pinned commit; the fixture verifies its version.
+  legacy:
+    name: legacy ${{ matrix.platform }} amd64
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [debian12, debian13, ubuntu2404]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils
+          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
+      - name: Upgrade only after the actual old tool confirms or restores
+        run: python3 tests/vm.py --suite non22 --platform '${{ matrix.platform }}' --arch amd64 --ssh-port 22 --runner-ssh-port 12222
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vm-legacy-${{ matrix.platform }}-amd64
+          path: .tmp/vm/evidence/
+          retention-days: 14

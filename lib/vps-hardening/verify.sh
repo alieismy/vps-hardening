@@ -15,8 +15,25 @@ cmd_verify() {
 run_verify_checks() {
   if verify_gate; then
     verify_state
-    verify_accounts
-    verify_ssh
+    VH_SSH_BASELINE_OK=no
+    if have_record; then
+      if ssh_endpoint_report ssh.endpoint; then
+        VH_SSH_BASELINE_OK=yes
+      fi
+    elif ssh_endpoint_discover; then
+      report INFO ssh.endpoint "发现本机 SSH $VH_SSH_PORT/tcp（$VH_SSH_ACTIVATION），没有可比较的应用基线"
+      skip_without_state ssh.port
+      skip_without_state ssh.listen
+    else
+      report FAIL ssh.endpoint "$VH_SSH_ERROR"
+    fi
+    if [ "${VH_SSHD_VERIFIED-}" = yes ]; then
+      verify_accounts
+      verify_ssh
+    else
+      report SKIP accounts.nopasswd '无法核实实际 SSH 启动参数，不使用默认配置代替'
+      report SKIP ssh.config '无法核实实际 SSH 启动参数，不使用默认配置代替'
+    fi
     verify_ufw
     verify_fail2ban
     verify_nftables
@@ -126,7 +143,6 @@ expect_sshd() {
 }
 
 verify_ssh() {
-  local addrs v4=0 v6=0
 
   if ! sshd_effective root >/dev/null; then
     report FAIL ssh.config "无法读取 sshd 生效配置：$(head -n 1 "$VH_TMP/sshd-T.err")"
@@ -139,7 +155,6 @@ verify_ssh() {
   expect_sshd ssh.kbdinteractive root kbdinteractiveauthentication no
   expect_sshd ssh.pubkey root pubkeyauthentication yes
   expect_sshd ssh.forwarding root allowtcpforwarding yes local
-  expect_sshd ssh.port root port 22
   if have_record; then
     verify_ssh_record
   else
@@ -147,20 +162,15 @@ verify_ssh() {
   fi
   check_root_keys
 
-  # A dual-stack socket (Ubuntu's ssh.socket) is listed as *.
-  addrs=" $(tcp_listen_addresses 22 | paste -sd ' ') "
-  case "$addrs" in
-    *' 0.0.0.0 '* | *' * '*) v4=1 ;;
-  esac
-  case "$addrs" in
-    *' [::] '* | *' * '*) v6=1 ;;
-  esac
-  if [ "$v4" -eq 0 ]; then
-    report FAIL ssh.listen '22 端口没有在全部 IPv4 地址上监听'
-  elif [ "$v6" -eq 0 ]; then
-    report WARN ssh.listen '22 端口只在 IPv4 上监听'
-  else
-    report PASS ssh.listen '22 端口在 IPv4 和 IPv6 上监听'
+  if [ "${VH_SSH_BASELINE_OK-}" = yes ]; then
+    report PASS ssh.port "有效 SSH 端点的唯一端口为记录 $VH_SSH_PORT"
+    case " $VH_SSH_LISTENERS " in
+      *' ipv6,'*) report PASS ssh.listen 'SSH 监听地址及地址族符合记录（含 IPv6）' ;;
+      *) report WARN ssh.listen 'SSH 监听符合记录，但基线没有 IPv6 监听' ;;
+    esac
+  elif have_record; then
+    report SKIP ssh.port 'SSH 基线未通过核对，详见 ssh.endpoint'
+    report SKIP ssh.listen 'SSH 基线未通过核对，详见 ssh.endpoint'
   fi
 }
 
@@ -247,18 +257,22 @@ verify_ufw() {
   fi
 }
 
-# FR-06: exactly 22/tcp and the declared ports, none for the panel port. The
+# FR-06: exactly the recorded SSH port and declared business ports. The
 # declaration, not the rules seen at apply, is the reference: rules added to
 # UFW before apply must not count as declared. During a port change the record
 # holds the new ports.
 verify_ufw_record() {
   local panel open=() changed=()
   read -r -a open <<<"$(state_get open)"
-  expected_rule_tokens 22/tcp/both "${open[@]}" >"$VH_TMP/ufw.expected"
+  if [ "${VH_SSH_BASELINE_OK-}" != yes ]; then
+    report SKIP ufw.rules 'SSH 基线未通过核对，不能猜测应放行的管理端口'
+  else
+  expected_rule_tokens "$VH_SSH_PORT/tcp/both" "${open[@]}" >"$VH_TMP/ufw.expected"
   if diff "$VH_TMP/ufw.expected" <(ufw_status_rules | ufw_rule_tokens) >"$VH_TMP/ufw.diff"; then
     report PASS ufw.rules "规则与声明一致（$(wc -l <"$VH_TMP/ufw.expected") 条，IPv4 和 IPv6 分别计）"
   else
     report FAIL ufw.rules "规则与声明不一致：$(grep -E '^[<>]' "$VH_TMP/ufw.diff" 2>/dev/null | sed 's/^</缺少 /; s/^>/多出 /' | paste -sd ';')"
+  fi
   fi
   mapfile -t changed < <(ufw_user_files_changed)
   if [ "${#changed[@]}" -gt 0 ]; then
@@ -316,10 +330,12 @@ sshd ignoreip|127.0.0.0/8 ::1
 sshd usedns|no
 sshd journalmatch|_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session
 sshd actions|nftables
-sshd action nftables port|22
 sshd action nftables protocol|tcp
 dbpurgeage|2592000
 EOF
+  if [ "${VH_SSH_BASELINE_OK-}" = yes ]; then
+    printf 'sshd action nftables port|%s\n' "$VH_SSH_PORT"
+  fi
 }
 
 # f2b_get ARGS...: the value `fail2ban-client get ARGS...` prints, on one line.
@@ -390,6 +406,9 @@ verify_fail2ban() {
 # FR-08: the values the server uses, compared with f2b_expected_values.
 verify_fail2ban_values() {
   local args want got count=0 bad=()
+  if [ "${VH_SSH_BASELINE_OK-}" != yes ]; then
+    report SKIP f2b.port 'SSH 基线未通过核对，不能猜测封禁端口'
+  fi
   while IFS='|' read -r args want; do
     count=$((count + 1))
     # shellcheck disable=SC2086 # ARGS is several words.

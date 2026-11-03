@@ -85,7 +85,7 @@ unban_test_addresses() {
 attempt() {
   local bind="$1" user="$2" out rc=0
   shift 2
-  out="$(ip netns exec "$NETNS" ssh -b "$bind" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  out="$(ip netns exec "$NETNS" ssh -p "$GUEST_SSH_PORT" -b "$bind" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=5 -o LogLevel=ERROR -o BatchMode=yes "$@" "$user@$DST4" true </dev/null 2>&1)" || rc=$?
   if [ "$rc" -eq 0 ]; then
     printf 'ok\n'
@@ -178,6 +178,7 @@ phase_m3_fail2ban() {
     # shellcheck disable=SC2086 # ARGS is several words.
     capture "$name" fail2ban-client get $args
     expect_rc "$name" 0
+    [ "$args" != "sshd action nftables port" ] || want="$GUEST_SSH_PORT"
     [ "$(cat "$phase_dir/$name.out")" = "$(printf '%b' "$want")" ] || fail "$args: unexpected value"
   done <<'EOF'
 sshd bantime|86400
@@ -284,6 +285,9 @@ phase_m3_ban() {
   [ "$(attempt "$BAN_SRC" root -i "$PRIVATE/rsa" -o IdentitiesOnly=yes)" = refused ] || fail "$BAN_SRC still reaches sshd"
   expect_login after-ban-ok4 ok "$OK4" "root@$DST4" key rsa
   check_journal_scope "$BAN_SRC"
+  fail2ban-client set sshd unbanip "$BAN_SRC" >/dev/null
+  ! banned "$BAN_SRC" || fail "$BAN_SRC remains in the jail after unban"
+  expect_login same-source-after-unban ok "$BAN_SRC" "root@$DST4" key rsa
 
   fail2ban-client set sshd bantime 20 >/dev/null
   ban_by_failures "$INC_SRC" increment-1
@@ -387,10 +391,10 @@ phase_m3_agent() {
   for i in $(seq 6); do
     ip netns exec "$NETNS" python3 -c '
 import socket, sys
-s = socket.create_connection((sys.argv[2], 22), timeout=5, source_address=(sys.argv[1], 0))
+s = socket.create_connection((sys.argv[2], int(sys.argv[3])), timeout=5, source_address=(sys.argv[1], 0))
 s.recv(64)
 s.close()
-' "$PREAUTH_SRC" "$DST4" || fail "banner connection $i failed"
+' "$PREAUTH_SRC" "$DST4" "$GUEST_SSH_PORT" || fail "banner connection $i failed"
     sleep 2
     [ "$(attempt "$PREAUTH_SRC" root -o PreferredAuthentications=keyboard-interactive -o IdentityAgent=none)" = denied ] ||
       fail "connection $i closed before authentication did not end as expected"

@@ -28,10 +28,10 @@ tool_record() {
 }
 
 # rules_for PORT/PROTO...: the `ufw status verbose` rules, spaces squeezed, for
-# 22/tcp and the given ports, each for IPv4 and IPv6.
+# P/tcp and the given ports, each for IPv4 and IPv6.
 rules_for() {
   local spec
-  for spec in 22/tcp "$@"; do
+  for spec in "$GUEST_SSH_PORT/tcp" "$@"; do
     printf '%s ALLOW IN Anywhere # vps-hardening\n' "$spec"
     printf '%s (v6) ALLOW IN Anywhere (v6) # vps-hardening\n' "$spec"
   done
@@ -41,7 +41,7 @@ ufw_rules_are() {
   ufw status verbose | awk 'seen && NF { gsub(/ +/, " "); print } /^--/ { seen = 1 }' | sort >"$phase_dir/ufw-rules.txt"
   rules_for "$@" | sort >"$phase_dir/ufw-rules.expected"
   diff -u "$phase_dir/ufw-rules.expected" "$phase_dir/ufw-rules.txt" || fail 'UFW rules differ from the declaration'
-  log "UFW allows 22/tcp $* on IPv4 and IPv6, nothing else"
+  log "UFW allows $GUEST_SSH_PORT/tcp $* on IPv4 and IPv6, nothing else"
 }
 
 # ports_reachable OPEN CLOSED: "PORT..." lists, checked from the second source over IPv4 and IPv6.
@@ -98,7 +98,7 @@ phase_m4_xui_kept() {
   log "3X-UI files ($(wc -l <"$phase_dir/xui-files.txt")) and service unchanged; panel on loopback"
 }
 
-# VT-55, requirement D41: hardened without public ports, UFW allows 22/tcp only.
+# VT-55, requirement D41: hardened without public ports, UFW allows P/tcp only.
 phase_m4_flow_ssh_only() {
   [ "$(state_value status)" = applied ] || fail "status is $(state_value status), expected applied"
   [ -z "$(state_value open)" ] || fail "declared ports: $(state_value open)"
@@ -130,9 +130,9 @@ phase_m4_ports_refused() {
   capture no-tty "$VH" ports --add 8443/tcp
   expect_rc no-tty 2
   expect_text no-tty '必须在交互终端中运行'
-  capture add-ssh on_tty "$VH" ports --add 22/tcp
+  capture add-ssh on_tty "$VH" ports --add "$GUEST_SSH_PORT/tcp"
   expect_rc add-ssh 2
-  expect_text add-ssh '公开端口不能是 22'
+  expect_text add-ssh "公开端口不能是 $GUEST_SSH_PORT"
   capture add-panel on_tty "$VH" ports --add 2053/tcp
   expect_rc add-panel 2
   expect_text add-panel '与面板端口相同'
@@ -188,7 +188,7 @@ phase_m4_ports_pending() {
   capture status "$VH" status
   expect_rc status 0
   expect_text status '状态：端口变更待确认'
-  expect_text status '变更前的公开端口：22/tcp、443/tcp、8443/tcp'
+  expect_text status "变更前的公开端口：$GUEST_SSH_PORT/tcp、443/tcp、8443/tcp"
   capture verify "$VH" verify
   expect_rc verify 0
   expect_report verify WARN state
@@ -238,7 +238,7 @@ phase_vt65_keys_moved() {
   install -m 0600 /root/.ssh/authorized_keys "$VT65_KEYS"
   printf 'AuthorizedKeysFile .ssh/vh-keys\n' >>"$VT65_DROPIN"
   /usr/sbin/sshd -t || fail 'sshd -t fails with the changed drop-in'
-  /usr/sbin/sshd -T -C 'user=root,host=vh-test.invalid,addr=198.51.100.10,laddr=192.0.2.1,lport=22' \
+  /usr/sbin/sshd -T -C "user=root,host=vh-test.invalid,addr=198.51.100.10,laddr=192.0.2.1,lport=$GUEST_SSH_PORT" \
     >"$phase_dir/sshd-root.txt"
   grep -qx 'authorizedkeysfile .ssh/vh-keys' "$phase_dir/sshd-root.txt" || fail 'sshd does not read the moved keys'
   systemctl try-reload-or-restart ssh.service
@@ -580,4 +580,5 @@ m4_main() {
   log "phase $phase passed"
 }
 
-m4_main "$@"
+# non22.sh reuses the installer and UFW assertions.
+[ "${BASH_SOURCE[0]}" != "$0" ] || m4_main "$@"
