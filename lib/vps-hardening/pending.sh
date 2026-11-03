@@ -210,6 +210,7 @@ restore_units() {
 # Every step runs even if an earlier one failed; the result says what failed.
 restore_all() {
   local mode="$1" reason="$2" failed=()
+  RESTORE_FAILED=''
   trap '' INT TERM HUP
   state_set status restoring
   state_set restore_started_at "$(utc_now)"
@@ -222,12 +223,14 @@ restore_all() {
       bounded_change ufw --force disable >>"$VH_LOG_FILE" 2>&1 || failed+=('UFW 停用')
     fi
   fi
+  # Capture the legacy baseline before its managed jail is restored away.
+  [ "$mode" != runtime ] || ssh_restore_capture_baseline || true
   vh_log 'restore: files'
   snapshot_restore "$VH_SNAPSHOT_DIR" >>"$VH_LOG_FILE" 2>&1 || failed+=('文件恢复')
   if [ "$mode" = runtime ]; then
     vh_log 'restore: sshd'
     sshd_cache_clear
-    if bounded /usr/sbin/sshd -t >>"$VH_LOG_FILE" 2>&1; then
+    if ssh_startup_probe && bounded /usr/sbin/sshd "${VH_SSHD_ARGS[@]}" -t >>"$VH_LOG_FILE" 2>&1; then
       bounded_change systemctl try-reload-or-restart ssh.service >>"$VH_LOG_FILE" 2>&1 || failed+=('sshd 重新加载')
     else
       failed+=('sshd 配置检查')
@@ -235,6 +238,7 @@ restore_all() {
   fi
   vh_log 'restore: units'
   restore_units "$mode" || failed+=('服务状态')
+  ssh_restore_endpoint "$mode" || failed+=('SSH 入口核对')
   if [ "${#failed[@]}" -eq 0 ]; then
     disarm_restore "$mode" || failed+=('撤除自动恢复')
   fi
@@ -270,11 +274,13 @@ restore_failed() {
 # applied again. At boot UFW has not started yet and loads the restored files.
 restore_ports() {
   local mode="$1" reason="$2" failed=()
+  RESTORE_FAILED=''
   trap '' INT TERM HUP
   state_set status restoring
   state_set restore_started_at "$(utc_now)"
   vh_log "port restore ($mode): $reason"
   [ "$mode" != runtime ] || stop_timers || true
+  [ "$mode" != runtime ] || ssh_restore_capture_baseline || true
   snapshot_restore "$VH_PORTS_SNAPSHOT_DIR" >>"$VH_LOG_FILE" 2>&1 || failed+=('文件恢复')
   if [ "$mode" = runtime ]; then
     bounded_change ufw reload >>"$VH_LOG_FILE" 2>&1 || failed+=('UFW 重新加载')
@@ -284,6 +290,7 @@ restore_ports() {
     ! record_digest /etc/ufw/user.rules || ! record_digest /etc/ufw/user6.rules; then
     failed+=('记录恢复')
   fi
+  ssh_restore_endpoint "$mode" || failed+=('SSH 入口核对')
   if [ "${#failed[@]}" -eq 0 ]; then
     disarm_restore "$mode" || failed+=('撤除自动恢复')
   fi
@@ -319,10 +326,15 @@ specs_text() {
   join_by '、' "${items[@]}"
 }
 
-# open_ports_text "SPEC...": the declared public ports, 22/tcp first.
+# open_ports_text uses a verified SSH port only; unknown is not guessed as 22.
 open_ports_text() {
   # shellcheck disable=SC2086 # split into specifications on purpose
-  specs_text 22/tcp $1
+  if [ -n "${VH_SSH_PORT-}" ]; then
+    specs_text "$VH_SSH_PORT/tcp" $1
+  else
+    specs_text $1
+    printf '（SSH 管理端口尚未核实）'
+  fi
 }
 
 # vps-hardening _restore timeout UNIT | _restore boot (run by systemd only).
@@ -365,7 +377,7 @@ cmd_confirm() {
   local status loginuid sessionid kind command=apply record=confirmed_at
   [ "$#" -eq 0 ] || usage_error "confirm 不接受参数：$1"
   [ "$(id -u)" -eq 0 ] || refuse '需要 root 权限：请用 root 的密钥登录后执行'
-  # No temporary directory here: the final exec would skip its EXIT trap.
+  vh_tmp_init  # explicitly cleaned before exec, which skips EXIT traps
   vh_lock 0 || refuse '另一个 vps-hardening 操作正在进行，请稍后再试'
   status="$(state_get status)"
   case "$status" in
@@ -389,6 +401,12 @@ cmd_confirm() {
     refuse "这是执行 $command 的会话。请保持它，另开一个终端，用 root 的密钥登录后再执行 confirm"
   fi
   session_from_sshd || refuse '当前会话不是经 SSH 登录的；确认要证明 root 的密钥登录可用'
+  ssh_endpoint_report confirm.endpoint || refuse "确认前 SSH 入口不符合记录：$VH_SSH_ERROR"
+  if ! ssh_confirm_connection; then
+    report FAIL confirm.connection "${VH_SSH_ERROR:-无法核实当前会话的本机连接端口}"
+    refuse '未撤除恢复机制，请核对 SSH 管理入口'
+  fi
+  report PASS confirm.connection "新会话连接本机 SSH $VH_SSH_PORT/tcp"
 
   # The marker goes last: until then the status stays pending and confirm
   # can be run again (design 2.6).
@@ -410,13 +428,59 @@ cmd_confirm() {
   fi
   print_tunnel_hint
   printf '\n== 验证\n'
+  rm -rf -- "$VH_TMP"
+  VH_TMP=''
+  trap - EXIT
   exec 9>&-
   exec "$VH_SELF" verify
 }
 
 print_tunnel_hint() {
-  printf '访问面板（安装 3X-UI 之后）：在本机执行\n'
-  printf '  ssh -N -L 127.0.0.1:8443:127.0.0.1:%s -i <私钥> -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes root@<VPS 地址>\n' \
+  printf '本机 SSH 端口：%s；公网端口须由管理员核实，不能由本机端口推断。\n' "${VH_SSH_PORT:-未核实}"
+  printf '访问面板（安装 3X-UI 之后）：将占位符替换为已核实的公网入口，在本机执行\n'
+  printf '  ssh -p <公网SSH端口> -N -L 127.0.0.1:8443:127.0.0.1:%s -i <私钥> -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes root@<VPS 地址>\n' \
     "$(state_get panel_port)"
   printf '然后在本机浏览器打开 http://127.0.0.1:8443/ 加面板的访问路径（面板配置了证书时用 https）。\n'
+}
+
+# Capture only in memory. A failed capture never blocks snapshot restoration.
+ssh_restore_capture_baseline() {
+  VH_RESTORE_SSH_LEGACY=no
+  VH_RESTORE_SSH_PORT=''
+  VH_RESTORE_SSH_ACTIVATION=''
+  VH_RESTORE_SSH_LISTENERS=''
+  if ssh_endpoint_check_record; then
+    VH_RESTORE_SSH_LEGACY="${VH_SSH_LEGACY:-no}"
+    VH_RESTORE_SSH_PORT="$VH_SSH_PORT"
+    VH_RESTORE_SSH_ACTIVATION="$VH_SSH_ACTIVATION"
+    VH_RESTORE_SSH_LISTENERS="$VH_SSH_LISTENERS"
+    return 0
+  fi
+  return 1
+}
+
+ssh_restore_endpoint() {
+  local mode="$1"
+  if [ "$mode" = boot ]; then
+    report SKIP restore.endpoint 'SSH 启动前：入口未验证；启动后须 verify 及外部新会话验收'
+    vh_log 'restore.endpoint SKIP: SSH not started; runtime endpoint unverified'
+    return 0
+  fi
+  # A new record is always checked against disk. A proven legacy baseline is
+  # retained in memory because restoring the old jail can remove its evidence.
+  if [ "${VH_RESTORE_SSH_LEGACY-}" = yes ] && [ -n "${VH_RESTORE_SSH_PORT-}" ]; then
+    if ssh_endpoint_discover && [ "$VH_SSH_PORT" = "$VH_RESTORE_SSH_PORT" ] &&
+      [ "$VH_SSH_ACTIVATION" = "$VH_RESTORE_SSH_ACTIVATION" ] &&
+      [ "$VH_SSH_LISTENERS" = "$VH_RESTORE_SSH_LISTENERS" ]; then
+      report PASS restore.endpoint '恢复后的本机 SSH 入口符合已核实的旧基线；公网登录未验证'
+      return 0
+    fi
+    VH_SSH_ERROR="${VH_SSH_ERROR:-恢复后的入口与旧基线不一致}"
+  elif ssh_endpoint_check_record; then
+    report PASS restore.endpoint '恢复后的本机 SSH 入口符合记录；公网登录未验证'
+    return 0
+  fi
+  report FAIL restore.endpoint "${VH_SSH_ERROR:-无法核实恢复后的 SSH 入口}"
+  vh_log "restore.endpoint FAIL: ${VH_SSH_ERROR:-unverifiable}"
+  return 1
 }

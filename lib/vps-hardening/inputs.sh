@@ -76,7 +76,9 @@ split_port_spec() {
 
 # check_public_port PANEL: the port in VH_SPEC_PORT may be opened (FR-14, D14, D16).
 check_public_port() {
-  [ "$VH_SPEC_PORT" -ne 22 ] || usage_error '公开端口不能是 22：SSH 端口总是放行'
+  if [ -n "${VH_SSH_PORT-}" ] && [ "$VH_SPEC_PORT" = "$VH_SSH_PORT" ]; then
+    usage_error "公开端口不能是 $VH_SSH_PORT：SSH 管理端口总是放行"
+  fi
   [ "$VH_SPEC_PORT" -ne "$1" ] || usage_error "公开端口 $VH_SPEC_PORT 与面板端口相同；面板只经 SSH 隧道访问，不能开放"
   [ "$VH_SPEC_PORT/$VH_SPEC_PROTO" != 80/tcp ] || usage_error '公开端口不能是 80/tcp：证书用 DNS-01 签发，80/tcp 不开放（D14）'
 }
@@ -92,7 +94,6 @@ validate_host_options() {
   local spec seen=' ' normalized=()
 
   is_port "$VH_IN_PANEL_PORT" || usage_error "面板端口不合法：$VH_IN_PANEL_PORT（1–65535）"
-  [ "$VH_IN_PANEL_PORT" -ne 22 ] || usage_error '面板端口不能是 22'
 
   [ "${#VH_IN_OPEN[@]}" -le "$VH_MAX_OPEN" ] || usage_error "公开端口最多 $VH_MAX_OPEN 个"
   for spec in "${VH_IN_OPEN[@]}"; do
@@ -156,5 +157,16 @@ check_spec_list() {
       *" $VH_SPEC_PORT/$VH_SPEC_PROTO "*) usage_error "$option 重复：$VH_SPEC_PORT/$VH_SPEC_PROTO" ;;
     esac
     seen="$seen$VH_SPEC_PORT/$VH_SPEC_PROTO "
+  done
+}
+
+# Dynamic conflicts are checked only after the read-only endpoint discovery.
+validate_ssh_port_inputs() {
+  local spec
+  is_port "${VH_SSH_PORT-}" || refuse '未核实 SSH 管理端口，不能校验用途'
+  [ "$VH_IN_PANEL_PORT" != "$VH_SSH_PORT" ] || usage_error "面板端口不能是 $VH_SSH_PORT：与 SSH 管理端口冲突"
+  for spec in "${VH_IN_OPEN[@]}"; do
+    split_port_spec "$spec"
+    check_public_port "$VH_IN_PANEL_PORT"
   done
 }

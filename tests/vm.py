@@ -43,6 +43,7 @@ WORK = ROOT / '.tmp/vm'
 SSH_PORT = 2222
 # Runner port -> guest port (verification plan 3.3).
 FORWARDS = {SSH_PORT: 22, 12053: 2053, 10443: 443, 12096: 2096, 10080: 80, 18080: 8080}
+LEGACY_COMMIT = '421de239195e26c6d718be4a15e19fc51ad119f6'  # released v0.1.2
 XUI_COMMIT = '608ef4e4010bf83e2e78328e08f77efc051ad4d7'  # tag v3.10.2
 # install.sh fetches x-ui.sh from the same tag; tests/guest/m1.sh checks it.
 XUI_FILES = {
@@ -106,7 +107,7 @@ class Guest:
 
     def __enter__(self):
         ctx = self.ctx
-        fwd = ','.join(f'hostfwd=tcp:127.0.0.1:{host}-:{guest}' for host, guest in FORWARDS.items())
+        fwd = ','.join(f'hostfwd=tcp:127.0.0.1:{host}-:{guest}' for host, guest in ctx.forwards.items())
         qemu = ['qemu-system-' + ('x86_64' if ctx.arch == 'amd64' else 'aarch64'),
                 '-accel', 'kvm' if ctx.kvm else 'tcg', '-cpu', ctx.cpu]
         if ctx.arch == 'arm64':
@@ -304,6 +305,14 @@ class Context:
     def __init__(self, args):
         self.platform = args.platform
         self.arch = args.arch
+        self.guest_ssh_port = args.ssh_port
+        self.runner_ssh_port = args.runner_ssh_port
+        self.ssh_mode = (args.ssh_mode if args.ssh_mode != 'default' else
+                         ('socket' if args.platform == 'ubuntu2404' else 'service'))
+        self.forwards = {host: port for host, port in FORWARDS.items() if host != SSH_PORT}
+        if self.runner_ssh_port in self.forwards:
+            raise ValueError('runner SSH port conflicts with an HTTP forward')
+        self.forwards[self.runner_ssh_port] = self.guest_ssh_port
         self.work = WORK
         self.work.mkdir(parents=True, exist_ok=False)
         os.chmod(self.work, 0o700)
@@ -319,7 +328,9 @@ class Context:
         self.vcpus, self.ram_mib = (2, 2048) if self.kvm else (2, 1536)
         (self.evidence / 'hypervisor.json').write_text(json.dumps({
             'platform': self.platform, 'arch': self.arch, 'acceleration': 'kvm' if self.kvm else 'tcg',
-            'cpu': self.cpu, 'vcpus': self.vcpus, 'ram_mib': self.ram_mib}, indent=2))
+            'cpu': self.cpu, 'vcpus': self.vcpus, 'ram_mib': self.ram_mib,
+            'guest_ssh_port': self.guest_ssh_port, 'runner_ssh_port': self.runner_ssh_port,
+            'ssh_mode': self.ssh_mode}, indent=2))
         self.password = secrets.token_urlsafe(18)
         self.user = 'ubuntu' if self.platform.startswith('ubuntu') else 'debian'
         self.ssh_opts = []
@@ -355,6 +366,12 @@ class Context:
                          'ed25519_public': (self.work / 'host.pub').read_text().strip()},
             'write_files': [{'path': '/etc/ssh/sshd_config.d/50-cloud-init.conf', 'permissions': '0600',
                              'content': 'PasswordAuthentication yes\n'},
+                            {'path': '/etc/ssh/sshd_config.d/01-vh-provider.conf', 'permissions': '0600',
+                             'content': f'Port {self.guest_ssh_port}\n'},
+                            {'path': '/root/vh-private/ssh-port', 'permissions': '0600',
+                             'content': str(self.guest_ssh_port) + '\n'},
+                            {'path': '/root/vh-private/ssh-mode', 'permissions': '0600',
+                             'content': self.ssh_mode + '\n'},
                             # For the guest side of the password logins (VT-13); never archived.
                             {'path': '/root/vh-private/password', 'permissions': '0600',
                              'content': self.password}],
@@ -362,23 +379,30 @@ class Context:
             # password login working before apply and failing after.
             'runcmd': [['sh', '-c', 'u=$(id -nu 1000) && printf "root:%s\\n%s:%s\\n" "$1" "$u" "$1" | chpasswd',
                         'sh', self.password],
+                       ['sh', '-c', 'set -e; systemctl daemon-reload; '
+                        + ('if systemctl cat ssh.socket >/dev/null 2>&1; then '
+                           'systemctl disable --now ssh.socket; fi; systemctl enable ssh.service; '
+                           'systemctl restart ssh.service' if self.ssh_mode == 'service' else
+                           'systemctl stop ssh.service; systemctl enable ssh.socket; '
+                           'systemctl restart ssh.socket; systemctl start ssh.service; '
+                           'systemctl is-active --quiet ssh.socket')],
                        ['touch', '/root/vh-cloud-ready']],
         }
         (self.work / 'user-data').write_text('#cloud-config\n' + json.dumps(user_data))
         (self.work / 'meta-data').write_text('instance-id: vh-m1\nlocal-hostname: vh-ci\n')
         run(['cloud-localds', str(self.work / 'seed.img'), str(self.work / 'user-data'), str(self.work / 'meta-data')])
-        (self.work / 'known-hosts').write_text(f'[127.0.0.1]:{SSH_PORT} ' + (self.work / 'host.pub').read_text())
+        (self.work / 'known-hosts').write_text(f'[127.0.0.1]:{self.runner_ssh_port} ' + (self.work / 'host.pub').read_text())
         # Shared by the tool's own tunnel command in VT-15, which brings its key options.
         self.ssh_opts = ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
                          '-o', 'UserKnownHostsFile=' + str(self.work / 'known-hosts'),
-                         '-o', 'ConnectTimeout=5', '-o', 'LogLevel=ERROR', '-p', str(SSH_PORT)]
+                         '-o', 'ConnectTimeout=5', '-o', 'LogLevel=ERROR', '-p', str(self.runner_ssh_port)]
         self.ssh = self.ssh_as('root')
 
     def ssh_as(self, user, tty=False):
         return (['ssh', '-i', str(self.work / 'client'), '-o', 'IdentitiesOnly=yes'] + self.ssh_opts +
                 (['-tt'] if tty else []) + [f'{user}@127.0.0.1'])
 
-    def bundle(self, with_xui):
+    def bundle(self, with_xui, with_legacy=False):
         """Tool, guest tests and (for S1) the verified 3X-UI fixture files."""
         path = self.work / 'bundle.tar'
         files = sorted([ROOT / 'install.sh'] + [
@@ -401,6 +425,20 @@ class Context:
             for p in files:
                 rel = p.relative_to(ROOT).as_posix()
                 add(rel, p.read_bytes(), 0o755 if rel.startswith('bin/') or rel.endswith('.sh') else 0o644)
+            if with_legacy:
+                # Reproducible old-tool fixture from the pinned released commit,
+                # never a live download. Refuse an unexpected base version.
+                legacy_names = subprocess.check_output(
+                    ['git', 'ls-tree', '-r', '--name-only', LEGACY_COMMIT, 'bin', 'lib', 'install.sh'],
+                    cwd=ROOT, text=True).splitlines()
+                legacy = {name: subprocess.check_output(['git', 'show', LEGACY_COMMIT + ':' + name], cwd=ROOT)
+                          for name in legacy_names}
+                if b"readonly VH_VERSION='0.1.2'" not in legacy['bin/vps-hardening']:
+                    raise RuntimeError('legacy fixture requires the verified v0.1.2 base')
+                for name, data in legacy.items():
+                    # tar creates the parents when extracting these members.
+                    add('fixtures/legacy/' + name, data, 0o755 if name.startswith('bin/')
+                        or name == 'install.sh' else 0o644)
             if with_xui:
                 for name, digest in XUI_FILES.items():
                     url = f'https://raw.githubusercontent.com/MHSanaei/3x-ui/{XUI_COMMIT}/{name}'
@@ -423,10 +461,10 @@ class Context:
                     raise RuntimeError(f'test secret found in {path.relative_to(self.evidence)}')
 
 
-def ssh_banner(timeout=5):
+def ssh_banner(port=SSH_PORT, timeout=5):
     """Connect to the forwarded SSH port, read the banner, close without authenticating."""
     try:
-        with socket.create_connection(('127.0.0.1', SSH_PORT), timeout=timeout) as s:
+        with socket.create_connection(('127.0.0.1', port), timeout=timeout) as s:
             s.settimeout(timeout)
             return s.recv(64).startswith(b'SSH-')
     except OSError:
@@ -578,10 +616,16 @@ def tunnel(ctx, template, path='/', name='tunnel'):
     Returns the status and body PATH gives through the tunnel; the evidence
     does not name the path."""
     command = (template.replace('<私钥>', str(ctx.work / 'client'))
-               .replace('root@<VPS 地址>', 'root@127.0.0.1'))
+               .replace('root@<VPS 地址>', 'root@127.0.0.1')
+               .replace('<公网SSH端口>', str(ctx.runner_ssh_port)))
     argv = shlex.split(command)
-    check(argv[:2] == ['ssh', '-N'] and argv[-1] == 'root@127.0.0.1', f'tunnel template: {template}')
-    argv = argv[:1] + ctx.ssh_opts + argv[1:]
+    check(argv[:4] == ['ssh', '-p', str(ctx.runner_ssh_port), '-N']
+          and argv[-1] == 'root@127.0.0.1', f'tunnel template: {template}')
+    # Use the template port E itself; add only host-key/client test options.
+    ssh_options = list(ctx.ssh_opts)
+    port_index = ssh_options.index('-p')
+    del ssh_options[port_index:port_index + 2]
+    argv = argv[:1] + ssh_options + argv[1:]
     result = {'template': template, 'without_tunnel': http_get(8443, path)[0]}
     proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
@@ -624,7 +668,7 @@ def lifecycle(ctx, guest):
         check('apply-rc=0' in output and APPLIED in output, 'VT-10: apply finished and awaits confirmation')
         check('confirm-rc=1' in output and '这是执行 apply 的会话' in output,
               'VT-24: confirm in the session that ran apply is refused')
-        template = next(line.strip() for line in output.splitlines() if line.strip().startswith('ssh -N -L'))
+        template = next(line.strip() for line in output.splitlines() if line.strip().startswith('ssh -p <公网SSH端口> -N -L'))
         guest.must_login('root', 'while pending')
         # VT-24 case 2: the default user's session from before apply, through sudo.
         output = session.confirm()
@@ -643,7 +687,7 @@ def lifecycle(ctx, guest):
         check(status == 1 and '当前没有待确认的变更' in output, 'VT-24: confirm with nothing pending is refused')
         m2('m2-applied')
         status, output = guest.command('vt60-status-applied', f'{VH} status')
-        check(status == 0 and '状态：已应用' in output and '受管文件' in output and 'ssh -N -L' in output,
+        check(status == 0 and '状态：已应用' in output and '受管文件' in output and 'ssh -p <公网SSH端口> -N -L' in output,
               'FR-13: status shows the record, the managed files and the tunnel command')
         result['ports_after'] = forwarded_ports()
         check(result['ports_after'] == {'443': True, '2096': False, '2053': False, '8080': False, '80': False},
@@ -693,7 +737,7 @@ def probe_study(ctx, guest):
     def raw(count, interval):
         seen = 0
         for _ in range(count):
-            seen += ssh_banner()
+            seen += ssh_banner(ctx.runner_ssh_port)
             time.sleep(interval)
         return seen
 
@@ -921,7 +965,7 @@ def panel(ctx, guest, template):
 
 def hardened(ctx, image):
     """M3 on a guest hardened and confirmed as an administrator would, with
-    only 22/tcp until 3X-UI is installed and its ports are added (requirement
+    only P/tcp until 3X-UI is installed and its ports are added (requirement
     D41); then VT-51 on overlays of its disk after VT-55."""
     disk = ctx.overlay(image, 'disk.qcow2')
     with Guest(ctx, 'hardened', disk) as guest:
@@ -937,7 +981,7 @@ def hardened(ctx, image):
         with Probe(guest, 'hardened') as probe:
             status, output = guest.interactive('apply', f'{VH} apply')
             check(status == 0 and APPLIED in output, 'apply finished and awaits confirmation')
-            template = next(line.strip() for line in output.splitlines() if line.strip().startswith('ssh -N -L'))
+            template = next(line.strip() for line in output.splitlines() if line.strip().startswith('ssh -p <公网SSH端口> -N -L'))
             status, output = guest.command('confirm', f'{VH} confirm')
             check(status == 0 and '已确认' in output, 'confirm from a new root session, then verify passes')
             guest.phase('m4-flow-ssh-only', script='m4.sh')
@@ -1044,21 +1088,259 @@ def vt64(ctx, guest):
     m4('m4-unchanged', 'drift', 'm4-ufw-drift')
 
 
+def non22(ctx, image):
+    """D64 cases not covered by parameterizing the existing four suites.
+
+    P=22 runs an actual v0.1.2 installation and upgrade fixture (VT-98 A/B).
+    P!=22 covers effective endpoints, confirmation guards and recovery errors.
+    Runtime results are separate from simply having these test definitions.
+    """
+    prepared = ctx.overlay(image, 'non22-prepared.qcow2')
+    with Guest(ctx, 'non22-base', prepared) as guest:
+        guest.ready()
+        guest.upload(ctx.bundle(with_xui=False, with_legacy=ctx.guest_ssh_port == 22))
+        guest.phase('prepare')
+        guest.phase('m2-prepare', script='m2.sh')
+        if ctx.guest_ssh_port == 22:
+            guest.phase('legacy-install', script='non22.sh')
+        else:
+            guest.phase('endpoint-cases', script='non22.sh')
+        guest.poweroff()
+
+    if ctx.guest_ssh_port == 22:
+        legacy_upgrade(ctx, prepared)
+        return
+
+    with Guest(ctx, 'explicit-address', ctx.overlay(prepared, 'explicit-address.qcow2')) as guest:
+        guest.ready()
+        guest.phase('service-mode', script='non22.sh')
+        guest.phase('endpoint-explicit', script='non22.sh')
+        guest.phase('endpoint-positive', 'explicit-address', script='non22.sh')
+        for argument in ('port', 'explicit', 'unit-port', 'environment-port', 'environment-listen'):
+            guest.phase('endpoint-argument', argument, script='non22.sh')
+            guest.phase('endpoint-positive', argument, script='non22.sh')
+        guest.must_login('root', 'with explicit ListenAddress P and raw Port=22')
+        guest.phase('m2-baseline', script='m2.sh')
+        status, output = guest.interactive('vt91-environment-apply', f'{VH} apply')
+        check(status == 0 and APPLIED in output, 'VT-91: quoted EnvironmentFile endpoint applies')
+        status, _ = guest.command('vt91-environment-confirm', f'{VH} confirm')
+        check(status == 0, 'VT-91: quoted EnvironmentFile endpoint confirms')
+        guest.phase('record', 'environment', script='non22.sh')
+        status, _ = guest.interactive('vt91-environment-rollback', f'{VH} rollback')
+        check(status == 0, 'VT-91: quoted EnvironmentFile endpoint rolls back')
+        guest.must_login('root', 'after custom startup option rollback')
+
+    native_faults = ('wrapper', 'owner') + (('socket',) if ctx.ssh_mode == 'socket' else ())
+    for fault in native_faults:
+        label = 'native-' + fault
+        with Guest(ctx, label, ctx.overlay(prepared, label + '.qcow2')) as guest:
+            guest.ready()
+            guest.phase('native-negative', fault, script='non22.sh')
+            guest.must_login('root', 'after native rejection fixture cleanup')
+
+    with Guest(ctx, 'pending-guards', ctx.overlay(prepared, 'pending-guards.qcow2')) as guest:
+        guest.ready()
+        guest.phase('m2-baseline', script='m2.sh')
+        status, output = guest.interactive('vt94-apply', f'{VH} apply --confirm-timeout 60')
+        check(status == 0 and APPLIED in output, 'VT-94: apply genuinely reached pending')
+        for state in ('pending', 'ports-pending'):
+            if state == 'ports-pending':
+                status, output = guest.interactive('vt94-ports', f'{VH} ports --add 8443/tcp --confirm-timeout 60')
+                check(status == 0 and PORTS_CHANGED in output, 'VT-94: ports genuinely reached pending')
+            guest.phase('pending-before', state, script='non22.sh')
+            guest.phase('drift', script='non22.sh')
+            status, output = guest.command('vt94-' + state + '-drift', f'{VH} confirm')
+            check(status == 1 and '[FAIL] confirm.endpoint' in output,
+                  'VT-94: new root session reached the endpoint guard, before disarm')
+            guest.phase('pending-same', state, 'drift', script='non22.sh')
+            guest.phase('undrift', script='non22.sh')
+            guest.phase('connection-wrong', script='non22.sh')
+            guest.phase('pending-same', state, 'connection', script='non22.sh')
+            guest.phase('connection-fault', 'on', script='non22.sh')
+            status, output = guest.command('vt94-' + state + '-connection-unknown', f'{VH} confirm')
+            guest.phase('connection-fault', 'off', script='non22.sh')
+            check(status == 1 and '[PASS] confirm.endpoint' in output and '[FAIL] confirm.connection' in output,
+                  'VT-94: unknown connection mapping reaches the connection guard after full endpoint success')
+            guest.phase('pending-same', state, 'connection-unknown', script='non22.sh')
+            for fault in ('partial', 'invalid', 'unknown', 'missing'):
+                guest.phase('record-corrupt', fault, script='non22.sh')
+                status, output = guest.command('vt98-' + state + '-' + fault, f'{VH} confirm')
+                check(status == 1 and '[FAIL] confirm.endpoint' in output,
+                      'VT-98: a pending new root session rejects an invalid record')
+                guest.phase('record-unchanged', state, fault, script='non22.sh')
+                guest.phase('record-restore', script='non22.sh')
+                guest.phase('pending-same', state, fault, script='non22.sh')
+            status, output = guest.command('vt94-' + state + '-normal', f'{VH} confirm')
+            check(status == 0 and '已确认' in output, 'VT-94: the intact new session confirms')
+        # Business port 22 is ordinary when P differs, and does not replace P.
+        status, output = guest.interactive('vt95-business22', f'{VH} ports --add 22/tcp')
+        check(status == 0 and PORTS_CHANGED in output, 'VT-95: explicitly declared business port 22 is allowed')
+        status, _ = guest.command('vt95-business22-confirm', f'{VH} confirm')
+        check(status == 0, 'VT-95: business port 22 change confirms')
+        status, output = guest.interactive('vt95-business22-remove', f'{VH} ports --remove 22/tcp --remove 8443/tcp')
+        check(status == 0 and PORTS_CHANGED in output, 'VT-95: remove business 22 while P stays protected')
+        status, _ = guest.command('vt95-remove-confirm', f'{VH} confirm')
+        check(status == 0, 'VT-95: business removal confirms')
+        guest.phase('protected-remove', script='non22.sh')
+        # Exercise applied-state entry guards with matching apply inputs, so an
+        # unrelated input/status rejection cannot masquerade as endpoint coverage.
+        startup_drift = 'activation' if ctx.ssh_mode == 'socket' else 'startup'
+        for drift in ('port', 'address', startup_drift):
+            guest.phase('drift', drift, script='non22.sh')
+            guest.phase('readonly-before', drift, script='non22.sh')
+            for command in ('verify', 'apply', 'ports --add 9443/tcp'):
+                if command == 'verify':
+                    status, output = guest.command('vt94-' + drift + '-verify', f'{VH} verify')
+                else:
+                    status, output = guest.interactive('vt94-' + drift + '-' + command.split()[0], f'{VH} {command}')
+                target = 'ports.endpoint' if command.startswith('ports') else 'ssh.endpoint'
+                check(status == 1 and '[FAIL] ' + target in output,
+                      'VT-94: applied endpoint drift reaches the endpoint guard')
+            guest.phase('readonly-same', drift, script='non22.sh')
+            guest.phase('undrift', script='non22.sh')
+            status, _ = guest.command('vt94-' + drift + '-restored', f'{VH} verify')
+            check(status == 0, 'VT-94: repairing only the external fixture restores conformance')
+        for fault in ('partial', 'invalid', 'unknown', 'missing'):
+            guest.phase('record-corrupt', fault, script='non22.sh')
+            for command in ('apply', 'ports --add 9443/tcp'):
+                status, output = guest.interactive('vt98-applied-' + fault + '-' + command.split()[0], f'{VH} {command}')
+                target = 'ports.endpoint' if command.startswith('ports') else 'ssh.endpoint'
+                check(status == 1 and '[FAIL] ' + target in output,
+                      'VT-98: malformed applied record rejects the actual endpoint operation')
+                guest.phase('record-unchanged', 'applied', fault, command.split()[0], script='non22.sh')
+            guest.phase('record-restore', script='non22.sh')
+        guest.phase('record', script='non22.sh')
+        guest.reboot()
+        guest.phase('record', script='non22.sh')
+
+    for port in (80, 443, 2096):
+        label = f'role-port-{port}'
+        with Guest(ctx, label, ctx.overlay(prepared, label + '.qcow2')) as guest:
+            guest.ready()
+            guest.phase('role-port', str(port), script='non22.sh')
+            guest.must_login('root', 'after the isolated role-port fixture restored its SSH configuration')
+
+    for kind in ('apply', 'ports'):
+        for fault in ('unknown', 'mismatch'):
+            label = f'restore-{kind}-{fault}'
+            with Guest(ctx, label, ctx.overlay(prepared, label + '.qcow2')) as guest:
+                guest.ready()
+                guest.phase('m2-baseline', script='m2.sh')
+                status, output = guest.interactive('vt93-apply', f'{VH} apply')
+                check(status == 0 and APPLIED in output, 'VT-93: genuine pending apply before restore fault')
+                if kind == 'ports':
+                    status, _ = guest.command('vt93-confirm', f'{VH} confirm')
+                    check(status == 0, 'VT-93: initial apply confirmed')
+                    status, output = guest.interactive('vt93-ports', f'{VH} ports --add 8443/tcp')
+                    check(status == 0 and PORTS_CHANGED in output, 'VT-93: genuine pending ports before restore fault')
+                guest.phase('restore-fault', fault, script='non22.sh')
+                guest.must_login('root', 'after the restore endpoint fault was reported')
+                # No recurring test timer. The retained boot fallback can recover
+                # after the external fault is removed, and runtime is checked later.
+                guest.reboot()
+                want = 'rolled-back' if kind == 'apply' else 'applied'
+                check(guest.tool_status() == want, 'VT-93: retained boot fallback finishes recovery')
+                guest.must_login('root', 'after boot fallback recovery')
+
+
+    # One native no-pending failure: allow all prechecks, then make only the
+    # post-restore socket read unknown after the managed fragment disappears.
+    with Guest(ctx, 'manual-restore-unknown', ctx.overlay(prepared, 'manual-restore-unknown.qcow2')) as guest:
+        guest.ready()
+        guest.phase('m2-baseline', script='m2.sh')
+        status, output = guest.interactive('vt93-manual-apply', f'{VH} apply')
+        check(status == 0 and APPLIED in output, 'VT-93: manual fixture applies normally')
+        status, _ = guest.command('vt93-manual-confirm', f'{VH} confirm')
+        check(status == 0, 'VT-93: manual fixture has no pending state')
+        guest.phase('manual-restore-fault', 'on', script='non22.sh')
+        status, output = guest.interactive('vt93-manual-rollback', f'{VH} rollback')
+        check(status == 1 and '[PASS] rollback.endpoint' in output and '[PASS] rollback.sshd' in output
+              and '[FAIL] restore.endpoint' in output,
+              'VT-93: real rollback fails only at the post-restore endpoint check')
+        guest.phase('manual-restore-fault', 'check', script='non22.sh')
+        guest.must_login('root', 'after a no-pending restore reports its endpoint read failure')
+
+
+def legacy_upgrade(ctx, prepared):
+    """VT-98: old pending is never a supported online upgrade state."""
+    old = '/usr/local/bin/vps-hardening'
+    with Guest(ctx, 'legacy-upgrade', ctx.overlay(prepared, 'legacy-upgrade.qcow2')) as guest:
+        guest.ready()
+        guest.phase('m2-baseline', script='m2.sh')
+        status, output = guest.interactive('vt98-old-apply', f'{old} apply')
+        check(status == 0 and APPLIED in output, 'VT-98: the actual old tool wrote pending')
+        guest.phase('legacy-blocked', script='non22.sh')
+        status, _ = guest.command('vt98-old-confirm', f'{old} confirm')
+        check(status == 0, 'VT-98: old tool still confirms after refused upgrade')
+        status, output = guest.interactive('vt98-old-ports', f'{old} ports --add 8443/tcp')
+        check(status == 0 and PORTS_CHANGED in output, 'VT-98: actual old tool wrote ports-pending')
+        guest.phase('legacy-blocked', script='non22.sh')
+        status, _ = guest.command('vt98-old-ports-confirm', f'{old} confirm')
+        check(status == 0, 'VT-98: old ports still confirms after refused upgrade')
+        guest.phase('legacy-upgrade', script='non22.sh')
+        guest.phase('readonly-before', 'legacy-repeat', script='non22.sh')
+        status, output = guest.interactive('vt98-legacy-repeat', f'{old} apply --open 8443/tcp')
+        check(status == 0 and '未做任何变更' in output and APPLY_PROMPT.decode() not in output,
+              'VT-98: new tool checks a genuine legacy applied record without changing it')
+        guest.phase('readonly-same', 'legacy-repeat', script='non22.sh')
+        status, output = guest.interactive('vt98-legacy-new-ports', f'{old} ports --add 9443/tcp')
+        check(status == 0 and PORTS_CHANGED in output, 'VT-98: new tool changes business ports on old applied record')
+        status, _ = guest.command('vt98-legacy-new-ports-confirm', f'{old} confirm')
+        check(status == 0, 'VT-98: new session confirms new-tool ports on the legacy record')
+        guest.phase('legacy-fields', script='non22.sh')
+        status, _ = guest.interactive('vt98-new-rollback', f'{old} rollback')
+        check(status == 0, 'VT-98: new tool can roll back a recognized old record')
+        status, output = guest.interactive('vt98-new-apply', f'{old} apply')
+        check(status == 0 and APPLIED in output, 'VT-98: fresh apply after rollback writes new record')
+        status, _ = guest.command('vt98-new-confirm', f'{old} confirm')
+        check(status == 0, 'VT-98: new record confirms')
+        guest.phase('record', script='non22.sh')
+
+    for recovery_kind in ('timeout', 'boot'):
+        label = 'legacy-' + recovery_kind
+        with Guest(ctx, label, ctx.overlay(prepared, label + '.qcow2')) as guest:
+            guest.ready()
+            guest.phase('m2-baseline', script='m2.sh')
+            status, output = guest.interactive('vt98-old-apply', f'{old} apply --confirm-timeout 3')
+            check(status == 0 and APPLIED in output, 'VT-98: actual old pending before upgrade refusal')
+            guest.phase('legacy-blocked', script='non22.sh')
+            if recovery_kind == 'boot':
+                guest.reboot()
+            else:
+                guest.wait_status('rolled-back', 900)
+            check(guest.tool_status() == 'rolled-back', 'VT-98: old recovery remains usable after refused upgrade')
+            guest.must_login('root', 'after old-tool recovery')
+
+
+def port_number(value):
+    number = int(value)
+    if not 1 <= number <= 65535:
+        raise argparse.ArgumentTypeError('port must be between 1 and 65535')
+    return number
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--platform', choices=['debian12', 'debian13', 'ubuntu2404'], required=True)
     parser.add_argument('--arch', choices=['amd64', 'arm64'], required=True)
-    parser.add_argument('--suite', choices=['matrix', 'recovery', 'negative', 'hardened'], required=True)
+    parser.add_argument('--suite', choices=['matrix', 'recovery', 'negative', 'hardened', 'non22'], required=True)
+    parser.add_argument('--ssh-port', type=port_number, default=22,
+                        help='actual guest SSH port P; default 22 keeps the original regression')
+    parser.add_argument('--runner-ssh-port', type=port_number, default=SSH_PORT,
+                        help='runner forwarded SSH port E, independent of guest P')
+    parser.add_argument('--ssh-mode', choices=['default', 'service', 'socket'], default='default',
+                        help='default: Debian service / Ubuntu socket; explicit service or socket fixture')
     args = parser.parse_args()
     ctx = Context(args)
     image = ctx.timings.measure('image', ctx.image)
     ctx.seed()
     try:
-        {'matrix': matrix, 'recovery': recovery, 'negative': negative, 'hardened': hardened}[args.suite](ctx, image)
+        {'matrix': matrix, 'recovery': recovery, 'negative': negative, 'hardened': hardened,
+         'non22': non22}[args.suite](ctx, image)
     finally:
         # Verification plan 6: the whole archive, of a failed run too, before the upload.
         ctx.leak_scan()
-    (ctx.evidence / 'COMPLETED').write_text(f'PASS {args.suite} {args.platform} {args.arch}\n')
+    (ctx.evidence / 'COMPLETED').write_text(f'PASS {args.suite} {args.platform} {args.arch} P={ctx.guest_ssh_port} E={ctx.runner_ssh_port}\n')
     print('PASS', args.suite, args.platform, args.arch, flush=True)
 
 

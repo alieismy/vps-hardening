@@ -34,6 +34,25 @@ preflight_gate() {
 run_preflight_checks() {
   vh_tmp_init
   preflight_gate || return 0
+  if ! have python3; then
+    report FAIL sshd.endpoint '缺少 python3：只读入口解析需要 Python 3 标准库；未做变更'
+    return 0
+  fi
+  if ! have busctl; then
+    report FAIL sshd.endpoint '缺少 busctl：需要 systemd 的只读结构化启动参数查询；未做变更'
+    return 0
+  fi
+  if ssh_endpoint_discover; then
+    report PASS sshd.endpoint "本机 SSH $VH_SSH_PORT/tcp（$VH_SSH_ACTIVATION），监听 $VH_SSH_LISTENERS"
+    case " $VH_SSH_LISTENERS " in
+      *' ipv6,'*) ;;
+      *) report WARN sshd.listen '保留现有 IPv4-only SSH 入口，不新增 IPv6 监听' ;;
+    esac
+    validate_ssh_port_inputs
+  else
+    report FAIL sshd.endpoint "$VH_SSH_ERROR"
+    return 0
+  fi
   preflight_inputs
   preflight_new_host
   preflight_sshd
@@ -46,7 +65,7 @@ preflight_inputs() {
   local open_desc
   report PASS inputs.panel-port "面板端口 $VH_IN_PANEL_PORT：不开放，只经 SSH 隧道访问"
   if [ "${#VH_IN_OPEN[@]}" -eq 0 ]; then
-    report PASS inputs.open '没有声明公开端口：UFW 只放行 22/tcp；安装 3X-UI 时用 ports --add 开放它的端口'
+    report PASS inputs.open "没有声明公开端口：UFW 只放行 $VH_SSH_PORT/tcp；安装 3X-UI 时用 ports --add 开放它的端口"
   else
     open_desc="$(join_by ', ' "${VH_IN_OPEN[@]}")"
     report PASS inputs.open "公开端口：$open_desc"
@@ -125,7 +144,7 @@ preflight_new_host() {
 preflight_sshd() {
   local dropin="$VH_SSHD_DROPIN_DIR/$VH_SSHD_DROPIN_NAME" file name early=()
 
-  if ! bounded /usr/sbin/sshd -t 2>"$VH_TMP/sshd-t.err"; then
+  if ! bounded /usr/sbin/sshd "${VH_SSHD_ARGS[@]}" -t 2>"$VH_TMP/sshd-t.err"; then
     report FAIL sshd.config "sshd 配置检查失败：$(head -n 1 "$VH_TMP/sshd-t.err")"
     return 0
   fi
@@ -136,9 +155,9 @@ preflight_sshd() {
   report PASS sshd.config '能读取 sshd 生效配置'
 
   if sshd_include_first; then
-    report PASS sshd.include "$VH_SSHD_MAIN 先包含 $VH_SSHD_DROPIN_DIR/*.conf"
+    report PASS sshd.include "${VH_SSHD_CONFIG:-$VH_SSHD_MAIN} 先包含 $VH_SSHD_DROPIN_DIR/*.conf"
   else
-    report FAIL sshd.include "$VH_SSHD_MAIN 中，Include $VH_SSHD_DROPIN_DIR/*.conf 之前已经设置了受管选项或 Match，本工具的片段无法生效"
+    report FAIL sshd.include "${VH_SSHD_CONFIG:-$VH_SSHD_MAIN} 中，Include $VH_SSHD_DROPIN_DIR/*.conf 之前已经设置了受管选项或 Match，本工具的片段无法生效"
   fi
 
   # Drop-ins sorting before ours would win for the managed keywords.
@@ -290,7 +309,7 @@ sshd_include_first() {
       if (key == "match" || index(managed, " " key " ") > 0) { exit }
     }
     END { exit found ? 0 : 1 }
-  ' "$VH_SSHD_MAIN"
+  ' "${VH_SSHD_CONFIG:-$VH_SSHD_MAIN}"
 }
 
 sshd_file_sets_managed() {
@@ -327,7 +346,7 @@ check_sshd_match() {
 # resolves a relative Include under /etc/ssh. Paths may contain blanks but not
 # newlines, since each Include argument comes from one line.
 sshd_config_files() {
-  local queue=("$VH_SSHD_MAIN") listed=$'\n' file pattern path
+  local queue=("${VH_SSHD_CONFIG:-$VH_SSHD_MAIN}") listed=$'\n' file pattern path
   while [ "${#queue[@]}" -gt 0 ]; do
     file="${queue[0]}"
     queue=("${queue[@]:1}")

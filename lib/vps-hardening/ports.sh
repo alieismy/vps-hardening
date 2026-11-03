@@ -23,6 +23,7 @@ cmd_ports() {
     '') refuse '本工具没有在这台主机上应用过：请先执行 apply' ;;
     *) refuse "本工具的状态为 $(state_get status)，不能变更端口，详见 $VH_LOG_FILE" ;;
   esac
+  ssh_endpoint_report ports.endpoint || refuse "SSH 管理入口不符合记录：$VH_SSH_ERROR"
   ports_compute
   printf '== 变更前检查\n'
   ports_checks
@@ -36,6 +37,7 @@ cmd_ports() {
     printf '已取消，未做任何变更。\n'
     exit "$VH_EXIT_FAIL"
   fi
+  ssh_endpoint_report ports.endpoint || refuse "交互期间 SSH 入口变化：$VH_SSH_ERROR；未做变更"
   ports_run
 }
 
@@ -48,7 +50,7 @@ ports_compute() {
   VH_PORTS_NEW=("${VH_PORTS_OLD[@]}")
   for spec in "${VH_IN_REMOVE[@]}"; do
     split_port_spec "$spec"
-    [ "$VH_SPEC_PORT" -ne 22 ] || usage_error '22 端口总是放行，不能撤销'
+    [ "$VH_SPEC_PORT" != "$VH_SSH_PORT" ] || usage_error "$VH_SSH_PORT 端口总是放行，不能撤销"
     found=''
     for i in "${!VH_PORTS_NEW[@]}"; do
       declared="${VH_PORTS_NEW[$i]}"
@@ -78,7 +80,7 @@ ports_compute() {
   [ "${#VH_PORTS_NEW[@]}" -le "$VH_MAX_OPEN" ] || usage_error "公开端口最多 $VH_MAX_OPEN 个"
 }
 
-# The change starts from the declared rules, with 22/tcp allowed.
+# The change starts from the declared rules, with the recorded SSH port allowed.
 ports_checks() {
   local changed=()
   if ufw_active; then
@@ -86,7 +88,7 @@ ports_checks() {
   else
     report FAIL ports.ufw 'UFW 未启用'
   fi
-  if diff <(ufw_status_rules | ufw_rule_tokens) <(expected_rule_tokens 22/tcp/both "${VH_PORTS_OLD[@]}") >/dev/null; then
+  if diff <(ufw_status_rules | ufw_rule_tokens) <(expected_rule_tokens "$VH_SSH_PORT/tcp/both" "${VH_PORTS_OLD[@]}") >/dev/null; then
     report PASS ports.rules 'UFW 规则与声明一致'
   else
     report FAIL ports.rules 'UFW 规则与声明不一致：请先用 verify 查看并处理差异'
@@ -100,10 +102,10 @@ ports_checks() {
   else
     report PASS ports.userrules 'user.rules 和 user6.rules 与记录一致'
   fi
-  if ufw_added_rules | ufw_rules_allow_port 22; then
-    report PASS ports.ssh 'UFW 放行 22/tcp'
+  if ufw_added_rules | ufw_rules_allow_port "$VH_SSH_PORT" tcp; then
+    report PASS ports.ssh "UFW 放行 $VH_SSH_PORT/tcp"
   else
-    report FAIL ports.ssh 'UFW 中没有放行 22/tcp 的规则'
+    report FAIL ports.ssh "UFW 中没有放行 $VH_SSH_PORT/tcp 的规则"
   fi
   check_root_keys
 }
@@ -210,10 +212,10 @@ ports_ufw() {
 }
 
 # `ufw delete` of a rule that does not exist still exits 0, so the result is
-# checked: the active rules are exactly 22/tcp and the new declared ports, for
+# checked: the active rules are exactly the SSH port and new declared ports, for
 # the declared address families, from anywhere, with the tool's comment.
 ports_rules_match() {
-  diff <(ufw_status_rules | ufw_rule_tokens) <(expected_rule_tokens 22/tcp/both "${VH_PORTS_NEW[@]}") >>"$VH_LOG_FILE"
+  diff <(ufw_status_rules | ufw_rule_tokens) <(expected_rule_tokens "$VH_SSH_PORT/tcp/both" "${VH_PORTS_NEW[@]}") >>"$VH_LOG_FILE"
 }
 
 # Rule lines of `ufw status` on stdin, as "FAMILY RULE" with the "(v6)" marks

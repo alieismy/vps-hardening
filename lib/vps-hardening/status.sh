@@ -12,6 +12,15 @@ cmd_status() {
     printf '状态：未应用（本工具没有在这台主机上执行过）\n'
     return 0
   fi
+  vh_tmp_init
+  if ssh_endpoint_check_record; then
+    status_line '本机 SSH 管理端口' "$VH_SSH_PORT/tcp"
+    status_line 'SSH 启动方式' "$VH_SSH_ACTIVATION"
+    status_line 'SSH 监听基线' "$VH_SSH_LISTENERS"
+    [ "${VH_SSH_LEGACY-}" != yes ] || status_line '旧记录兼容' '已只读核实旧版 22 基线，未回写字段'
+  else
+    status_line 'SSH 入口核对' "${VH_SSH_ERROR:-无法核实}"
+  fi
   status="$(state_get status)"
   printf '状态：%s\n' "$(status_text "$status")"
   status_line '应用的版本' "$(state_get version)"
