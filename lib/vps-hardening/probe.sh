@@ -360,7 +360,18 @@ def properties(unit):
     args = ["systemctl", "show", unit]
     for key in keys:
         args += ["-p", key]
-    return dict(line.split("=", 1) for line in run(*args).splitlines() if "=" in line)
+    result = {}
+    for line in run(*args).splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        # systemctl emits one Listen= line per socket endpoint. A dictionary
+        # comprehension silently discarded all but the last address family.
+        if key == "Listen" and key in result:
+            result[key] += " " + value
+        else:
+            result[key] = value
+    return result
 
 
 def port(value):

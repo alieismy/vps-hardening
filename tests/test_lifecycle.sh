@@ -275,4 +275,23 @@ for operation in apply ports; do
     done
   done
 done
-printf '[+] lifecycle decisions: 6 confirm + 12 restore + no-pending + 3 preparation + legacy recovery + 8 failure exits passed\n'
+# Run the real rule check against private files; only its fixed directory is
+# substituted. IPv6 uses a different UFW chain even on an IPv4-only host.
+(
+  case_root="$test_root/ufw-rules"
+  mkdir -p "$case_root"
+  rule_check="$(declare -f ufw_ssh_rules_ready)"
+  eval "${rule_check//\/etc\/ufw/$case_root}"
+  for VH_SSH_PORT in 22 2222; do
+    printf '%s\n' "-A ufw-user-input -p tcp --dport $VH_SSH_PORT -j ACCEPT" >"$case_root/user.rules"
+    printf '%s\n' "-A ufw6-user-input -p tcp --dport $VH_SSH_PORT -j ACCEPT" >"$case_root/user6.rules"
+    assert ufw_ssh_rules_ready
+    printf '%s\n' "-A ufw-user-input -p tcp --dport $VH_SSH_PORT -j ACCEPT" >"$case_root/user6.rules"
+    if ufw_ssh_rules_ready; then exit 1; fi
+    printf '%s\n' "-A ufw6-user-input -p tcp --dport $VH_SSH_PORT -s ::1 -j ACCEPT" >"$case_root/user6.rules"
+    if ufw_ssh_rules_ready; then exit 1; fi
+    printf '%s\n' "-A ufw6-user-input -p tcp --dport 2223 -j ACCEPT" >"$case_root/user6.rules"
+    if ufw_ssh_rules_ready; then exit 1; fi
+  done
+)
+printf '[+] lifecycle decisions: 6 confirm + 12 restore + no-pending + 3 preparation + legacy recovery + 8 failure exits passed; UFW dual-family rules passed at P=22/2222\n'

@@ -160,7 +160,12 @@ phase_endpoint_argument() {
       printf 'ListenAddress 0.0.0.0:%s\n' "$GUEST_SSH_PORT" >"$provider_file"
       option_port=$((GUEST_SSH_PORT + 1))
       ;;
-    unit-port|environment-port|environment-listen) printf 'Port 22\n' >"$provider_file" ;;
+    unit-port)
+      # -o Port adds a Port directive; unlike -p it does not discard Port
+      # directives in the file. Keep only the one supplied by native argv.
+      printf '# SSH port is supplied by ExecStart -o Port.\n' >"$provider_file"
+      ;;
+    environment-port|environment-listen) printf 'Port 22\n' >"$provider_file" ;;
     *) fail "unknown startup fixture $1" ;;
   esac
   case "$1" in
@@ -287,7 +292,7 @@ EOF
 }
 
 phase_restore_fault() {
-  local fault="$1" timer rc=0 kind index
+  local fault="$1" timer rc=0 kind index old_open
   [ ! -e /usr/local/sbin/ss ] || fail 'ss wrapper already exists'
   timer="$(awk -F= '$1 == "timer" {print $2}' "$STATE_DIR/pending")"
   kind="$(awk -F= '$1 == "kind" {print $2}' "$STATE_DIR/pending")"
@@ -298,7 +303,9 @@ phase_restore_fault() {
   cp -p "$STATE_DIR/units" "$PRIVATE/restore-units"
   if [ "$kind" = ports ]; then
     cp "$STATE_DIR/snapshot-ports/open" "$PRIVATE/restore-open"
-    [ ! -s "$PRIVATE/restore-open" ] || fail 'this fault fixture starts with SSH-only rules'
+    [ -f "$PRIVATE/restore-open" ] && [ -r "$PRIVATE/restore-open" ] || fail 'saved port declaration is missing or unreadable'
+    old_open="$(cat "$PRIVATE/restore-open")" || fail 'cannot read saved port declaration'
+    [ -z "$old_open" ] || fail 'this fault fixture starts with SSH-only rules'
   fi
   case "$fault" in
     unknown) printf '#!/bin/sh\nexit 1\n' >/usr/local/sbin/ss ;;

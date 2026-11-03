@@ -229,6 +229,31 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(self.probe['socket_endpoints'](props),
                              {('ipv4', '0.0.0.0', '2222'), ('ipv6', '::', '2222')})
 
+    def test_systemctl_repeated_listen_lines_preserve_both_address_families(self):
+        # Actual systemctl show format observed in the Ubuntu CI artifact:
+        # each address has its own Listen= line, rather than a joined value.
+        shown = ('LoadState=loaded\nActiveState=active\nMainPID=123\n'
+                 'Listen=0.0.0.0:2222 (Stream)\nListen=[::]:2222 (Stream)\n'
+                 'BindIPv6Only=ipv6-only\n')
+        persistent = ('[Socket]\nListenStream=0.0.0.0:22\nListenStream=[::]:22\n'
+                      '[Socket]\nListenStream=\nListenStream=0.0.0.0:2222\nListenStream=[::]:2222\n')
+        def run(*args):
+            return shown if args[1] == 'show' else persistent
+        with patch.dict(self.probe, run=run):
+            props = self.probe['properties']('ssh.socket')
+            self.assertEqual(props['MainPID'], '123')
+            self.assertEqual(self.probe['socket_endpoints'](props),
+                             {('ipv4', '0.0.0.0', '2222'), ('ipv6', '::', '2222')})
+
+    def test_repeated_listen_must_not_hide_an_extra_loaded_endpoint(self):
+        shown = ('Listen=0.0.0.0:22 (Stream)\nListen=[::]:2222 (Stream)\n'
+                 'BindIPv6Only=ipv6-only\n')
+        with patch.dict(self.probe, run=lambda *args: shown if args[1] == 'show' else
+                        '[Socket]\nListenStream=[::]:2222\n'):
+            props = self.probe['properties']('ssh.socket')
+            with self.assertRaisesRegex(ValueError, '持久化与加载'):
+                self.probe['socket_endpoints'](props)
+
     def test_socket_persistent_loaded_mismatch(self):
         props = {'Listen': '[::]:22 (Stream)', 'BindIPv6Only': 'both'}
         with patch.dict(self.probe, run=lambda *args: '[Socket]\nListenStream=2222\n'):
