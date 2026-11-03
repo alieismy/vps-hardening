@@ -49,10 +49,14 @@ Baseline security hardening for Debian/Ubuntu VPS. **Historical stable baseline:
 2. 安装预发行版 `v0.2.0-rc.1`。公开资产及下列安装器摘要已经下载核对；这是预发行，真实 VPS 未验收，Latest 稳定版仍为 `v0.1.2`。安装脚本先用内置的摘要校验 `SHA256SUMS`，再逐个校验 13 个资产，然后安装到 `/usr/local/bin/vps-hardening` 和 `/usr/local/lib/vps-hardening`；它只放置文件，不执行预检或应用（[详细设计第 2.12 节](docs/detailed-design.md#212-安装脚本)）：
 
    ```bash
-   curl --disable -fsSLO https://github.com/alieismy/vps-hardening/releases/download/v0.2.0-rc.1/install.sh
-   echo 'bcc95fcd6350b5e6e5388a8477460557f09ebb58189f38bd2b82e50f047fb9e4  install.sh' | sha256sum -c -
+   curl --disable --fail --location --proto '=https' --proto-redir '=https' \
+     https://github.com/alieismy/vps-hardening/releases/download/v0.2.0-rc.1/install.sh \
+     -o install.sh &&
+   echo 'bcc95fcd6350b5e6e5388a8477460557f09ebb58189f38bd2b82e50f047fb9e4  install.sh' | sha256sum -c - &&
    bash install.sh
    ```
+
+   下载、摘要校验均成功后才执行安装器；任一步失败即停止这组命令。`v0.2.0-rc.1` 标签及其源码归档内的 README、验证记录保留了发布前快照，其中的安装示例仍指向旧版 `v0.1.2`。安装本预发行版请使用上面的命令；最终 CI、发布及公开下载回验见[固定提交中的验证记录](https://github.com/alieismy/vps-hardening/blob/a3c0707171e468dd09416a5d43ff932d89ddabbd/docs/detailed-design.md#828-v020-rc1-的-ci-与发布)。
 
    仓库中的 `install.sh` 没有绑定发行版，执行时拒绝。也可以直接从仓库运行 `bin/vps-hardening`（开发版）：待确认期间，自动恢复按这个路径调用它，所以确认之前不要移动或删除仓库目录。
 3. 预检前须具备官方仓库的 `python3`（只使用标准库解析 SSH 入口；缺少时只读拒绝）。预检：`vps-hardening preflight`。核对报告的本机 P、监听地址/族和启动方式；工具组合配置求值、有效启动参数、加载配置及实际监听核实入口，不能只读主配置中的首个 `Port`，也不会把未知值当作 22。控制台中没有 `SSH_CONNECTION` 不会单独导致预检失败。root 必须已有可用的公钥，一般在服务商管理页面绑定 SSH 密钥即可；本工具只检查、不写入公钥，cloud-init 写给 root、带 `command=` 前缀的公钥不算可用。存在 `/var/run/reboot-required` 时预检给出警告，不阻止应用，建议先重启（需求 D43，自 `v0.1.0-rc.3` 起）。自 `v0.1.0-rc.4` 起，安装脚本结尾提示的就是这一步；`v0.1.0-rc.3` 提示的 `preflight --open <公开端口>` 是旧的推荐做法（详细设计第 9 节）。
