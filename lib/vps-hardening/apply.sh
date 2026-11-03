@@ -275,7 +275,7 @@ apply_ssh() {
   done
   ssh_endpoint_check_record || apply_fail "SSH 配置写入后入口不一致：$VH_SSH_ERROR"
   bounded_change systemctl try-reload-or-restart ssh.service || apply_fail 'sshd 重新加载失败'
-  ssh_endpoint_check_record || apply_fail "SSH 重载后入口不一致：$VH_SSH_ERROR"
+  ssh_endpoint_check_record discover-after-reload || apply_fail "SSH 重载后入口不一致：$VH_SSH_ERROR"
   printf 'sshd 已按新配置重新加载\n'
 }
 

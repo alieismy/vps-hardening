@@ -39,6 +39,33 @@ class ProbeTests(unittest.TestCase):
     def setUp(self):
         self.probe = load_probe()
 
+    def test_reload_discovery_retries_transient_failure(self):
+        calls = []
+        def discover():
+            calls.append('discover')
+            if len(calls) < 3:
+                raise ValueError('listener is reloading')
+            print('stable endpoint')
+        output = io.StringIO()
+        with patch.dict(self.probe, discover=discover), \
+                patch.object(self.probe['time'], 'sleep') as sleep, redirect_stdout(output):
+            self.probe['discover_after_reload']()
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(output.getvalue(), 'stable endpoint\n')
+
+    def test_reload_discovery_preserves_persistent_failure(self):
+        calls = []
+        def discover():
+            calls.append('discover')
+            raise ValueError('persistent endpoint mismatch')
+        with patch.dict(self.probe, discover=discover), \
+                patch.object(self.probe['time'], 'sleep') as sleep:
+            with self.assertRaisesRegex(ValueError, 'persistent endpoint mismatch'):
+                self.probe['discover_after_reload']()
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleep.call_count, 2)
+
     def test_explicit_listen_port_is_authority(self):
         values = self.probe['config_endpoints']('port 22\nlistenaddress 0.0.0.0:2222\n')
         self.assertEqual(values, {('ipv4', '0.0.0.0', '2222')})

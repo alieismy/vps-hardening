@@ -200,8 +200,11 @@ pending_material() {
   unit="$(awk -F= '$1 == "timer" {print $2}' "$STATE_DIR/pending")"
   systemctl is-active "$unit.timer"
   systemctl is-enabled "$BOOT_UNIT"
-  # Active alone cannot detect a silently restarted/extended timer.
-  systemctl show "$unit.timer" -p NextElapseUSecMonotonic -p NextElapseUSecRealtime -p TimersMonotonic
+  # Activation identity and the original interval detect restart/extension.
+  # next_elapse is derived and systemd can recalculate it without restarting.
+  systemctl show "$unit.timer" -p ActiveEnterTimestampMonotonic -p InactiveExitTimestampMonotonic \
+    -p InvocationID -p LastTriggerUSecMonotonic -p TimersMonotonic |
+    sed 's/ ; next_elapse=[^}]*//g'
 }
 
 phase_pending_before() {

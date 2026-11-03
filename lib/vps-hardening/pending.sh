@@ -238,7 +238,7 @@ restore_all() {
   fi
   vh_log 'restore: units'
   restore_units "$mode" || failed+=('服务状态')
-  ssh_restore_endpoint "$mode" || failed+=('SSH 入口核对')
+  ssh_restore_endpoint "$mode" discover-after-reload || failed+=('SSH 入口核对')
   if [ "${#failed[@]}" -eq 0 ]; then
     disarm_restore "$mode" || failed+=('撤除自动恢复')
   fi
@@ -469,14 +469,14 @@ ssh_restore_endpoint() {
   # A new record is always checked against disk. A proven legacy baseline is
   # retained in memory because restoring the old jail can remove its evidence.
   if [ "${VH_RESTORE_SSH_LEGACY-}" = yes ] && [ -n "${VH_RESTORE_SSH_PORT-}" ]; then
-    if ssh_endpoint_discover && [ "$VH_SSH_PORT" = "$VH_RESTORE_SSH_PORT" ] &&
+    if ssh_endpoint_discover "${2:-discover}" && [ "$VH_SSH_PORT" = "$VH_RESTORE_SSH_PORT" ] &&
       [ "$VH_SSH_ACTIVATION" = "$VH_RESTORE_SSH_ACTIVATION" ] &&
       [ "$VH_SSH_LISTENERS" = "$VH_RESTORE_SSH_LISTENERS" ]; then
       report PASS restore.endpoint '恢复后的本机 SSH 入口符合已核实的旧基线；公网登录未验证'
       return 0
     fi
     VH_SSH_ERROR="${VH_SSH_ERROR:-恢复后的入口与旧基线不一致}"
-  elif ssh_endpoint_check_record; then
+  elif ssh_endpoint_check_record "${2:-discover}"; then
     report PASS restore.endpoint '恢复后的本机 SSH 入口符合记录；公网登录未验证'
     return 0
   fi

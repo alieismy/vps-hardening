@@ -335,6 +335,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 
 
 def fail(message):
@@ -811,6 +812,19 @@ def discover():
     print("\n".join(args), end="\n" if args else "")
 
 
+def discover_after_reload():
+    # ExecReload=kill -HUP is asynchronous. Retry discovery only, inside the
+    # existing outer 30-second bound; the recorded baseline is checked next.
+    for attempt in range(3):
+        try:
+            discover()
+            return
+        except (ValueError, OSError):
+            if attempt == 2:
+                raise
+            time.sleep(0.5)
+
+
 def read_record(path, actual, digest, current_version):
     data = {}
     for line in Path(path).read_text().splitlines():
@@ -903,6 +917,8 @@ try:
     mode = sys.argv[1]
     if mode == "discover":
         discover()
+    elif mode == "discover-after-reload":
+        discover_after_reload()
     elif mode == "startup":
         startup()
     elif mode == "config":
@@ -930,7 +946,7 @@ ssh_endpoint_discover() {
   ssh_endpoint_clear
   VH_SSH_ERROR=''
   VH_SSH_LEGACY=no
-  if ! output="$(ssh_probe_python discover 2>&1)"; then
+  if ! output="$(ssh_probe_python "${1:-discover}" 2>&1)"; then
     VH_SSH_ERROR="${output:-无法核实：SSH 入口探测失败或超时}"
     return 1
   fi
@@ -973,7 +989,7 @@ ssh_startup_probe() {
 
 ssh_endpoint_check_record() {
   local legacy_digest='' output
-  ssh_endpoint_discover || return 1
+  ssh_endpoint_discover "${1:-discover}" || return 1
   # A known old template's digest proves the recorded jail's original port,
   # including after restore has removed that file. No on-disk migration occurs.
   if [ -z "$(state_get ssh_port)$(state_get ssh_activation)$(state_get ssh_listeners)" ] &&
