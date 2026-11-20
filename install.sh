@@ -171,7 +171,7 @@ already_installed() {
 }
 
 main() {
-  local command name base got
+  local command name base got format recorded
   parse_args "$@"
   [ "$(id -u)" -eq 0 ] || die '需要 root 权限：请在 root shell 中运行'
   for command in awk cp curl find flock grep install mktemp mv rm sha256sum stat sync wc; do
@@ -222,6 +222,17 @@ main() {
   done
   grep -Fqx "readonly VH_VERSION='$INSTALLER_VERSION'" "$temp_dir/assets/vps-hardening" ||
     die "vps-hardening 的版本不是 $INSTALLER_VERSION"
+  # A release reads state records up to its own format; installing it over a
+  # later one would leave verify, confirm, ports and rollback refusing it.
+  format="$(grep -E '^readonly VH_RECORD_FORMAT=[0-9]+$' "$temp_dir/assets/vps-hardening")" ||
+    die 'vps-hardening 中没有状态记录格式'
+  format="${format#*=}"
+  if [ -f "$STATE_FILE" ]; then
+    recorded="$(awk -F= '$1 == "record_format" { print substr($0, 15); exit }' "$STATE_FILE")"
+    if [ -n "$recorded" ] && { ! [[ "$recorded" =~ ^[0-9]+$ ]] || [ "$recorded" -gt "$format" ]; }; then
+      die "这台主机的状态记录为格式 $recorded，$INSTALLER_VERSION 只能读取到格式 $format：安装后 verify、confirm、ports 和 rollback 都会拒绝这份记录。请安装写入记录的版本或更新的版本"
+    fi
+  fi
 
   if already_installed; then
     info "已安装 vps-hardening $INSTALLER_VERSION，文件与发行版一致，未做变更"

@@ -156,6 +156,7 @@ apply_run() {
   VH_APPLY_STAGE=prepare
   VH_ABORT_HOOK=apply_abort
   state_set version "$VH_VERSION"
+  state_set record_format "$VH_RECORD_FORMAT"
   state_set ssh_port "$VH_SSH_PORT"
   state_set ssh_activation "$VH_SSH_ACTIVATION"
   state_set ssh_listeners "$VH_SSH_LISTENERS"
