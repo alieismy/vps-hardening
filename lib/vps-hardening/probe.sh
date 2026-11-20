@@ -27,6 +27,33 @@ unit_active() {
   systemctl is-active --quiet -- "$1"
 }
 
+# The units among the arguments that are enabled or running.
+units_enabled_or_active() {
+  local unit
+  for unit in "$@"; do
+    if unit_enabled "$unit" || unit_active "$unit"; then
+      printf '%s\n' "$unit"
+    fi
+  done
+}
+
+# nf_tables tables other than iptables-nft's ip and ip6 filter tables, which
+# hold UFW's rules, and the table of Fail2ban's nftables action, as "FAMILY
+# NAME" lines. Fails when nft cannot list the tables.
+nft_other_tables() {
+  local tables
+  tables="$(bounded nft list tables 2>/dev/null)" || return 1
+  awk '$1 == "table" && !($3 == "filter" && ($2 == "ip" || $2 == "ip6")) &&
+    !($2 == "inet" && $3 == "f2b-table") { print $2, $3 }' <<<"$tables"
+}
+
+# Booted with ipv6.disable=1: the kernel registers no IPv6 stack, so ip6tables
+# cannot load rules and /proc/sys/net/ipv6 is missing.
+ipv6_disabled() {
+  [ -r /sys/module/ipv6/parameters/disable ] &&
+    [ "$(cat /sys/module/ipv6/parameters/disable 2>/dev/null)" = 1 ]
+}
+
 # Effective sshd configuration evaluated for one user, as `key value` lines.
 # Cached per user; Match blocks are evaluated against a placeholder address.
 sshd_effective() {
@@ -827,7 +854,7 @@ def discover_after_reload():
             time.sleep(0.5)
 
 
-def read_record(path, actual, digest, current_version):
+def read_record(path, actual, digest, current_format):
     data = {}
     for line in Path(path).read_text().splitlines():
         if "=" not in line:
@@ -836,14 +863,19 @@ def read_record(path, actual, digest, current_version):
         if key in data:
             fail("不兼容：状态记录含重复字段")
         data[key] = value
-    legacy_versions = {"0.1.0-rc.1", "0.1.0-rc.2", "0.1.0-rc.3", "0.1.0-rc.4", "0.1.0", "0.1.1", "0.1.2"}
-    if data.get("version") not in legacy_versions | {current_version}:
-        fail("不兼容：状态记录来源版本未知")
+    # Records from before record_format carry only the version that wrote
+    # them: 0.1.x wrote format 1 (no SSH endpoint fields), 0.2.0-rc.1 format 2.
+    # This list is closed; later versions write record_format.
+    unnumbered = dict.fromkeys(("0.1.0-rc.1", "0.1.0-rc.2", "0.1.0-rc.3", "0.1.0-rc.4", "0.1.0", "0.1.1", "0.1.2"), "1")
+    unnumbered["0.2.0-rc.1"] = "2"
+    form = data.get("record_format", unnumbered.get(data.get("version"), ""))
+    if form not in {str(number) for number in range(1, int(current_format) + 1)}:
+        fail(f"不兼容：状态记录的格式未知，或晚于本版本能读取的格式 {current_format}")
     keys = ("ssh_port", "ssh_activation", "ssh_listeners")
     present = [key in data for key in keys]
     if not any(present):
-        if data.get("version") not in legacy_versions:
-            fail("不兼容：缺少端口字段且不是已知旧版本")
+        if form != "1":
+            fail("不兼容：缺少端口字段，且不是格式 1 的旧记录")
         if actual[0] != "22" or not re.fullmatch(r"[a-f0-9]{64}", digest):
             fail("不兼容：旧 22 基线无法核实")
         if data.get("digest.5") != digest + " /etc/fail2ban/jail.d/99-vps-hardening.local":
@@ -852,8 +884,8 @@ def read_record(path, actual, digest, current_version):
         return
     if not all(present):
         fail("不兼容：端口记录字段不完整")
-    if data.get("version") in legacy_versions:
-        fail("不兼容：旧版本记录含不属于其格式的新端口字段")
+    if form == "1":
+        fail("不兼容：格式 1 的旧记录含不属于其格式的端口字段")
     number = port(data["ssh_port"])
     if data["ssh_activation"] not in ("service", "socket"):
         fail("不兼容：未知 SSH 启动方式")
@@ -998,7 +1030,7 @@ ssh_endpoint_check_record() {
     declare -F f2b_jail_content >/dev/null; then
     legacy_digest="$(f2b_jail_content | sha256sum | awk '{print $1}')" || legacy_digest=''
   fi
-  if ! output="$(ssh_probe_python record "$VH_STATE_FILE" "$VH_SSH_PORT" "$VH_SSH_ACTIVATION" "$VH_SSH_LISTENERS" "$legacy_digest" "$VH_VERSION" 2>&1)"; then
+  if ! output="$(ssh_probe_python record "$VH_STATE_FILE" "$VH_SSH_PORT" "$VH_SSH_ACTIVATION" "$VH_SSH_LISTENERS" "$legacy_digest" "$VH_RECORD_FORMAT" 2>&1)"; then
     VH_SSH_ERROR="${output:-无法核实：SSH 记录检查失败或超时}"
     # Discovery succeeded: retain its safe configuration arguments for
     # independent authentication checks, but never expose its drifted P to

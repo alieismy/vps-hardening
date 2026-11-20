@@ -451,7 +451,10 @@ phase_record_corrupt() {
   case "$1" in
     partial) sed '/^ssh_listeners=/d' "$PRIVATE/state.saved" >"$STATE_DIR/state" ;;
     invalid) sed 's/^ssh_port=.*/ssh_port=65536/' "$PRIVATE/state.saved" >"$STATE_DIR/state" ;;
-    unknown) sed 's/^version=.*/version=unknown/' "$PRIVATE/state.saved" >"$STATE_DIR/state" ;;
+    unknown)
+      sed 's/^record_format=.*/record_format=99/' "$PRIVATE/state.saved" >"$STATE_DIR/state"
+      grep -qx 'record_format=99' "$STATE_DIR/state" || fail 'the record has no record_format'
+      ;;
     missing) sed '/^ssh_port=/d; /^ssh_activation=/d; /^ssh_listeners=/d' "$PRIVATE/state.saved" >"$STATE_DIR/state" ;;
     *) fail "unknown record fault $1" ;;
   esac
