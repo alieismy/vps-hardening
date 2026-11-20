@@ -74,7 +74,7 @@ preflight_inputs() {
 }
 
 preflight_new_host() {
-  local found=() rules changed=()
+  local found=() rules changed=() units=() tables=() out
 
   if unit_exists x-ui.service || [ -e /usr/local/x-ui ]; then
     report FAIL new-host.xui '已安装 3X-UI（存在 x-ui.service 或 /usr/local/x-ui）：存量主机不在支持范围内（D6）'
@@ -92,6 +92,27 @@ preflight_new_host() {
     report FAIL new-host.container "已安装 $(join_by '、' "${found[@]}")：它会绕过 UFW，存量主机不在支持范围内（D6）"
   else
     report PASS new-host.container '没有安装 Docker 或 Podman'
+  fi
+
+  # Other firewalls keep rules UFW does not show; nftables.service's default
+  # configuration also flushes every table, UFW's included, when it starts.
+  mapfile -t units < <(units_enabled_or_active nftables.service netfilter-persistent.service firewalld.service)
+  if [ "${#units[@]}" -gt 0 ]; then
+    report FAIL new-host.firewall "$(join_by '、' "${units[@]}") 已启用或在运行：它另行管理防火墙规则，ufw status 中看不到；存量主机不在支持范围内（D6）"
+  else
+    report PASS new-host.firewall '没有启用或运行 nftables.service、netfilter-persistent.service、firewalld.service'
+  fi
+  # A warning only: such a table may be harmless, but its rules apply next to
+  # UFW's and can still block a port UFW allows.
+  if ! have nft; then
+    report SKIP new-host.nft '未安装 nft，无法列出 nf_tables 的表'
+  elif ! out="$(nft_other_tables)"; then
+    report WARN new-host.nft '无法列出 nf_tables 的表（nft list tables）'
+  elif [ -n "$out" ]; then
+    mapfile -t tables <<<"$out"
+    report WARN new-host.nft "nf_tables 中有 UFW 和 Fail2ban 以外的表：$(join_by '、' "${tables[@]}")。其中的规则与 UFW 的同时生效，可能让 UFW 放行的端口仍然不通"
+  else
+    report PASS new-host.nft 'nf_tables 中没有 UFW 和 Fail2ban 以外的表'
   fi
 
   # `ufw allow` also works while UFW is inactive; such rules would take effect

@@ -27,6 +27,26 @@ unit_active() {
   systemctl is-active --quiet -- "$1"
 }
 
+# The units among the arguments that are enabled or running.
+units_enabled_or_active() {
+  local unit
+  for unit in "$@"; do
+    if unit_enabled "$unit" || unit_active "$unit"; then
+      printf '%s\n' "$unit"
+    fi
+  done
+}
+
+# nf_tables tables other than iptables-nft's ip and ip6 filter tables, which
+# hold UFW's rules, and the table of Fail2ban's nftables action, as "FAMILY
+# NAME" lines. Fails when nft cannot list the tables.
+nft_other_tables() {
+  local tables
+  tables="$(bounded nft list tables 2>/dev/null)" || return 1
+  awk '$1 == "table" && !($3 == "filter" && ($2 == "ip" || $2 == "ip6")) &&
+    !($2 == "inet" && $3 == "f2b-table") { print $2, $3 }' <<<"$tables"
+}
+
 # Effective sshd configuration evaluated for one user, as `key value` lines.
 # Cached per user; Match blocks are evaluated against a placeholder address.
 sshd_effective() {

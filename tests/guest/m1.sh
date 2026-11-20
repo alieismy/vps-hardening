@@ -299,6 +299,12 @@ phase_matrix() {
   expect_report vt01-preflight PASS sshd.root-login
   expect_report vt01-preflight PASS sshd.loginuid
   expect_report vt01-preflight PASS reboot.required
+  expect_report vt01-preflight PASS new-host.firewall
+  # nft is absent from the Debian images; the Ubuntu image has no tables.
+  case "$(os_id)" in
+    debian) expect_report vt01-preflight SKIP new-host.nft ;;
+    ubuntu) expect_report vt01-preflight PASS new-host.nft ;;
+  esac
 
   # Requirement D43: a pending reboot only warns. Without --open, UFW is to
   # allow P/tcp only (requirement D41).
@@ -566,6 +572,22 @@ phase_negative() {
   expect_report vt02-loginuid FAIL sshd.loginuid
   expect_report vt02-loginuid PASS sshd.root-login
   expect_clean vt02-loginuid
+
+  # Requirements D68: another firewall service beside UFW (a transient unit
+  # under firewalld's name), and a table of its own where nft is installed.
+  systemd-run --quiet --unit firewalld --remain-after-exit /bin/true
+  if command -v nft >/dev/null; then nft add table inet vh-negative; fi
+  capture vt02-firewall "$VH" preflight "${GOOD_ARGS[@]}"
+  systemctl stop firewalld.service
+  if command -v nft >/dev/null; then nft delete table inet vh-negative; fi
+  expect_rc vt02-firewall 1
+  expect_report vt02-firewall FAIL new-host.firewall
+  if command -v nft >/dev/null; then
+    expect_report vt02-firewall WARN new-host.nft
+  else
+    expect_report vt02-firewall SKIP new-host.nft
+  fi
+  expect_clean vt02-firewall
 
   snapshot negative-after
   same_snapshot negative-before negative-after
