@@ -578,6 +578,7 @@ phase_negative() {
   systemd-run --quiet --unit firewalld --remain-after-exit /bin/true
   if command -v nft >/dev/null; then nft add table inet vh-negative; fi
   capture vt02-firewall "$VH" preflight "${GOOD_ARGS[@]}"
+  apply_refused vt02-firewall-apply new-host.firewall
   systemctl stop firewalld.service
   if command -v nft >/dev/null; then nft delete table inet vh-negative; fi
   expect_rc vt02-firewall 1
@@ -595,6 +596,7 @@ phase_negative() {
   expect_rc vt02-ipv6 1
   expect_report vt02-ipv6 FAIL platform.ipv6
   expect_clean vt02-ipv6
+  apply_refused vt02-ipv6-apply platform.ipv6 "$PRIVATE/ipv6-disable" /sys/module/ipv6/parameters/disable
 
   snapshot negative-after
   same_snapshot negative-before negative-after
