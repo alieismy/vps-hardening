@@ -10,7 +10,7 @@ PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 LC_ALL=C
 export PATH LC_ALL
 
-readonly VH_VERSION='0.2.0-rc.1'
+readonly VH_VERSION='0.2.0-rc.2'
 # Format of the state record apply writes. Raise it when a record changes in a
 # way older versions cannot read; this version reads every format up to it,
 # and install.sh refuses to install it on a host with a higher recorded one.
