@@ -296,6 +296,8 @@ phase_matrix() {
   expect_rc vt01-preflight 0
   expect_clean vt01-preflight
   expect_report vt01-preflight PASS root.keys
+  expect_report vt01-preflight PASS sshd.root-login
+  expect_report vt01-preflight PASS sshd.loginuid
   expect_report vt01-preflight PASS reboot.required
 
   # Requirement D43: a pending reboot only warns. Without --open, UFW is to
@@ -547,6 +549,23 @@ phase_negative() {
   expect_rc vt02-match-keyword 1
   expect_match vt02-match-keyword '^\[FAIL\] sshd\.match +/etc/ssh/sshd_config 中有 Match 块'
   expect_clean vt02-match-keyword
+
+  # Root stays the only login after apply, so sshd must not refuse it; and
+  # confirm needs the login session ID that pam_loginuid sets.
+  allow_user="$(default_user)"
+  cp /etc/ssh/sshd_config "$PRIVATE/sshd_config-allow"
+  printf 'AllowUsers %s\n' "$allow_user" >>"$PRIVATE/sshd_config-allow"
+  capture vt02-root-login bound "$PRIVATE/sshd_config-allow" /etc/ssh/sshd_config "$VH" preflight "${GOOD_ARGS[@]}"
+  expect_rc vt02-root-login 1
+  expect_report vt02-root-login FAIL sshd.root-login
+  expect_report vt02-root-login PASS sshd.loginuid
+  expect_clean vt02-root-login
+  grep -v pam_loginuid /etc/pam.d/sshd >"$PRIVATE/pam-sshd"
+  capture vt02-loginuid bound "$PRIVATE/pam-sshd" /etc/pam.d/sshd "$VH" preflight "${GOOD_ARGS[@]}"
+  expect_rc vt02-loginuid 1
+  expect_report vt02-loginuid FAIL sshd.loginuid
+  expect_report vt02-loginuid PASS sshd.root-login
+  expect_clean vt02-loginuid
 
   snapshot negative-after
   same_snapshot negative-before negative-after
