@@ -47,6 +47,13 @@ nft_other_tables() {
     !($2 == "inet" && $3 == "f2b-table") { print $2, $3 }' <<<"$tables"
 }
 
+# Booted with ipv6.disable=1: the kernel registers no IPv6 stack, so ip6tables
+# cannot load rules and /proc/sys/net/ipv6 is missing.
+ipv6_disabled() {
+  [ -r /sys/module/ipv6/parameters/disable ] &&
+    [ "$(cat /sys/module/ipv6/parameters/disable 2>/dev/null)" = 1 ]
+}
+
 # Effective sshd configuration evaluated for one user, as `key value` lines.
 # Cached per user; Match blocks are evaluated against a placeholder address.
 sshd_effective() {

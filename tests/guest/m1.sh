@@ -588,6 +588,13 @@ phase_negative() {
     expect_report vt02-firewall SKIP new-host.nft
   fi
   expect_clean vt02-firewall
+  # Requirements D69: a kernel booted with ipv6.disable=1, as its module
+  # parameter shows it.
+  printf '1\n' >"$PRIVATE/ipv6-disable"
+  capture vt02-ipv6 bound "$PRIVATE/ipv6-disable" /sys/module/ipv6/parameters/disable "$VH" preflight "${GOOD_ARGS[@]}"
+  expect_rc vt02-ipv6 1
+  expect_report vt02-ipv6 FAIL platform.ipv6
+  expect_clean vt02-ipv6
 
   snapshot negative-after
   same_snapshot negative-before negative-after

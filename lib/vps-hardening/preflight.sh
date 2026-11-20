@@ -29,6 +29,12 @@ preflight_gate() {
     return 1
   fi
   report PASS platform "$VH_OS_PRETTY（$VH_ARCH）"
+  # Apply declares IPv6 rules too (IPV6=yes), and the SSH endpoint probe reads
+  # IPv6 settings; IPv4-only hosts are not supported.
+  if ipv6_disabled; then
+    report FAIL platform.ipv6 '内核以 ipv6.disable=1 启动，没有 IPv6 协议栈：本工具同时写入 IPv4 和 IPv6 的 UFW 规则，不支持只有 IPv4 的主机。去掉这个内核参数并重启后再运行；未做变更'
+    return 1
+  fi
 }
 
 run_preflight_checks() {
