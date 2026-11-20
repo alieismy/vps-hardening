@@ -6,6 +6,17 @@
 
 provider_file=/etc/ssh/sshd_config.d/01-vh-provider.conf
 
+# A failed fixture restart leaves the guest without an SSH listener, so the
+# runner can no longer collect guest evidence. The session running this phase
+# survives the restart (ssh.service has KillMode=process), so write the unit's
+# state and log into the phase log before failing.
+restart_ssh() {
+  systemctl restart ssh.service && return 0
+  systemctl status ssh.service --no-pager --full || true
+  journalctl -u ssh.service -b --no-pager -n 100 || true
+  fail 'systemctl restart ssh.service failed'
+}
+
 endpoint_evidence() {
   /usr/sbin/sshd -T >"$phase_dir/sshd-T.txt"
   ss -H -ltnp >"$phase_dir/listeners.txt"
@@ -67,7 +78,7 @@ phase_endpoint_explicit() {
   [ ! "$(systemctl is-active ssh.socket || true)" = active ] || fail 'explicit-address fixture needs service activation'
   printf 'ListenAddress 0.0.0.0:%s\n' "$GUEST_SSH_PORT" >"$provider_file"
   /usr/sbin/sshd -t
-  systemctl restart ssh.service
+  restart_ssh
   wait_listen "$GUEST_SSH_PORT"
 }
 
@@ -101,7 +112,7 @@ phase_native_negative() {
     cp -p "$PRIVATE/native-provider.saved" "$provider_file"
     rm -f "$wrapper" "$socket_dropin"
     systemctl daemon-reload
-    [ "$kind" = socket ] || systemctl restart ssh.service
+    [ "$kind" = socket ] || restart_ssh
   }
   [ ! -e "$wrapper" ] && [ ! -e "$socket_dropin" ] || fail 'native fault fixture already exists'
   trap native_cleanup EXIT
@@ -121,7 +132,7 @@ phase_native_negative() {
     owner)
       phase_service_mode
       printf 'Port %s\n' "$((GUEST_SSH_PORT + 1))" >"$provider_file"
-      systemctl restart ssh.service
+      restart_ssh
       wait_listen "$((GUEST_SSH_PORT + 1))"
       # The native daemon remains active on the other port. Disk now expects P,
       # while an unrelated Python process really owns P in the host namespace.
@@ -189,7 +200,7 @@ phase_endpoint_argument() {
       ;;
   esac
   systemctl daemon-reload
-  systemctl restart ssh.service
+  restart_ssh
   wait_listen "$GUEST_SSH_PORT"
 }
 
@@ -489,7 +500,7 @@ phase_service_mode() {
   fi
   systemctl enable ssh.service
   systemctl daemon-reload
-  systemctl restart ssh.service
+  restart_ssh
   wait_listen "$GUEST_SSH_PORT"
   printf 'service\n' >"$PRIVATE/ssh-mode"
   assert_ssh_mode service
@@ -516,12 +527,12 @@ phase_role_port() {
   # This is a local fixture, not evidence of provider-side NAT.
   role_cleanup() {
     cp -p "$PRIVATE/role-provider.saved" "$provider_file"
-    systemctl restart ssh.service
+    restart_ssh
     if command -v ufw >/dev/null; then ufw --force disable >/dev/null; fi
   }
   trap role_cleanup EXIT
   printf 'Port %s\n' "$target" >"$provider_file"
-  systemctl restart ssh.service
+  restart_ssh
   wait_listen "$target"
   # SSH options must precede destination, so remote command is supplied here.
   role_command() {
