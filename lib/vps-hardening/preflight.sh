@@ -179,6 +179,137 @@ preflight_sshd() {
 
   check_sshd_match sshd.match
   check_root_keys
+  check_root_login
+  check_sshd_loginuid
+}
+
+# sshd also refuses root through AllowUsers, DenyUsers, AllowGroups and
+# DenyGroups (allowed_user() in auth.c) or AuthenticationMethods (auth2.c).
+# sshd -T only lists them: it does not test whether the user may log in. A
+# wildcard or a host part cannot be settled for every source, so only literal
+# names count. Applying denies every other login account, so root must stay.
+check_root_login() {
+  local config groups entry list allowed problems=()
+  config="$(sshd_effective root)"
+  groups=" $(id -Gn root) "
+  while IFS= read -r entry; do
+    case "${entry%@*}" in
+      root | *[*?]*) problems+=("DenyUsers $entry") ;;
+    esac
+  done < <(sshd_values denyusers <<<"$config")
+  while IFS= read -r entry; do
+    if [[ "$entry" == *[*?]* || "$groups" == *" $entry "* ]]; then
+      problems+=("DenyGroups $entry")
+    fi
+  done < <(sshd_values denygroups <<<"$config")
+  list="$(sshd_values allowusers <<<"$config")"
+  if [ -n "$list" ] && ! grep -qxF root <<<"$list"; then
+    problems+=('AllowUsers 未列出 root')
+  fi
+  list="$(sshd_values allowgroups <<<"$config")"
+  if [ -n "$list" ]; then
+    allowed=''
+    while IFS= read -r entry; do
+      [[ "$groups" != *" $entry "* ]] || allowed=yes
+    done <<<"$list"
+    [ -n "$allowed" ] || problems+=("AllowGroups 未列出 root 所在的组（${groups:1:-1}）")
+  fi
+  # Each list must be completed in full; after apply only publickey is on.
+  list="$(sshd_values authenticationmethods <<<"$config")"
+  if [ -n "$list" ] && ! grep -qxE 'any|publickey' <<<"$list"; then
+    problems+=("AuthenticationMethods $(paste -sd ' ' <<<"$list")")
+  fi
+  if [ "${#problems[@]}" -gt 0 ]; then
+    report FAIL sshd.root-login "应用后只有 root 能用密钥登录，但 sshd 会拒绝 root 或无法确认允许：$(join_by '；' "${problems[@]}")。只按字面的用户名和组名判定，含通配符或 @ 的条目不支持"
+  else
+    report PASS sshd.root-login 'sshd 的用户、组和认证方式限制不阻止 root 用密钥登录'
+  fi
+}
+
+# confirm recognizes a new root session by the audit login UID and session ID
+# that pam_loginuid sets at login (design 2.6). Without them every confirm is
+# refused and the change is restored when the window ends. OpenSSH 9.8 and
+# later take the PAM service from PAMServiceName (default sshd); earlier
+# versions do not list the keyword and always use sshd.
+check_sshd_loginuid() {
+  local config usepam service
+  config="$(sshd_effective root)"
+  usepam="$(sshd_value usepam <<<"$config")"
+  service="$(sshd_value pamservicename <<<"$config")"
+  service="${service:-sshd}"
+  # pam_start() keeps the part after the last "/" and lowercases it.
+  service="${service##*/}"
+  service="${service,,}"
+  if [ "$usepam" != yes ]; then
+    report FAIL sshd.loginuid "sshd 的 UsePAM 不是 yes（${usepam:-未设置}）：新的 SSH 会话没有登录会话编号，confirm 无法确认，变更会在时限到后自动恢复"
+  elif ! pam_session_loads "$service" pam_loginuid.so; then
+    report FAIL sshd.loginuid "/etc/pam.d/$service 的 session 栈没有加载 pam_loginuid.so：新的 SSH 会话没有登录会话编号，confirm 无法确认，变更会在时限到后自动恢复"
+  elif [ ! -r "/proc/$$/loginuid" ] || [ ! -r "/proc/$$/sessionid" ]; then
+    report FAIL sshd.loginuid '内核不提供 /proc/<pid>/loginuid 或 sessionid（审计支持）：confirm 无法识别新的 SSH 会话'
+  else
+    report PASS sshd.loginuid 'sshd 经 PAM 的 pam_loginuid.so 为新会话设置登录会话编号，confirm 能识别新的 root 会话'
+  fi
+}
+
+# pam_session_loads SERVICE MODULE: the PAM configuration of SERVICE, with
+# @include lines and session include and substack lines followed, has a
+# session line for MODULE. A leading "-" (skip a missing module) counts;
+# a control in brackets may contain blanks. Linux-PAM reads a relative
+# include under /etc/pam.d and matches the type and control in any case.
+# Like _pam_assemble_line(), a line ending in a backslash continues on the
+# next one, blank and comment lines in between are skipped, and a "#" ends
+# the logical line. Controls are not followed: an earlier sufficient line or
+# jump that passes over MODULE still counts as loading it (design 3).
+pam_session_loads() {
+  local queue=("/etc/pam.d/$1") listed=$'\n' file line
+  while [ "${#queue[@]}" -gt 0 ]; do
+    file="${queue[0]}"
+    queue=("${queue[@]:1}")
+    case "$listed" in
+      *$'\n'"$file"$'\n'*) continue ;;
+    esac
+    listed="$listed$file"$'\n'
+    [ -f "$file" ] || continue
+    while IFS= read -r line; do
+      case "$line" in
+        =) return 0 ;;
+        /*) queue+=("$line") ;;
+        *) queue+=("/etc/pam.d/$line") ;;
+      esac
+    done < <(awk -v module="$2" '
+      /^[ \t]*$/ || /^[ \t]*#/ { next }
+      {
+        line = $0
+        i = index(line, "#")
+        if (i > 0) line = substr(line, 1, i - 1)
+        else if (sub(/\\[ \t]*$/, " ", line)) { held = held line; next }
+        $0 = held line
+        held = ""
+        if ($1 == "@include") { if (NF > 1) print $2; next }
+        type = tolower($1)
+        if (type != "session" && type != "-session") next
+        rest = $0
+        sub(/^[ \t]*[^ \t]+[ \t]+/, "", rest)
+        if (substr(rest, 1, 1) == "[") {
+          i = index(rest, "]")
+          if (i == 0) next
+          control = ""
+          rest = substr(rest, i + 1)
+        } else {
+          control = tolower(rest)
+          sub(/[ \t].*/, "", control)
+          sub(/^[^ \t]+/, "", rest)
+        }
+        sub(/^[ \t]+/, "", rest)
+        sub(/[ \t].*/, "", rest)
+        if (rest == "") next
+        if (control == "include" || control == "substack") { print rest; next }
+        sub(/.*\//, "", rest)
+        if (rest == module) { print "="; exit }
+      }
+    ' "$file")
+  done
+  return 1
 }
 
 # Root is the only administrative login (D22), so applying without a usable

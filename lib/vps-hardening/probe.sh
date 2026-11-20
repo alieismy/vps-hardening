@@ -324,8 +324,10 @@ VH_SSHD_ARGS=()
 # A single read-only helper keeps IP, systemd and /proc parsing at their trust
 # boundary. No configuration value is executed as shell code. The outer and
 # individual command bounds also cover a blocked systemd or sshd query.
+# Isolated mode (-I) keeps a module in the working directory or a PYTHON*
+# variable from replacing the standard library in this root process.
 ssh_probe_python() {
-  bounded python3 - "$@" <<'VH_SSH_PY'
+  bounded python3 -I - "$@" <<'VH_SSH_PY'
 import hashlib
 import ipaddress
 import json

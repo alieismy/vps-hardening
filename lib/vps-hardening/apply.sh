@@ -8,6 +8,9 @@ readonly VH_APT_CONF=/etc/apt/apt.conf.d/52vps-hardening
 readonly VH_UFW_COMMENT=vps-hardening
 # Bound for package installation, which runs before the restore is armed.
 readonly VH_APT_TIMEOUT=1800
+# Wait for the dpkg lock, within that bound: unattended-upgrades may start
+# between preflight's apt.idle check and the install.
+readonly VH_APT_LOCK_WAIT=600
 
 # prepare: only packages may change; changing: failure restores the snapshot.
 VH_APPLY_STAGE=''
@@ -217,7 +220,7 @@ install_missing_packages() {
     f2b_hold || apply_fail '无法在安装软件包期间阻止 fail2ban.service 启动'
   fi
   if ! DEBIAN_FRONTEND=noninteractive timeout --kill-after=30 "$VH_APT_TIMEOUT" \
-    apt-get -q -y --no-install-recommends \
+    apt-get -q -y --no-install-recommends -o DPkg::Lock::Timeout="$VH_APT_LOCK_WAIT" \
     -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
     install "${missing[@]}" </dev/null >>"$VH_LOG_FILE" 2>&1; then
     apply_fail "安装软件包失败，详见 $VH_LOG_FILE"

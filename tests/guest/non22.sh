@@ -281,7 +281,7 @@ phase_connection_fault() {
       [ ! -e /usr/local/sbin/python3 ] || fail 'connection probe wrapper already exists'
       cat >/usr/local/sbin/python3 <<'EOF'
 #!/bin/sh
-if [ "${1-}" = - ] && [ "${2-}" = connection ]; then
+if [ "${1-}" = -I ] && [ "${2-}" = - ] && [ "${3-}" = connection ]; then
   printf '无法核实：测试注入的连接归属读取失败\n' >&2
   exit 1
 fi
