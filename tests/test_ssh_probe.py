@@ -21,6 +21,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 CURRENT_VERSION = re.search(r"^readonly VH_VERSION='([^']+)'$",
                             (ROOT / 'bin/vps-hardening').read_text(encoding='utf-8'), re.M)[1]
+CURRENT_FORMAT = re.search(r"^readonly VH_RECORD_FORMAT=([0-9]+)$",
+                           (ROOT / 'bin/vps-hardening').read_text(encoding='utf-8'), re.M)[1]
 
 
 def load_probe():
@@ -336,17 +338,34 @@ class ProbeTests(unittest.TestCase):
             before = path.read_bytes()
             output = io.StringIO()
             with redirect_stdout(output):
-                self.probe['read_record'](str(path), actual, digest, CURRENT_VERSION)
+                self.probe['read_record'](str(path), actual, digest, CURRENT_FORMAT)
             self.assertEqual(path.read_bytes(), before, 'record compatibility must remain read-only')
             return output.getvalue()
 
     @staticmethod
     def modern():
-        return ['version=' + CURRENT_VERSION, 'ssh_port=2222', 'ssh_activation=service',
-                'ssh_listeners=ipv4,0.0.0.0,2222 ipv6,::,2222']
+        return ['version=' + CURRENT_VERSION, 'record_format=' + CURRENT_FORMAT, 'ssh_port=2222',
+                'ssh_activation=service', 'ssh_listeners=ipv4,0.0.0.0,2222 ipv6,::,2222']
 
     def test_current_record(self):
         self.assertEqual(self.record(self.modern()), 'no\n')
+
+    def test_format_decides_not_the_version(self):
+        lines = self.modern()
+        lines[0] = 'version=9.9.9'
+        self.assertEqual(self.record(lines), 'no\n')
+
+    def test_rc1_record_without_format_is_format_2(self):
+        lines = self.modern()
+        lines[:2] = ['version=0.2.0-rc.1']
+        self.assertEqual(self.record(lines), 'no\n')
+
+    def test_later_or_unknown_format_rejected(self):
+        for value in (str(int(CURRENT_FORMAT) + 1), '0', '', 'x'):
+            lines = self.modern()
+            lines[1] = 'record_format=' + value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, '格式'):
+                self.record(lines)
 
     def test_recognizable_old_22_requires_original_jail_digest(self):
         lines = ['version=0.1.2', 'digest.5=' + 'a' * 64 + ' /etc/fail2ban/jail.d/99-vps-hardening.local']
@@ -361,19 +380,20 @@ class ProbeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.record(['version=unknown'])
 
-    def test_unknown_version_with_new_fields_rejected(self):
+    def test_unknown_version_without_format_rejected(self):
         lines = self.modern()
-        lines[0] = 'version=unknown'
+        lines[:2] = ['version=unknown']
         with self.assertRaises(ValueError):
             self.record(lines)
 
     def test_new_version_without_fields_is_not_legacy(self):
-        with self.assertRaises(ValueError):
-            self.record(['version=' + CURRENT_VERSION])
+        for lines in (['version=' + CURRENT_VERSION], self.modern()[:2]):
+            with self.subTest(lines=lines), self.assertRaises(ValueError):
+                self.record(lines)
 
     def test_old_version_cannot_claim_new_fields(self):
         lines = self.modern()
-        lines[0] = 'version=0.1.2'
+        lines[:2] = ['version=0.1.2']
         with self.assertRaises(ValueError):
             self.record(lines)
 

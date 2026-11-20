@@ -447,10 +447,25 @@ verify_fail2ban_files() {
 }
 
 verify_nftables() {
-  if unit_enabled nftables.service; then
-    report FAIL nft.service 'nftables.service 已启用：它的默认配置开机时会清空全部规则'
+  local units=() tables=() out
+  if unit_enabled nftables.service || unit_active nftables.service; then
+    report FAIL nft.service 'nftables.service 已启用或在运行：它的默认配置启动时会清空全部规则'
   else
-    report PASS nft.service 'nftables.service 未启用'
+    report PASS nft.service 'nftables.service 未启用，也没有运行'
+  fi
+  mapfile -t units < <(units_enabled_or_active netfilter-persistent.service firewalld.service)
+  if [ "${#units[@]}" -gt 0 ]; then
+    report FAIL firewall.others "$(join_by '、' "${units[@]}") 已启用或在运行：它另行管理防火墙规则，ufw status 中看不到"
+  else
+    report PASS firewall.others '没有启用或运行 netfilter-persistent.service、firewalld.service'
+  fi
+  if ! out="$(nft_other_tables)"; then
+    report WARN nft.tables '无法列出 nf_tables 的表（nft list tables）'
+  elif [ -n "$out" ]; then
+    mapfile -t tables <<<"$out"
+    report WARN nft.tables "nf_tables 中有 UFW 和 Fail2ban 以外的表：$(join_by '、' "${tables[@]}")。其中的规则与 UFW 的同时生效，可能让 UFW 放行的端口仍然不通"
+  else
+    report PASS nft.tables 'nf_tables 中只有 UFW 和 Fail2ban 的表'
   fi
 }
 

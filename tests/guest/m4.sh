@@ -501,6 +501,11 @@ phase_m4_installer() {
   : >"$STATE_DIR/pending"
   expect_install pending 1 '有待确认的变更' "$inst" --source-dir "$rel"
   rm -rf "$STATE_DIR"
+  # Requirements D70: not over a record of a later format than this release reads.
+  install -d -m 0700 "$STATE_DIR"
+  printf 'status=applied\nrecord_format=%s\n' "$(($(sed -n 's/^readonly VH_RECORD_FORMAT=//p' "$VH") + 1))" >"$STATE_DIR/state"
+  expect_install later-format 1 '只能读取到格式' "$inst" --source-dir "$rel"
+  rm -rf "$STATE_DIR"
   # The lock holder becomes sleep itself, so killing it releases the lock.
   (exec 9>/run/vps-hardening.lock && flock 9 && exec sleep 120) &
   lock_pid=$!
@@ -534,10 +539,10 @@ phase_m4_installer() {
   installed_record >"$phase_dir/installed-replaced.txt"
   diff -u "$phase_dir/installed.txt" "$phase_dir/installed-replaced.txt" || fail 'the replaced install differs'
   for name in unbound relative fault-fresh install again mode-module mode-dir owner-command tampered-asset \
-    tampered-manifest missing-asset pending locked fault-lib-fail fault-lib-term fault-bin-fail fault-bin-term replace; do
+    tampered-manifest missing-asset pending later-format locked fault-lib-fail fault-lib-term fault-bin-fail fault-bin-term replace; do
     expect_clean "$name"
   done
-  log 'installer: verified install, no-op reinstall, reinstall for modes and owners, replacement; tampered, missing, pending and locked refused; incomplete installs put back'
+  log 'installer: verified install, no-op reinstall, reinstall for modes and owners, replacement; tampered, missing, pending, later-format and locked refused; incomplete installs put back'
 }
 
 m4_main() {

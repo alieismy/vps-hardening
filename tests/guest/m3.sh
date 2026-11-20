@@ -543,6 +543,14 @@ phase_m3_drift() {
       systemctl enable nftables.service
       want_fail='nft.service'
       ;;
+    other-firewall)
+      # Requirements D68: another firewall service beside UFW (a transient
+      # unit under firewalld's name) and a table of its own.
+      systemd-run --quiet --unit firewalld --remain-after-exit /bin/true
+      nft add table inet vh-drift
+      want_fail='firewall.others'
+      want_warn='nft.tables'
+      ;;
     sshd-dropin)
       printf '# drift\n' >>/etc/ssh/sshd_config.d/00-vps-hardening.conf
       want_fail='ssh.dropin'
