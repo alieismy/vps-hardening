@@ -237,6 +237,9 @@ check_sshd_loginuid() {
   usepam="$(sshd_value usepam <<<"$config")"
   service="$(sshd_value pamservicename <<<"$config")"
   service="${service:-sshd}"
+  # pam_start() keeps the part after the last "/" and lowercases it.
+  service="${service##*/}"
+  service="${service,,}"
   if [ "$usepam" != yes ]; then
     report FAIL sshd.loginuid "sshd 的 UsePAM 不是 yes（${usepam:-未设置}）：新的 SSH 会话没有登录会话编号，confirm 无法确认，变更会在时限到后自动恢复"
   elif ! pam_session_loads "$service" pam_loginuid.so; then
