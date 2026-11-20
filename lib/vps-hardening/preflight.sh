@@ -228,14 +228,19 @@ check_root_login() {
 
 # confirm recognizes a new root session by the audit login UID and session ID
 # that pam_loginuid sets at login (design 2.6). Without them every confirm is
-# refused and the change is restored when the window ends.
+# refused and the change is restored when the window ends. OpenSSH 9.8 and
+# later take the PAM service from PAMServiceName (default sshd); earlier
+# versions do not list the keyword and always use sshd.
 check_sshd_loginuid() {
-  local usepam
-  usepam="$(sshd_effective root | sshd_value usepam)"
+  local config usepam service
+  config="$(sshd_effective root)"
+  usepam="$(sshd_value usepam <<<"$config")"
+  service="$(sshd_value pamservicename <<<"$config")"
+  service="${service:-sshd}"
   if [ "$usepam" != yes ]; then
     report FAIL sshd.loginuid "sshd 的 UsePAM 不是 yes（${usepam:-未设置}）：新的 SSH 会话没有登录会话编号，confirm 无法确认，变更会在时限到后自动恢复"
-  elif ! pam_session_loads sshd pam_loginuid.so; then
-    report FAIL sshd.loginuid '/etc/pam.d/sshd 的 session 栈没有加载 pam_loginuid.so：新的 SSH 会话没有登录会话编号，confirm 无法确认，变更会在时限到后自动恢复'
+  elif ! pam_session_loads "$service" pam_loginuid.so; then
+    report FAIL sshd.loginuid "/etc/pam.d/$service 的 session 栈没有加载 pam_loginuid.so：新的 SSH 会话没有登录会话编号，confirm 无法确认，变更会在时限到后自动恢复"
   elif [ ! -r "/proc/$$/loginuid" ] || [ ! -r "/proc/$$/sessionid" ]; then
     report FAIL sshd.loginuid '内核不提供 /proc/<pid>/loginuid 或 sessionid（审计支持）：confirm 无法识别新的 SSH 会话'
   else
@@ -248,6 +253,10 @@ check_sshd_loginuid() {
 # session line for MODULE. A leading "-" (skip a missing module) counts;
 # a control in brackets may contain blanks. Linux-PAM reads a relative
 # include under /etc/pam.d and matches the type and control in any case.
+# Like _pam_assemble_line(), a line ending in a backslash continues on the
+# next one, blank and comment lines in between are skipped, and a "#" ends
+# the logical line. Controls are not followed: an earlier sufficient line or
+# jump that passes over MODULE still counts as loading it (design 3).
 pam_session_loads() {
   local queue=("/etc/pam.d/$1") listed=$'\n' file line
   while [ "${#queue[@]}" -gt 0 ]; do
@@ -265,8 +274,14 @@ pam_session_loads() {
         *) queue+=("/etc/pam.d/$line") ;;
       esac
     done < <(awk -v module="$2" '
+      /^[ \t]*$/ || /^[ \t]*#/ { next }
       {
-        sub(/#.*/, "")
+        line = $0
+        i = index(line, "#")
+        if (i > 0) line = substr(line, 1, i - 1)
+        else if (sub(/\\[ \t]*$/, " ", line)) { held = held line; next }
+        $0 = held line
+        held = ""
         if ($1 == "@include") { if (NF > 1) print $2; next }
         type = tolower($1)
         if (type != "session" && type != "-session") next
