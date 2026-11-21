@@ -9,8 +9,12 @@ provider_file=/etc/ssh/sshd_config.d/01-vh-provider.conf
 # A failed fixture restart leaves the guest without an SSH listener, so the
 # runner can no longer collect guest evidence. The session running this phase
 # survives the restart (ssh.service has KillMode=process), so write the unit's
-# state and log into the phase log before failing.
+# state and log into the phase log before failing. The fixtures restart it
+# more often than its start limit allows (5 starts in 10 s by default); runs
+# 44879164019 and 44879287836 failed with start-limit-hit. No case checks the
+# counter, so it is reset first.
 restart_ssh() {
+  systemctl reset-failed ssh.service
   systemctl restart ssh.service && return 0
   systemctl status ssh.service --no-pager --full || true
   journalctl -u ssh.service -b --no-pager -n 100 || true
