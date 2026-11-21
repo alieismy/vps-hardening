@@ -446,6 +446,17 @@ check_restore_time() {
   [ "$took" -le 600 ] || fail "the restore took ${took}s"
 }
 
+# start_done_at UNIT first|last: journald's monotonic time on the first or
+# last record from PID 1 in this boot that a start job of UNIT finished; 0
+# when there is none.
+start_done_at() {
+  journalctl -b -o json --no-pager UNIT="$1" _PID=1 | python3 -c '
+import json, sys
+done = [int(e["__MONOTONIC_TIMESTAMP"]) for e in map(json.loads, sys.stdin)
+        if e.get("JOB_TYPE") == "start" and e.get("JOB_RESULT") == "done"]
+print((done[0] if sys.argv[1] == "first" else done[-1]) if done else 0)' "$2"
+}
+
 # VT-22: the restore ran at boot and finished before sshd and UFW started.
 check_boot_restore() {
   local done_at unit started
@@ -453,12 +464,24 @@ check_boot_restore() {
   journalctl -b -u "$BOOT_UNIT" --no-pager -o cat >"$phase_dir/boot-unit.log"
   cat "$phase_dir/boot-unit.log"
   grep -qF '已恢复到应用前的配置' "$phase_dir/boot-unit.log" || fail "$BOOT_UNIT did not restore"
-  done_at="$(systemctl show -p ExecMainExitTimestampMonotonic --value "$BOOT_UNIT")"
-  [ "${done_at:-0}" -gt 0 ] || fail "$BOOT_UNIT did not run in this boot"
+  # From systemd's own "Finished" record: the unit, disabled and unreferenced
+  # after the restore's final reload, is unloaded with its runtime properties.
+  done_at="$(start_done_at "$BOOT_UNIT" last)"
+  [ "$done_at" -gt 0 ] || fail "$BOOT_UNIT did not run in this boot"
   for unit in ssh.socket ssh.service ufw.service; do
     started="$(systemctl show -p ActiveEnterTimestampMonotonic --value "$unit")"
-    [ "${started:-0}" -eq 0 ] || [ "$started" -ge "$done_at" ] || fail "$unit started before the restore finished"
+    [ "${started:-0}" -gt 0 ] || continue
+    # The same kind of record on both sides: journald stamps PID 1's records
+    # when it reads them, in the order PID 1 sent them, so a record read late
+    # cannot make a unit look as if it started first.
+    started="$(start_done_at "$unit" first)"
+    [ "$started" -gt 0 ] || fail "no record of $unit starting in this boot"
+    [ "$started" -ge "$done_at" ] || fail "$unit started before the restore finished"
   done
+  # Without the reload that ends the restore, systemd 255 and later report
+  # every unit as needing one, and the SSH probe cannot verify (design 2.7).
+  [ "$(systemctl show -p NeedDaemonReload --value ssh.service)" = no ] ||
+    fail 'ssh.service needs a daemon-reload after the boot restore'
   log "restored at boot before sshd and UFW started"
 }
 

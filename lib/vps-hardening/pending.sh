@@ -66,15 +66,23 @@ check_self_path() {
   [[ "$VH_SELF" =~ ^/[A-Za-z0-9._/-]+$ ]] || refuse "本工具的路径含特殊字符，无法写入 systemd 单元：$VH_SELF"
 }
 
-# start_timer SECONDS: a transient timer that restores unless confirmed.
-# Prints the unit name; each arming gets a new name, so a restore started by
-# an earlier timer can tell that it has been replaced.
+# start_timer SECONDS DEADLINE: a transient timer that restores unless
+# confirmed, SECONDS from now or at DEADLINE (seconds since the epoch),
+# whichever comes first. systemd computes an OnActiveSec= trigger again from
+# the time of each daemon-reload (timer_coldplug in src/core/timer.c, v252 to
+# v257), so package installs during the wait would move it later; the
+# calendar trigger does not move. If the wall clock is set back, the
+# monotonic trigger still holds until the next reload; with both, the
+# restore can start late by up to the amount the clock was set back.
+# Prints the unit name; each arming gets a new name,
+# so a restore started by an earlier timer can tell that it has been replaced.
 start_timer() {
   local unit
   unit="$VH_TIMER_PREFIX-$(date +%s%N)-$$"
   bounded_change systemd-run --quiet --unit="$unit" --collect \
     --description='vps-hardening: restore the previous configuration unless confirmed' \
-    --on-active="$1s" --timer-property=AccuracySec=1s \
+    --on-active="$1s" --on-calendar="$(date -u -d "@$2" '+%Y-%m-%d %H:%M:%S UTC')" \
+    --timer-property=AccuracySec=1s \
     -- "$VH_SELF" _restore timeout "$unit" >/dev/null
   printf '%s\n' "$unit"
 }
@@ -103,7 +111,7 @@ arm_restore() {
   fi
   bounded_change systemctl enable --quiet "$VH_BOOT_UNIT"
   unit_enabled "$VH_BOOT_UNIT" || return 1
-  unit="$(start_timer "$timeout_s")"
+  unit="$(start_timer "$timeout_s" "$deadline")"
   systemctl is-active --quiet "$unit.timer" || return 1
   state_set timer "$unit" "$VH_PENDING_FILE"
   [ "$(state_get timer "$VH_PENDING_FILE")" = "$unit" ]
@@ -113,13 +121,14 @@ arm_restore() {
 # new timer starts before the old one stops, so one is always running. Called
 # in a condition, like arm_restore.
 rearm_timer() {
-  local timeout_s="$1" old unit
+  local timeout_s="$1" old unit deadline
   old="$(state_get timer "$VH_PENDING_FILE")"
-  unit="$(start_timer "$timeout_s")"
+  deadline=$(($(date +%s) + timeout_s))
+  unit="$(start_timer "$timeout_s" "$deadline")"
   systemctl is-active --quiet "$unit.timer" || return 1
   state_set timer "$unit" "$VH_PENDING_FILE"
   [ "$(state_get timer "$VH_PENDING_FILE")" = "$unit" ] || return 1
-  state_set deadline "$(($(date +%s) + timeout_s))" "$VH_PENDING_FILE" || return 1
+  state_set deadline "$deadline" "$VH_PENDING_FILE" || return 1
   bounded_change systemctl stop "$old.timer" >/dev/null 2>&1 || true
 }
 
@@ -368,6 +377,14 @@ cmd_restore() {
     restore_all runtime '确认超时' || true
   else
     restore_all boot '待确认期间重启' || true
+  fi
+  # The boot restore enables and disables units with --no-reload. From systemd
+  # 255 on, such a change makes every unit report NeedDaemonReload=yes until
+  # the next reload (unit_file_state_outdated in src/core/manager.h), and the
+  # SSH probe cannot tell that from an edited ssh.service. One reload at the
+  # end; the restore itself does not depend on it.
+  if [ "$mode" = boot ] && ! bounded_change systemctl daemon-reload >>"$VH_LOG_FILE" 2>&1; then
+    vh_log 'daemon-reload after the boot restore failed'
   fi
   restore_report "$kind"
   [ -z "${RESTORE_FAILED-}" ] || exit "$VH_EXIT_FAIL"

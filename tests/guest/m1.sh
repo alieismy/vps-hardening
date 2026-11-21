@@ -278,6 +278,13 @@ check_profile() {
 phase_prepare() {
   install -d -m 0700 "$PRIVATE"
   settle
+  # Debian 13's apt-listchanges.service disables its own hourly timer after
+  # its first run (ExecStartPost=systemctl disable apt-listchanges.timer), so
+  # a snapshot across an hour boundary saw a unit file change no command
+  # under test made (run 44886404819, VT-63). Take that step up front.
+  if systemctl cat apt-listchanges.timer >/dev/null 2>&1; then
+    systemctl disable --now apt-listchanges.timer
+  fi
   reduced_update
   record_platform
   make_keys

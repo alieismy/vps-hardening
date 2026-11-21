@@ -276,7 +276,11 @@ phase_m3_ban() {
   phase_start="$(date +%s)"
 
   ban_by_failures "$BAN_SRC" first-ban
-  [ "$(cat "$phase_dir/first-ban.attempts")" -le 5 ] || fail 'banned only after more than maxretry attempts'
+  # Written before the check: run 44879164019 (debian12) counted 5 of 6
+  # failures and left no journal to show which record Fail2ban did not match.
+  journal_entries "$BAN_SRC" >"$phase_dir/journal-first-ban.txt"
+  [ "$(cat "$phase_dir/first-ban.attempts")" -le 5 ] ||
+    fail "banned only after more than maxretry attempts; see $phase_dir/journal-first-ban.txt"
   seconds="$(ban_seconds "$BAN_SRC")"
   printf 'first ban %s s\n' "$seconds" | tee "$phase_dir/ban-time.txt"
   [ "$seconds" -ge 86400 ] && [ "$seconds" -le 87000 ] || fail "ban of $seconds s, expected bantime 86400 s"
