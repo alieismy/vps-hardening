@@ -459,6 +459,10 @@ check_boot_restore() {
     started="$(systemctl show -p ActiveEnterTimestampMonotonic --value "$unit")"
     [ "${started:-0}" -eq 0 ] || [ "$started" -ge "$done_at" ] || fail "$unit started before the restore finished"
   done
+  # Without the reload that ends the restore, systemd 255 and later report
+  # every unit as needing one, and the SSH probe cannot verify (design 2.7).
+  [ "$(systemctl show -p NeedDaemonReload --value ssh.service)" = no ] ||
+    fail 'ssh.service needs a daemon-reload after the boot restore'
   log "restored at boot before sshd and UFW started"
 }
 

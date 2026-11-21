@@ -376,6 +376,14 @@ cmd_restore() {
   else
     restore_all boot '待确认期间重启' || true
   fi
+  # The boot restore enables and disables units with --no-reload. From systemd
+  # 255 on, such a change makes every unit report NeedDaemonReload=yes until
+  # the next reload (unit_file_state_outdated in src/core/manager.h), and the
+  # SSH probe cannot tell that from an edited ssh.service. One reload at the
+  # end; the restore itself does not depend on it.
+  if [ "$mode" = boot ] && ! bounded_change systemctl daemon-reload >>"$VH_LOG_FILE" 2>&1; then
+    vh_log 'daemon-reload after the boot restore failed'
+  fi
   restore_report "$kind"
   [ -z "${RESTORE_FAILED-}" ] || exit "$VH_EXIT_FAIL"
 }
