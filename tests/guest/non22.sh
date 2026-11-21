@@ -489,6 +489,22 @@ phase_legacy_fields() {
   ! grep -qE '^ssh_(port|activation|listeners)=' "$STATE_DIR/state" || fail 'old state acquired new fields before rollback and reapply'
 }
 
+# VT-98 A with requirements D84: after update-fail2ban the old record holds the
+# digest of the new jail file, is still recognized as the old 22 baseline and
+# gains no fields; verify passes.
+phase_legacy_f2b_updated() {
+  local jail=/etc/fail2ban/jail.d/99-vps-hardening.local
+  capture verify "$INSTALLED_BIN" verify
+  expect_rc verify 0
+  expect_report verify PASS f2b.values
+  expect_report verify PASS f2b.files
+  expect_match verify '^\[PASS\] ssh\.endpoint .*旧 22 记录只读兼容'
+  grep -qF 'SYSLOG_IDENTIFIER=sshd-session _UID=0' "$jail" || fail 'the jail file lacks the new journalmatch'
+  [ "$(sed -n 's/^digest\.5=\([0-9a-f]*\) .*/\1/p' "$STATE_DIR/state")" = "$(sha256sum <"$jail" | awk '{print $1}')" ] ||
+    fail 'digest.5 is not the digest of the updated jail file'
+  phase_legacy_fields
+}
+
 phase_protected_remove() {
   tool_record >"$phase_dir/before"
   capture remove-ssh on_tty "$VH" ports --remove "$GUEST_SSH_PORT/tcp"
@@ -620,6 +636,9 @@ phase_legacy_upgrade() {
   expect_install new-install 0 '安装完成' /root/vh-install-new.sh --source-dir /root/vh-release-new
   capture verify "$INSTALLED_BIN" verify
   expect_rc verify 0
+  # The old tool's journalmatch, until update-fail2ban (requirements D84).
+  expect_report verify WARN f2b.values
+  expect_report verify PASS f2b.files
   capture status "$INSTALLED_BIN" status
   expect_rc status 0
   sha256sum "$STATE_DIR/state" >"$phase_dir/state-after"
@@ -706,6 +725,7 @@ non22_main() {
     legacy-blocked) phase_legacy_blocked ;;
     legacy-upgrade) phase_legacy_upgrade ;;
     legacy-fields) phase_legacy_fields ;;
+    legacy-f2b-updated) phase_legacy_f2b_updated ;;
     legacy-direct) phase_legacy_direct ;;
     legacy-direct-result) phase_legacy_direct_result "$@" ;;
     *) fail "unknown phase $phase" ;;

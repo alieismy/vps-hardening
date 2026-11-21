@@ -376,6 +376,21 @@ class ProbeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.record(lines)
 
+    def test_old_22_accepts_jail_rewritten_by_update_fail2ban(self):
+        # Requirements D84: the proof takes the digests of the jail as apply
+        # wrote it and as update-fail2ban rewrote it, and nothing else.
+        actual = ['22', 'service', 'ipv4,0.0.0.0,22 ipv6,::,22']
+        both = 'a' * 64 + ' ' + 'c' * 64
+        jail = ' /etc/fail2ban/jail.d/99-vps-hardening.local'
+        for recorded in ('a' * 64, 'c' * 64):
+            with self.subTest(recorded=recorded):
+                self.assertEqual(self.record(['version=0.1.2', 'digest.5=' + recorded + jail], actual, both), 'yes\n')
+        with self.assertRaises(ValueError):
+            self.record(['version=0.1.2', 'digest.5=' + 'b' * 64 + jail], actual, both)
+        for digests in ('', ' ', 'a' * 64 + ' x'):
+            with self.subTest(digests=digests), self.assertRaises(ValueError):
+                self.record(['version=0.1.2', 'digest.5=' + 'a' * 64 + jail], actual, digests)
+
     def test_unknown_record_does_not_get_default_22(self):
         with self.assertRaises(ValueError):
             self.record(['version=unknown'])

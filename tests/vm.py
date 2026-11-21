@@ -61,6 +61,9 @@ DRIFTS = ('firewall-install', 'firewall-reinstall', 'iplimit', 'listen-all', 'bb
           'other-firewall', 'sshd-dropin', 'sshd-match', 'ufw-framework', 'ufw-userrules', 'reboot-required', 'ufw-disable',
           'ufw-mask', 'shell-account')
 APPLY_PROMPT = '两项都满足请输入 yes'.encode()
+# update-fail2ban asks for one confirmation only (requirements D84).
+UPDATE_PROMPT = '确认更新请输入 yes'.encode()
+F2B_UPDATED = 'Fail2ban 已更新'
 APPLIED = '加固已应用，等待确认'
 PORTS_CHANGED = '端口变更已生效，等待确认'
 # Key logins at least 2 s apart do not trigger Debian 13's penalties (VO-2).
@@ -238,8 +241,9 @@ class Guest:
 
     def interactive(self, name, command, on_text=None, timeout=1800):
         """Run COMMAND on a pseudo-terminal in a new root session and type
-        "yes" when apply asks for it, as the administrator would. ON_TEXT maps
-        output text to a function called once when the text appears."""
+        "yes" when apply, ports, rollback or update-fail2ban asks for it, as
+        the administrator would. ON_TEXT maps output text to a function called
+        once when the text appears."""
         log_path = self.evidence / f'{name}.log'
         proc = subprocess.Popen(self.ctx.ssh_as('root', tty=True) + [command], stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -254,7 +258,7 @@ class Guest:
                     log.write(chunk)
                     log.flush()
                     output += chunk
-                    if not answered and APPLY_PROMPT in output:
+                    if not answered and (APPLY_PROMPT in output or UPDATE_PROMPT in output):
                         proc.stdin.write(b'yes\n')
                         proc.stdin.flush()
                         answered = True
@@ -994,8 +998,10 @@ def hardened(ctx, image):
             check(status == 0 and '已确认' in output, 'confirm from a new root session, then verify passes')
             guest.phase('m4-flow-ssh-only', script='m4.sh')
             for name in ('m3-backlog', 'm3-fail2ban', 'm3-regex', 'm3-ban', 'm3-manual-ban', 'm3-agent', 'm3-updates',
-                         'm3-xui'):
+                         'm3-journald'):
                 m3(name)
+            vt38(guest)
+            m3('m3-xui')
             status, output = guest.interactive(
                 'xui-ports', f'{VH} ports --add 443/tcp --add 2096/tcp; echo "ports-rc=$?"')
             check('ports-rc=0' in output and PORTS_CHANGED in output, 'the 3X-UI ports await confirmation')
@@ -1021,6 +1027,23 @@ def hardened(ctx, image):
             guest.phase('m4-setup', script='m4.sh')
             for case in cases:
                 case(ctx, guest)
+
+
+def vt38(guest):
+    """VT-38 (requirements D84): a host hardened by v0.2.0, simulated in the
+    m3-f2b-old phase, which also leaves a file in jail.d that the
+    configuration check rejects. The first update fails that check and puts
+    the old file back; the second, without it, updates."""
+    def m3(name):
+        guest.phase(name, script='m3.sh')
+    m3('m3-f2b-old')
+    status, output = guest.interactive('vt38-update-broken', f'{VH} update-fail2ban; echo "update-rc=$?"')
+    check('update-rc=1' in output and 'Fail2ban 配置检查失败' in output and '已恢复原来的 jail 文件' in output,
+          'VT-38: a failed configuration check puts the old jail file back')
+    m3('m3-f2b-restored')
+    status, output = guest.interactive('vt38-update', f'{VH} update-fail2ban; echo "update-rc=$?"')
+    check('update-rc=0' in output and F2B_UPDATED in output, 'VT-38: update-fail2ban writes the current journalmatch')
+    m3('m3-f2b-updated')
 
 
 def vt65(ctx, guest):
@@ -1292,6 +1315,10 @@ def legacy_upgrade(ctx, prepared):
         check(status == 0 and '未做任何变更' in output and APPLY_PROMPT.decode() not in output,
               'VT-98: new tool checks a genuine legacy applied record without changing it')
         guest.phase('readonly-same', 'legacy-repeat', script='non22.sh')
+        status, output = guest.interactive('vt98-legacy-update', f'{old} update-fail2ban; echo "update-rc=$?"')
+        check('update-rc=0' in output and F2B_UPDATED in output,
+              'VT-98: update-fail2ban on the recognized old record (requirements D84)')
+        guest.phase('legacy-f2b-updated', script='non22.sh')
         status, output = guest.interactive('vt98-legacy-new-ports', f'{old} ports --add 9443/tcp')
         check(status == 0 and PORTS_CHANGED in output, 'VT-98: new tool changes business ports on old applied record')
         status, _ = guest.command('vt98-legacy-new-ports-confirm', f'{old} confirm')

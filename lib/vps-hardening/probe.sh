@@ -854,7 +854,7 @@ def discover_after_reload():
             time.sleep(0.5)
 
 
-def read_record(path, actual, digest, current_format):
+def read_record(path, actual, digests, current_format):
     data = {}
     for line in Path(path).read_text().splitlines():
         if "=" not in line:
@@ -876,9 +876,12 @@ def read_record(path, actual, digest, current_format):
     if not any(present):
         if form != "1":
             fail("不兼容：缺少端口字段，且不是格式 1 的旧记录")
-        if actual[0] != "22" or not re.fullmatch(r"[a-f0-9]{64}", digest):
+        # DIGESTS: the jail file for 22 as apply wrote it and as
+        # update-fail2ban rewrote it (requirements D84).
+        known = digests.split()
+        if actual[0] != "22" or not known or not all(re.fullmatch(r"[a-f0-9]{64}", d) for d in known):
             fail("不兼容：旧 22 基线无法核实")
-        if data.get("digest.5") != digest + " /etc/fail2ban/jail.d/99-vps-hardening.local":
+        if data.get("digest.5") not in {d + " /etc/fail2ban/jail.d/99-vps-hardening.local" for d in known}:
             fail("不兼容：旧 jail 的记录摘要不能证明 22 基线")
         print("yes")
         return
@@ -1022,13 +1025,18 @@ ssh_startup_probe() {
 }
 
 ssh_endpoint_check_record() {
-  local legacy_digest='' output
+  local legacy_digest='' old_digest new_digest output
   ssh_endpoint_discover "${1:-discover}" || return 1
-  # A known old template's digest proves the recorded jail's original port,
+  # A known template's digest proves the recorded jail's original port,
   # including after restore has removed that file. No on-disk migration occurs.
+  # The jail is the one apply wrote, or the one update-fail2ban wrote over it
+  # (requirements D84); the digests are passed as one space-separated word.
   if [ -z "$(state_get ssh_port)$(state_get ssh_activation)$(state_get ssh_listeners)" ] &&
     declare -F f2b_jail_content >/dev/null; then
-    legacy_digest="$(f2b_jail_content | sha256sum | awk '{print $1}')" || legacy_digest=''
+    if old_digest="$(f2b_jail_content "$VH_F2B_JOURNALMATCH_V1" | sha256sum | awk '{print $1}')" &&
+      new_digest="$(f2b_jail_content | sha256sum | awk '{print $1}')"; then
+      legacy_digest="$old_digest $new_digest"
+    fi
   fi
   if ! output="$(ssh_probe_python record "$VH_STATE_FILE" "$VH_SSH_PORT" "$VH_SSH_ACTIVATION" "$VH_SSH_LISTENERS" "$legacy_digest" "$VH_RECORD_FORMAT" 2>&1)"; then
     VH_SSH_ERROR="${output:-无法核实：SSH 记录检查失败或超时}"

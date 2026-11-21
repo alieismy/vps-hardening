@@ -4,6 +4,12 @@
 
 readonly VH_F2B_JAIL=/etc/fail2ban/jail.d/99-vps-hardening.local
 readonly VH_F2B_LOCAL=/etc/fail2ban/fail2ban.local
+# FR-08's journalmatch. The last two terms select sshd's records by the
+# identifier it sends and the UID the kernel attests, for records journald
+# could not give _COMM and _SYSTEMD_UNIT (requirements D84).
+readonly VH_F2B_JOURNALMATCH='_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session + SYSLOG_IDENTIFIER=sshd _UID=0 + SYSLOG_IDENTIFIER=sshd-session _UID=0'
+# The value v0.1.0 to v0.2.0 wrote; update-fail2ban replaces it.
+readonly VH_F2B_JOURNALMATCH_V1='_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session'
 readonly VH_APT_CONF=/etc/apt/apt.conf.d/52vps-hardening
 readonly VH_UFW_COMMENT=vps-hardening
 # Bound for package installation, which runs before the restore is armed.
@@ -332,7 +338,10 @@ apply_ufw() {
   printf 'UFW 已启用：%s 条规则\n' "$(ufw_status_rules | wc -l)"
 }
 
+# f2b_jail_content [JOURNALMATCH]: the jail file for P, with FR-08's
+# journalmatch unless another is given (update-fail2ban, the legacy proof).
 f2b_jail_content() {
+  local journalmatch="${1:-$VH_F2B_JOURNALMATCH}"
   cat <<EOF
 # Managed by vps-hardening (requirements FR-08). verify reports any change.
 [sshd]
@@ -340,7 +349,7 @@ enabled = true
 port = $VH_SSH_PORT
 protocol = tcp
 backend = systemd
-journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session
+journalmatch = $journalmatch
 mode = normal
 banaction = nftables
 banaction_allports = nftables[type=allports]
@@ -487,4 +496,164 @@ ufw_ssh_rules_ready() {
       END {exit found ? 0 : 1}
     ' "$file" || return 1
   done
+}
+
+# update-fail2ban (requirements D84, design 2.14): on an applied host whose
+# jail file is the one v0.1.0 to v0.2.0 wrote, write the current one. Only
+# that file, its recorded digest and the Fail2ban service change; SSH and UFW
+# do not, so there is no confirmation window: a failure puts the old content
+# back at once.
+
+# '': nothing written; written: the new file is in place; restarted: the
+# service was restarted with it.
+VH_F2B_UPDATE_STAGE=''
+VH_F2B_JAIL_KIND=''
+
+cmd_update_fail2ban() {
+  [ "$#" -eq 0 ] || usage_error "update-fail2ban 不接受参数：$1"
+  [ "$(id -u)" -eq 0 ] || refuse '需要 root 权限：请在 root shell 中运行'
+  vh_tmp_init
+  vh_lock 0 || refuse '另一个 vps-hardening 操作正在进行，请稍后再试'
+  case "$(state_get status)" in
+    applied) ;;
+    pending) refuse '加固还在待确认：请先从新的 SSH 会话以 root 执行 confirm' ;;
+    ports-pending) refuse '端口变更还在待确认：请先确认，或等它到期恢复' ;;
+    '') refuse '本工具没有在这台主机上应用过：请先执行 apply' ;;
+    *) refuse "本工具的状态为 $(state_get status)，不能更新 Fail2ban，详见 $VH_LOG_FILE" ;;
+  esac
+  printf '== 更新前检查\n'
+  f2b_update_checks
+  report_summary
+  if [ "$VH_COUNT_FAIL" -gt 0 ]; then
+    printf '\n更新前检查有不符合项，未做任何变更。\n'
+    exit "$VH_EXIT_FAIL"
+  fi
+  if [ "$VH_F2B_JAIL_KIND" = current ]; then
+    printf '\njail 文件已是当前版本，无需更新，未做任何变更。\n'
+    exit "$VH_EXIT_OK"
+  fi
+  f2b_update_plan
+  if ! f2b_update_prompt; then
+    printf '已取消，未做任何变更。\n'
+    exit "$VH_EXIT_FAIL"
+  fi
+  f2b_update_run
+}
+
+# f2b_jail_kind: the jail file against the record and the contents this tool
+# writes for P: changed (not as recorded), current, old or other.
+f2b_jail_kind() {
+  if ! same_as_applied "$VH_F2B_JAIL"; then
+    printf 'changed\n'
+  elif cmp -s -- "$VH_F2B_JAIL" <(f2b_jail_content); then
+    printf 'current\n'
+  elif cmp -s -- "$VH_F2B_JAIL" <(f2b_jail_content "$VH_F2B_JOURNALMATCH_V1"); then
+    printf 'old\n'
+  else
+    printf 'other\n'
+  fi
+}
+
+f2b_update_checks() {
+  if ssh_endpoint_report update.endpoint; then
+    VH_F2B_JAIL_KIND="$(f2b_jail_kind)"
+    case "$VH_F2B_JAIL_KIND" in
+      current) report PASS update.jail "$VH_F2B_JAIL 已是当前版本" ;;
+      old) report PASS update.jail "$VH_F2B_JAIL 是 v0.2.0 及以前写入的版本，可以更新" ;;
+      changed) report FAIL update.jail "$VH_F2B_JAIL 与应用记录不一致：请先用 verify 查看并处理差异" ;;
+      *) report FAIL update.jail "$VH_F2B_JAIL 不是本工具为 $VH_SSH_PORT/tcp 写入的任何版本" ;;
+    esac
+  else
+    report SKIP update.jail 'SSH 入口未通过核对，无法确定 jail 的端口'
+  fi
+  if unit_active fail2ban.service && bounded fail2ban-client status sshd >/dev/null 2>&1; then
+    report PASS update.service 'fail2ban 服务在运行，sshd jail 已启动'
+  else
+    report FAIL update.service 'fail2ban 服务没有运行，或 sshd jail 没有启动'
+  fi
+}
+
+f2b_update_plan() {
+  printf '\n== 将要执行的变更\n'
+  printf -- '- 改写 %s 中的 journalmatch，其他设置不变：\n' "$VH_F2B_JAIL"
+  printf '    原值：%s\n' "$VH_F2B_JOURNALMATCH_V1"
+  printf '    新值：%s\n' "$VH_F2B_JOURNALMATCH"
+  printf -- '- 重启 fail2ban 服务：已有的封禁由 Fail2ban 从它的数据库恢复\n'
+  printf -- '- 不修改 SSH、UFW 和其他文件，没有确认时限；失败时立即恢复原文件\n'
+}
+
+# SSH and UFW do not change, so apply's two safeguards are not asked for.
+f2b_update_prompt() {
+  local answer=''
+  printf '\n确认更新请输入 yes：'
+  read -r answer || return 1
+  [ "$answer" = yes ]
+}
+
+f2b_update_run() {
+  [ "$(f2b_jail_kind)" = old ] || refuse '交互期间 jail 文件发生变化，未做变更'
+  trap 'f2b_update_signal INT' INT
+  trap 'f2b_update_signal TERM' TERM
+  trap 'f2b_update_signal HUP' HUP
+  VH_ABORT_HOOK=f2b_update_abort
+  vh_log 'update-fail2ban started: journalmatch to the current value'
+  printf '\n正在更新……\n'
+  VH_F2B_UPDATE_STAGE=written
+  f2b_jail_content | write_managed "$VH_F2B_JAIL"
+  bounded fail2ban-client -t >>"$VH_LOG_FILE" 2>&1 || f2b_update_fail "Fail2ban 配置检查失败，详见 $VH_LOG_FILE"
+  VH_F2B_UPDATE_STAGE=restarted
+  bounded_change systemctl restart fail2ban.service || f2b_update_fail 'fail2ban.service 重启失败'
+  f2b_wait || f2b_update_fail 'fail2ban 重启后 sshd jail 没有运行'
+  [ "$(f2b_get sshd journalmatch)" = "$VH_F2B_JOURNALMATCH" ] || f2b_update_fail 'Fail2ban 运行中的 journalmatch 不是新值'
+  record_digest "$VH_F2B_JAIL" || f2b_update_fail '无法记录 jail 文件的摘要'
+  # shellcheck disable=SC2034 # read by the ERR trap in bin/vps-hardening
+  VH_ABORT_HOOK=''
+  VH_F2B_UPDATE_STAGE=finished
+  trap - INT TERM HUP
+  vh_log 'update-fail2ban done'
+  printf 'Fail2ban 已更新，运行中的 journalmatch 为新值。请执行 vps-hardening verify 核对。\n'
+}
+
+# Put the old content back, and restart the service again if it was restarted.
+f2b_update_undo() {
+  local reason="$1" stage="$VH_F2B_UPDATE_STAGE" restarted=''
+  trap '' INT TERM HUP
+  VH_ABORT_HOOK=''
+  VH_F2B_UPDATE_STAGE=''
+  vh_log "update-fail2ban failed: $reason"
+  [ -n "$stage" ] || return 0
+  printf '正在恢复原来的 jail 文件……\n' >&2
+  if ! f2b_jail_content "$VH_F2B_JOURNALMATCH_V1" | write_managed "$VH_F2B_JAIL"; then
+    printf '[x] 无法恢复 %s：请执行 vps-hardening verify 查看\n' "$VH_F2B_JAIL" >&2
+    return 0
+  fi
+  if [ "$stage" = restarted ]; then
+    if ! { bounded_change systemctl restart fail2ban.service && f2b_wait; }; then
+      printf '[x] 已恢复原来的 jail 文件，但 fail2ban 没有正常运行：请执行 systemctl status fail2ban 查看\n' >&2
+      return 0
+    fi
+    restarted='，fail2ban 已按它重启'
+  fi
+  if same_as_applied "$VH_F2B_JAIL"; then
+    printf '已恢复原来的 jail 文件%s。\n' "$restarted" >&2
+  else
+    printf '[x] 已恢复原来的 jail 文件%s，但它与应用记录的摘要不同：请执行 vps-hardening verify 查看\n' "$restarted" >&2
+  fi
+}
+
+f2b_update_fail() {
+  printf '[x] %s\n' "$*" >&2
+  f2b_update_undo "$*"
+  exit "$VH_EXIT_FAIL"
+}
+
+# ERR trap hook (bin/vps-hardening).
+f2b_update_abort() {
+  f2b_update_undo '更新中出现内部错误'
+}
+
+f2b_update_signal() {
+  trap '' INT TERM HUP
+  [ "$1" != HUP ] || output_to_log
+  f2b_update_fail "收到信号 $1"
 }
