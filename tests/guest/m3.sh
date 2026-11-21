@@ -652,16 +652,37 @@ for k, v in sorted(rows.items(), key=str):
 # probe_part LABEL N PARALLEL: N attempts, PARALLEL at a time, then the
 # records and the change of Fail2ban's counter.
 probe_part() {
-  local label="$1" n="$2" par="$3" since before after i j
+  local label="$1" n="$2" par="$3" since before after i j pids
   since="$(date +%s)"
   before="$(f2b_settled_count)"
   i=0
   while [ "$i" -lt "$n" ]; do
+    pids=()
     for j in $(seq "$par"); do
       i=$((i + 1))
       probe_attempt "$(probe_source "$i")" "vhp$label-$i" &
+      pids+=("$!")
     done
-    wait
+    wait "${pids[@]}"
+  done
+  sleep 5
+  after="$(f2b_settled_count)"
+  printf 'PROBE %s attempts %s f2b-delta %s\n' "$label" "$n" "$((after - before))" | tee -a "$phase_dir/summary.txt"
+  probe_report "$label" "$since" | tee -a "$phase_dir/summary.txt"
+}
+
+# probe_part_stopped LABEL N: N attempts, each while journald is stopped.
+probe_part_stopped() {
+  local label="$1" n="$2" since before after i jpid
+  since="$(date +%s)"
+  before="$(f2b_settled_count)"
+  jpid="$(systemctl show -p MainPID --value systemd-journald.service)"
+  for i in $(seq "$n"); do
+    kill -STOP "$jpid"
+    probe_attempt "$(probe_source "$i")" "vhp$label-$i"
+    sleep 1
+    kill -CONT "$jpid"
+    sleep 1
   done
   sleep 5
   after="$(f2b_settled_count)"
@@ -682,11 +703,14 @@ phase_m3_vt33_probe() {
   # A: one at a time; B: ten at a time; C: ten at a time with journald busy.
   probe_part A 200 1
   probe_part B 200 10
-  ( while :; do logger -t vh-load "load $(date +%s%N) xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; done ) &
+  ( while :; do logger -t vh-load "load $(date +%s%N) xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; done ) </dev/null >/dev/null 2>&1 &
   load=$!
   probe_part C 200 10
   kill "$load" 2>/dev/null || true
   wait "$load" 2>/dev/null || true
+  # E: journald reads each record only after the sshd process that sent it
+  # has exited (it is stopped during the attempt).
+  probe_part_stopped E 20
   # D: the same question for a short-lived process outside sshd.
   since="$(date +%s)"
   for i in $(seq 2000); do logger -t vhp-D "d $i"; done
