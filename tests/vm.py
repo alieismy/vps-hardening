@@ -802,9 +802,17 @@ def recovery(ctx, image):
         check(http_reachable(18080), 'port 8080 answers before apply (control)')
         with Probe(guest, 'timeout'):
             status, output = guest.interactive('vt20-apply', f'{VH} apply --open 443/tcp --confirm-timeout 3')
+            applied = time.monotonic()
             check(status == 0 and APPLIED in output, 'VT-20: apply finished with a 3-minute confirmation time')
             guest.must_login('root', 'while pending')
             check(not http_reachable(18080), 'VT-20: UFW drops port 8080 while pending')
+            # Package installs and upgrades reload the service manager. A
+            # reload in the middle of the wait must not move the restore later;
+            # m2-rolled-back checks when it started (detailed design 2.7).
+            time.sleep(max(0.0, applied + 90 - time.monotonic()))
+            status, _ = guest.command('vt20-daemon-reload', 'systemctl daemon-reload')
+            check(status == 0 and time.monotonic() - applied < 150,
+                  'VT-20: the service manager reloaded well before the confirmation time')
             # The restore starts after 3 minutes; under emulation it can take several more.
             ctx.timings.measure('timeout.restore', guest.wait_status, 'rolled-back', 900)
             guest.must_login('root', 'after the timeout restore')
