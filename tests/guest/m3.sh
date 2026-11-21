@@ -711,6 +711,12 @@ phase_m3_vt33_probe() {
   # E: journald reads each record only after the sshd process that sent it
   # has exited (it is stopped during the attempt).
   probe_part_stopped E 20
+  # F, G: the same with the proposed terms added to the journalmatch: the
+  # syslog identifier with the sender's UID, which the kernel supplies.
+  fail2ban-client set sshd addjournalmatch SYSLOG_IDENTIFIER=sshd _UID=0 + SYSLOG_IDENTIFIER=sshd-session _UID=0 >/dev/null
+  fail2ban-client get sshd journalmatch | tee -a "$phase_dir/summary.txt"
+  probe_part_stopped F 20
+  probe_part G 200 10
   # D: the same question for a short-lived process outside sshd.
   since="$(date +%s)"
   for i in $(seq 2000); do logger -t vhp-D "d $i"; done
