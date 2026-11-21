@@ -653,6 +653,7 @@ Fail2ban 各项的输出顺序为 `f2b.installed`、`f2b.service`、`f2b.config`
 
 - 每次启动后在运行期停止 `apt-daily.timer` 和 `apt-daily-upgrade.timer`（不改变启用状态），并等待包管理器空闲；
 - 准备阶段用精简的 `apt-get update`：不下载翻译、AppStream 和 command-not-found 索引。
+- 准备阶段停用并停止 `apt-listchanges.timer`（存在时，即 Debian 13）。apt-listchanges 4.8 的服务第一次运行后自己停用这个整点定时器，跨过整点的快照会看到一处与被测命令无关的单元文件变化（v0.19，第 8.33 节）。
 
 M2 的测试在此基础上增加以下内容，都只为测试服务：
 
@@ -1814,7 +1815,8 @@ VT-02 的新步骤（第 7.3 节）也在这台主机上用 `m1.sh` 中的函数
 |---|---|---|
 | `76b029c`、`ff4b79a`（VT-98 C；VT-20 加入重载，产品代码未改） | [44879164019](https://github.com/alieismy/vps-hardening/actions/runs/44879164019) | 20 个作业通过。三个平台的 recovery 和 non22 recovery 共 6 个作业在 VT-20 失败，恢复在应用后 270～272 秒才开始，正好是重载后 180 秒，复现了上述机制。另有 4 个作业失败：legacy Debian 13 和 Ubuntu 24.04（VT-98 C 端口变更开机恢复后的 `verify`）、non22 non22 Ubuntu 24.04（夹具启动频率限制）、hardened Debian 12（VT-33） |
 | `cb6c370`（定时器另设日历触发） | [44879287836](https://github.com/alieismy/vps-hardening/actions/runs/44879287836) | 27 个作业通过，6 个 recovery 作业全部通过。3 个作业失败：legacy Debian 13 和 Ubuntu 24.04、non22 non22 Ubuntu 24.04，原因同上一行 |
-| `bf55f5d`、`8a2a13d`（开机恢复最后重新加载；夹具先重置启动频率限制；VT-33 先写日志记录） | [44882938562](https://github.com/alieismy/vps-hardening/actions/runs/44882938562) | 21 个作业通过，non22 non22 Ubuntu 24.04 和 hardened 通过。9 个作业失败：三个平台的 recovery、non22 recovery 和 legacy，都失败在 VT-22 和 VT-98 C 开机恢复后的"开机兜底单元在本次启动中运行过"这项检查，此前的检查（受管文件、单元状态与基线一致）都已通过。失败原因：恢复最后的重载之后，兜底单元已停用、也没有别的单元引用它，结束后就被 systemd 卸载，`ExecMainExitTimestampMonotonic` 读到 0。问题出在测试，`cc570ce` 改为从 systemd 记录的 "Finished" 日志中取结束时刻。之后的提交（`cc570ce`、本节和版本号 `0.2.0-rc.3`）的运行，记录在发布 rc.3 之后的文档提交中 |
+| `bf55f5d`、`8a2a13d`（开机恢复最后重新加载；夹具先重置启动频率限制；VT-33 先写日志记录） | [44882938562](https://github.com/alieismy/vps-hardening/actions/runs/44882938562) | 21 个作业通过，non22 non22 Ubuntu 24.04 和 hardened 通过。9 个作业失败：三个平台的 recovery、non22 recovery 和 legacy，都失败在 VT-22 和 VT-98 C 开机恢复后的"开机兜底单元在本次启动中运行过"这项检查，此前的检查（受管文件、单元状态与基线一致）都已通过。失败原因：恢复最后的重载之后，兜底单元已停用、也没有别的单元引用它，结束后就被 systemd 卸载，`ExecMainExitTimestampMonotonic` 读到 0。问题出在测试，`cc570ce` 改为从 systemd 记录的 "Finished" 日志中取结束时刻 |
+| `cc570ce`、`5940538`（VT-22 的结束时刻；本节和版本号 `0.2.0-rc.3`） | [44886404819](https://github.com/alieismy/vps-hardening/actions/runs/44886404819) | 29 个作业通过，包括全部 recovery、non22 recovery 和 legacy：VT-98 C 端口变更开机恢复后的 `verify` 在三个平台上都通过（需求 D77）。non22 hardened Debian 13 失败在 VT-63：`verify` 前后的快照中 `apt-listchanges.timer` 从启用变为停用。两次快照在 09:00:01 和 09:00:05，这个定时器是 `OnCalendar=hourly`，它的服务（apt-listchanges 4.8）第一次运行后执行 `systemctl disable apt-listchanges.timer`。这是测试环境的问题，后续提交在准备阶段预先停用它（第 7 节）。之后的运行记录在发布 rc.3 之后的文档提交中 |
 
 **未完成的验证。** 这份代码还没有在真实 VPS 上运行过，计划按需求 D76 验收。arm64 参考矩阵按需求 D75 对 `v0.2.0-rc.3` 执行。VT-33 那次失败的原因尚未查明。
 
