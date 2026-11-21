@@ -1,90 +1,20 @@
 name: vm
 
+# Experiment branch for VT-33 (not for merge): only the probe runs.
 on:
-  pull_request:
-    paths: ['bin/**', 'lib/**', 'tests/**', 'install.sh', '.github/workflows/vm.yml']
-  push:
-    branches: [master]
-    paths: ['bin/**', 'lib/**', 'tests/**', 'install.sh', '.github/workflows/vm.yml']
   workflow_dispatch:
-    inputs:
-      arm64:
-        description: Also run the arm64 reference matrix (requirements D26)
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 jobs:
-  # Full matrix (verification plan 3.1): VT-01, the unhardened part of VT-50,
-  # the guest-side source address and the sshd probe study (VO-2), then the
-  # M2 lifecycle on the same guest (VT-10 to VT-15, VT-21, VT-24, VT-25,
-  # VT-62, VT-70, VT-71). arm64 is a reference (requirements D26) and runs
-  # only when a manual run asks for it, here and in the recovery job.
-  matrix:
-    name: matrix ${{ matrix.platform }} ${{ matrix.arch }}
+  vt33:
+    name: vt33 probe ${{ matrix.platform }} ${{ matrix.rep }}
     strategy:
       fail-fast: false
       matrix:
         platform: [debian12, debian13, ubuntu2404]
-        arch: ${{ fromJSON(github.event.inputs.arm64 == 'true' && '["amd64", "arm64"]' || '["amd64"]') }}
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install QEMU
-        run: |
-          if [ '${{ matrix.arch }}' = arm64 ]; then qemu='qemu-system-arm qemu-efi-aarch64'; else qemu='qemu-system-x86'; fi
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq $qemu qemu-utils cloud-image-utils
-          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
-      - name: Run the matrix suite
-        run: python3 tests/vm.py --suite matrix --platform '${{ matrix.platform }}' --arch '${{ matrix.arch }}'
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: vm-matrix-${{ matrix.platform }}-${{ matrix.arch }}
-          path: .tmp/vm/evidence/
-          retention-days: 14
-
-  # Automatic restore on the full matrix: on timeout (VT-20, VT-21) and on
-  # reboot while pending (VT-22), with the continuous probe (VT-25).
-  recovery:
-    name: recovery ${{ matrix.platform }} ${{ matrix.arch }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [debian12, debian13, ubuntu2404]
-        arch: ${{ fromJSON(github.event.inputs.arm64 == 'true' && '["amd64", "arm64"]' || '["amd64"]') }}
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-    # Three guests, two applies and a reboot took up to 40 minutes under arm64 emulation.
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install QEMU
-        run: |
-          if [ '${{ matrix.arch }}' = arm64 ]; then qemu='qemu-system-arm qemu-efi-aarch64'; else qemu='qemu-system-x86'; fi
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq $qemu qemu-utils cloud-image-utils
-          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
-      - name: Run the recovery suite
-        run: python3 tests/vm.py --suite recovery --platform '${{ matrix.platform }}' --arch '${{ matrix.arch }}'
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: vm-recovery-${{ matrix.platform }}-${{ matrix.arch }}
-          path: .tmp/vm/evidence/
-          retention-days: 14
-
-  # Architecture-independent logic on the three platforms (amd64): VT-02,
-  # VT-03 (S1-S4) and VT-04, plus the UFW path check, VT-23 and VT-27.
-  negative:
-    name: negative ${{ matrix.platform }} amd64
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [debian12, debian13, ubuntu2404]
+        rep: [1, 2]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -94,96 +24,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils
           if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
-      - name: Run the negative suite
-        run: python3 tests/vm.py --suite negative --platform '${{ matrix.platform }}' --arch amd64
+      - name: Run the VT-33 probe
+        run: python3 tests/vm.py --suite vt33 --platform '${{ matrix.platform }}' --arch amd64
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: vm-negative-${{ matrix.platform }}-amd64
-          path: .tmp/vm/evidence/
-          retention-days: 14
-
-  # M3 on a guest hardened and confirmed as an administrator would: Fail2ban
-  # (VT-30 to VT-35), automatic updates (VT-40), 3X-UI v3.10.2 with verify
-  # before and after a reboot (VT-55, VT-50, VT-71), then one overlay per
-  # drift (VT-51). arm64 runs only when a manual run asks for it.
-  hardened:
-    name: hardened ${{ matrix.platform }} ${{ matrix.arch }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [debian12, debian13, ubuntu2404]
-        arch: ${{ fromJSON(github.event.inputs.arm64 == 'true' && '["amd64", "arm64"]' || '["amd64"]') }}
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install QEMU
-        run: |
-          if [ '${{ matrix.arch }}' = arm64 ]; then qemu='qemu-system-arm qemu-efi-aarch64'; else qemu='qemu-system-x86'; fi
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq $qemu qemu-utils cloud-image-utils
-          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
-      - name: Run the hardened suite
-        run: python3 tests/vm.py --suite hardened --platform '${{ matrix.platform }}' --arch '${{ matrix.arch }}'
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: vm-hardened-${{ matrix.platform }}-${{ matrix.arch }}
-          path: .tmp/vm/evidence/
-          retention-days: 14
-
-  # D64: the same lifecycle/recovery/coexistence suites run with guest P=2222.
-  # E=12222 is deliberately different. The original P=22 jobs above remain.
-  non22:
-    name: non22 ${{ matrix.suite }} ${{ matrix.platform }} amd64
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [debian12, debian13, ubuntu2404]
-        suite: [matrix, recovery, negative, hardened, non22]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install QEMU
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils
-          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
-      - name: Run with actual non-22 guest SSH
-        run: python3 tests/vm.py --suite '${{ matrix.suite }}' --platform '${{ matrix.platform }}' --arch amd64 --ssh-port 2222 --runner-ssh-port 12222
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: vm-non22-${{ matrix.suite }}-${{ matrix.platform }}-amd64
-          path: .tmp/vm/evidence/
-          retention-days: 14
-
-  # VT-98 uses the released v0.1.2 code, not a new state relabelled as old.
-  # Fetch history for its pinned commit; the fixture verifies its version.
-  legacy:
-    name: legacy ${{ matrix.platform }} amd64
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [debian12, debian13, ubuntu2404]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install QEMU
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils
-          if test -e /dev/kvm; then sudo chmod a+rw /dev/kvm; fi
-      - name: Upgrade only after the actual old tool confirms or restores
-        run: python3 tests/vm.py --suite non22 --platform '${{ matrix.platform }}' --arch amd64 --ssh-port 22 --runner-ssh-port 12222
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: vm-legacy-${{ matrix.platform }}-amd64
+          name: vm-vt33-${{ matrix.platform }}-${{ matrix.rep }}
           path: .tmp/vm/evidence/
           retention-days: 14

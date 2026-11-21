@@ -614,6 +614,92 @@ phase_m3_drift() {
   log "$drift: verify reported ${want_fail:-no failure}${want_warn:+, warning $want_warn}"
 }
 
+# Experiment for VT-33, not for merge: does every invalid-user attempt reach
+# Fail2ban? For each "Invalid user" record, whether the fields of FR-08's
+# journalmatch are set, and Fail2ban's counter against the attempts.
+readonly PROBE_SOURCES=100
+
+probe_attempt() {
+  ip netns exec "$NETNS" ssh -p "$GUEST_SSH_PORT" -b "$1" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o ConnectTimeout=10 -o LogLevel=ERROR -o BatchMode=yes -i "$PRIVATE/ed25519" -o IdentitiesOnly=yes \
+    -o PreferredAuthentications=publickey "$2@$DST4" true </dev/null >/dev/null 2>&1 || true
+}
+
+probe_source() {
+  printf '198.51.100.%s\n' $((($1 - 1) % PROBE_SOURCES + 1))
+}
+
+# probe_report LABEL SINCE: the "Invalid user vhpLABEL-" records since SINCE,
+# grouped by the fields that decide whether the journalmatch selects them.
+probe_report() {
+  journalctl --since "@$2" --no-pager -o json | python3 -c '
+import collections, json, sys
+label, tag = sys.argv[1], "vhp" + sys.argv[1] + "-"
+rows = collections.Counter()
+for line in sys.stdin:
+    e = json.loads(line)
+    m = e.get("MESSAGE")
+    if not isinstance(m, str) or not m.startswith("Invalid user " + tag):
+        continue
+    inside = e.get("_SYSTEMD_UNIT") == "ssh.service" or e.get("_COMM") in ("sshd", "sshd-session")
+    rows[(e.get("_COMM"), e.get("_SYSTEMD_UNIT"), e.get("_UID"), e.get("SYSLOG_IDENTIFIER"), inside)] += 1
+print("PROBE", label, "records", sum(rows.values()), "inside", sum(v for k, v in rows.items() if k[4]))
+for k, v in sorted(rows.items(), key=str):
+    print("PROBE", label, "comm=%s unit=%s uid=%s ident=%s inside=%s" % k, "count", v)
+' "$1"
+}
+
+# probe_part LABEL N PARALLEL: N attempts, PARALLEL at a time, then the
+# records and the change of Fail2ban's counter.
+probe_part() {
+  local label="$1" n="$2" par="$3" since before after i j
+  since="$(date +%s)"
+  before="$(f2b_settled_count)"
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    for j in $(seq "$par"); do
+      i=$((i + 1))
+      probe_attempt "$(probe_source "$i")" "vhp$label-$i" &
+    done
+    wait
+  done
+  sleep 5
+  after="$(f2b_settled_count)"
+  printf 'PROBE %s attempts %s f2b-delta %s\n' "$label" "$n" "$((after - before))" | tee -a "$phase_dir/summary.txt"
+  probe_report "$label" "$since" | tee -a "$phase_dir/summary.txt"
+}
+
+phase_m3_vt33_probe() {
+  local i since load
+  m3_netns_up
+  for i in $(seq "$PROBE_SOURCES"); do
+    ip -n "$NETNS" addr replace "198.51.100.$i/24" dev vh-peer
+  done
+  ip addr replace 198.51.100.254/24 dev vh-host
+  wait_fail2ban
+  fail2ban-client set sshd maxretry 1000000 >/dev/null
+  { uname -r; sshd -V 2>&1 || true; systemctl --version | head -n 1; fail2ban-client version; } | tee "$phase_dir/versions.txt"
+  # A: one at a time; B: ten at a time; C: ten at a time with journald busy.
+  probe_part A 200 1
+  probe_part B 200 10
+  ( while :; do logger -t vh-load "load $(date +%s%N) xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; done ) &
+  load=$!
+  probe_part C 200 10
+  kill "$load" 2>/dev/null || true
+  wait "$load" 2>/dev/null || true
+  # D: the same question for a short-lived process outside sshd.
+  since="$(date +%s)"
+  for i in $(seq 2000); do logger -t vhp-D "d $i"; done
+  sleep 3
+  journalctl --since "@$since" --no-pager -o json SYSLOG_IDENTIFIER=vhp-D | python3 -c '
+import json, sys
+rows = [json.loads(l) for l in sys.stdin]
+print("PROBE D logger records", len(rows), "without _COMM", sum(1 for e in rows if "_COMM" not in e),
+      "without _SYSTEMD_UNIT", sum(1 for e in rows if "_SYSTEMD_UNIT" not in e))' | tee -a "$phase_dir/summary.txt"
+  journalctl --since "@$since" --no-pager -o cat SYSLOG_IDENTIFIER=systemd-journald | tail -n 5 >>"$phase_dir/summary.txt" || true
+  fail2ban-client set sshd maxretry 5 >/dev/null
+}
+
 m3_main() {
   local phase="${1-}"
   [ "$#" -eq 0 ] || shift
@@ -634,6 +720,7 @@ m3_main() {
     m3-xui) phase_m3_xui ;;
     m3-xui-rebooted) phase_m3_xui_rebooted ;;
     m3-drift) phase_m3_drift "$@" ;;
+    m3-vt33-probe) phase_m3_vt33_probe ;;
     *) fail "unknown phase: $phase" ;;
   esac
   log "phase $phase passed"

@@ -1023,6 +1023,23 @@ def hardened(ctx, image):
                 case(ctx, guest)
 
 
+def vt33(ctx, image):
+    """Experiment for VT-33, not for merge: harden and confirm as the hardened
+    suite does, then m3.sh's phase m3-vt33-probe."""
+    disk = ctx.overlay(image, 'disk.qcow2')
+    with Guest(ctx, 'vt33', disk) as guest:
+        guest.ready()
+        guest.upload(ctx.bundle(with_xui=False))
+        guest.phase('prepare')
+        guest.phase('m2-prepare', script='m2.sh')
+        status, output = guest.interactive('apply', f'{VH} apply')
+        check(status == 0 and APPLIED in output, 'apply finished and awaits confirmation')
+        status, output = guest.command('confirm', f'{VH} confirm')
+        check(status == 0 and '已确认' in output, 'confirm from a new root session')
+        guest.phase('m3-vt33-probe', script='m3.sh')
+        guest.poweroff()
+
+
 def vt65(ctx, guest):
     """VT-65: rollback checks root's keys under the configuration it leaves
     (requirements D60). With the keys only in a file that the changed drop-in
@@ -1363,7 +1380,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--platform', choices=['debian12', 'debian13', 'ubuntu2404'], required=True)
     parser.add_argument('--arch', choices=['amd64', 'arm64'], required=True)
-    parser.add_argument('--suite', choices=['matrix', 'recovery', 'negative', 'hardened', 'non22'], required=True)
+    parser.add_argument('--suite', choices=['matrix', 'recovery', 'negative', 'hardened', 'non22', 'vt33'], required=True)
     parser.add_argument('--ssh-port', type=port_number, default=22,
                         help='actual guest SSH port P; default 22 keeps the original regression')
     parser.add_argument('--runner-ssh-port', type=port_number, default=SSH_PORT,
@@ -1376,7 +1393,7 @@ def main():
     ctx.seed()
     try:
         {'matrix': matrix, 'recovery': recovery, 'negative': negative, 'hardened': hardened,
-         'non22': non22}[args.suite](ctx, image)
+         'non22': non22, 'vt33': vt33}[args.suite](ctx, image)
     finally:
         # Verification plan 6: the whole archive, of a failed run too, before the upload.
         ctx.leak_scan()
