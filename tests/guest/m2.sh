@@ -453,7 +453,13 @@ check_boot_restore() {
   journalctl -b -u "$BOOT_UNIT" --no-pager -o cat >"$phase_dir/boot-unit.log"
   cat "$phase_dir/boot-unit.log"
   grep -qF '已恢复到应用前的配置' "$phase_dir/boot-unit.log" || fail "$BOOT_UNIT did not restore"
-  done_at="$(systemctl show -p ExecMainExitTimestampMonotonic --value "$BOOT_UNIT")"
+  # From systemd's own "Finished" record: the unit, disabled and unreferenced
+  # after the restore's final reload, is unloaded with its runtime properties.
+  done_at="$(journalctl -b -o json --no-pager UNIT="$BOOT_UNIT" _PID=1 | python3 -c '
+import json, sys
+done = [e["__MONOTONIC_TIMESTAMP"] for e in map(json.loads, sys.stdin)
+        if e.get("JOB_TYPE") == "start" and e.get("JOB_RESULT") == "done"]
+print(done[-1] if done else 0)')"
   [ "${done_at:-0}" -gt 0 ] || fail "$BOOT_UNIT did not run in this boot"
   for unit in ssh.socket ssh.service ufw.service; do
     started="$(systemctl show -p ActiveEnterTimestampMonotonic --value "$unit")"
