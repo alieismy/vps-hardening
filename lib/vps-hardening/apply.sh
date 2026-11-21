@@ -618,6 +618,7 @@ f2b_update_run() {
 f2b_update_undo() {
   local reason="$1" stage="$VH_F2B_UPDATE_STAGE" restarted=''
   trap '' INT TERM HUP
+  # shellcheck disable=SC2034 # read by the ERR trap in bin/vps-hardening
   VH_ABORT_HOOK=''
   VH_F2B_UPDATE_STAGE=''
   vh_log "update-fail2ban failed: $reason"
