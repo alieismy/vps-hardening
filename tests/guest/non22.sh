@@ -623,6 +623,50 @@ phase_legacy_upgrade() {
   ! grep -q '^ssh_port=' "$STATE_DIR/state" || fail 'old state acquired new fields without rollback'
 }
 
+# VT-98 C: an isolated compatibility fixture, never a supported upgrade. The
+# installer refuses while a change is pending (VT-98 B); here the new files
+# replace the old ones directly, bypassing it, so that the new code's restore
+# reads the actual old tool's marker, record and snapshot.
+phase_legacy_direct() {
+  local version
+  [ -e "$STATE_DIR/pending" ] || fail 'the old tool has no pending change'
+  capture old-version "$INSTALLED_BIN" --version
+  expect_text old-version 'vps-hardening 0.1.2'
+  ! grep -qE '^(record_format|ssh_port|ssh_activation|ssh_listeners)=' "$STATE_DIR/state" ||
+    fail 'the old record has fields of a later format'
+  cp "$STATE_DIR/state" "$phase_dir/old-state.txt"
+  cp "$STATE_DIR/pending" "$phase_dir/old-pending.txt"
+  pending_material >"$phase_dir/pending-before"
+  rm -f "$INSTALLED_LIB"/*.sh
+  install -m 0755 "$VH" "$INSTALLED_BIN"
+  install -m 0644 -t "$INSTALLED_LIB" "$BUNDLE"/lib/vps-hardening/*.sh
+  version="$(sed -n "s/^readonly VH_VERSION='\(.*\)'$/\1/p" "$VH")"
+  capture new-version "$INSTALLED_BIN" --version
+  expect_text new-version "vps-hardening $version"
+  pending_material >"$phase_dir/pending-after"
+  diff -u "$phase_dir/pending-before" "$phase_dir/pending-after" || fail 'replacing the files altered the old recovery'
+  log "VT-98 C (bypasses the installer): record of $(state_value version) without record_format (format 1), kind $(awk -F= '$1 == "kind" {print $2}' "$STATE_DIR/pending"), read by $version"
+}
+
+# VT-98 C: what the new code made of the old pending change. A full restore
+# is checked against the baseline by m2-rolled-back; this adds the record.
+phase_legacy_direct_result() {
+  local entry="$1" want=rolled-back
+  [ "$entry" != ports-boot ] || want=applied
+  cp "$STATE_DIR/state" "$phase_dir/state.txt"
+  cp "$STATE_DIR/log" "$phase_dir/log.txt"
+  [ "$(state_value status)" = "$want" ] || fail "status is $(state_value status), expected $want"
+  no_restore_armed
+  phase_legacy_fields
+  if [ "$entry" = ports-boot ]; then
+    ! state_value open | grep -q 8443 || fail 'the restored record still opens 8443'
+    ! ufw status | grep -q '^8443/tcp' || fail 'UFW still allows 8443/tcp'
+    capture verify "$INSTALLED_BIN" verify
+    expect_rc verify 0
+  fi
+  log "VT-98 C $entry: status $(state_value status), reason $(state_value rollback_reason)$(state_value ports_rollback_reason)"
+}
+
 non22_main() {
   local phase="${1-}" label word
   shift
@@ -658,6 +702,8 @@ non22_main() {
     legacy-blocked) phase_legacy_blocked ;;
     legacy-upgrade) phase_legacy_upgrade ;;
     legacy-fields) phase_legacy_fields ;;
+    legacy-direct) phase_legacy_direct ;;
+    legacy-direct-result) phase_legacy_direct_result "$@" ;;
     *) fail "unknown phase $phase" ;;
   esac
   log "non22 $phase passed"

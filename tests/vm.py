@@ -1091,7 +1091,8 @@ def vt64(ctx, guest):
 def non22(ctx, image):
     """D64 cases not covered by parameterizing the existing four suites.
 
-    P=22 runs an actual v0.1.2 installation and upgrade fixture (VT-98 A/B).
+    P=22 runs an actual v0.1.2 installation and upgrade fixture (VT-98 A/B),
+    and the isolated fixture where new code restores old pending (VT-98 C).
     P!=22 covers effective endpoints, confirmation guards and recovery errors.
     Runtime results are separate from simply having these test definitions.
     """
@@ -1310,6 +1311,37 @@ def legacy_upgrade(ctx, prepared):
                 guest.wait_status('rolled-back', 900)
             check(guest.tool_status() == 'rolled-back', 'VT-98: old recovery remains usable after refused upgrade')
             guest.must_login('root', 'after old-tool recovery')
+
+    # VT-98 C: an isolated compatibility fixture, not a supported upgrade. The
+    # actual old tool arms a pending change, the legacy-direct phase replaces
+    # its files without the installer, and each recovery entry then runs the
+    # new code on the old marker, record and snapshot.
+    for entry in ('rollback', 'timeout', 'boot', 'ports-boot'):
+        label = 'legacy-direct-' + entry
+        with Guest(ctx, label, ctx.overlay(prepared, label + '.qcow2')) as guest:
+            guest.ready()
+            guest.phase('m2-baseline', script='m2.sh')
+            timeout = ' --confirm-timeout 3' if entry == 'timeout' else ''
+            status, output = guest.interactive('vt98c-old-apply', f'{old} apply{timeout}')
+            check(status == 0 and APPLIED in output, 'VT-98 C: the actual old tool wrote pending')
+            if entry == 'ports-boot':
+                status, _ = guest.command('vt98c-old-confirm', f'{old} confirm')
+                check(status == 0, 'VT-98 C: the actual old tool confirmed')
+                status, output = guest.interactive('vt98c-old-ports', f'{old} ports --add 8443/tcp')
+                check(status == 0 and PORTS_CHANGED in output, 'VT-98 C: the actual old tool wrote ports-pending')
+            guest.phase('legacy-direct', script='non22.sh')
+            if entry == 'rollback':
+                status, output = guest.interactive('vt98c-new-rollback', f'{old} rollback')
+                check(status == 0 and '[PASS] restore.endpoint' in output,
+                      'VT-98 C: new code rolls back an old pending change')
+            elif entry == 'timeout':
+                guest.wait_status('rolled-back', 900)
+            else:
+                guest.reboot()
+            guest.phase('legacy-direct-result', entry, script='non22.sh')
+            if entry != 'ports-boot':
+                guest.phase('m2-rolled-back', 'manual' if entry == 'rollback' else entry, script='m2.sh')
+            guest.must_login('root', 'after the new code restored an old pending change')
 
 
 def port_number(value):
