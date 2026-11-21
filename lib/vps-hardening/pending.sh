@@ -71,8 +71,10 @@ check_self_path() {
 # whichever comes first. systemd computes an OnActiveSec= trigger again from
 # the time of each daemon-reload (timer_coldplug in src/core/timer.c, v252 to
 # v257), so package installs during the wait would move it later; the
-# calendar trigger does not move, and the monotonic one still holds if the
-# wall clock is set back. Prints the unit name; each arming gets a new name,
+# calendar trigger does not move. If the wall clock is set back, the
+# monotonic trigger still holds until the next reload; with both, the
+# restore can start late by up to the amount the clock was set back.
+# Prints the unit name; each arming gets a new name,
 # so a restore started by an earlier timer can tell that it has been replaced.
 start_timer() {
   local unit

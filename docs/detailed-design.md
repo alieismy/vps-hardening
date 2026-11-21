@@ -258,7 +258,7 @@ D64 的第 7 项必须在任何撤除恢复触发或写确认状态之前完成�
 
 - 每次布置都用新的单元名。第 10 步重新计时时，先启动新定时器、核实并写入标记，再停止旧的，所以任何时刻都至少有一个定时器在运行。旧定时器恰好在这期间触发时，`_restore` 发现标记中的单元名已经不是自己，就不做任何事。
 - `AccuracySec=1s`：systemd 默认允许把到期时间推迟最多 1 分钟，以便合并唤醒，这里不允许。
-- 两个触发条件，先到的生效（v0.19，需求 D75）。systemd 每次 daemon-reload 都从重载的时刻重新计算 `OnActiveSec=`：`src/core/timer.c` 的 `timer_coldplug` 在单元状态仍为 `TIMER_DEAD` 时调用 `timer_enter_waiting`，计时起点因此取当前时刻，v252、v255、v257 和 2026-11-20 的 main 都是这样。待确认期间安装或升级软件包（包括 unattended-upgrades）会触发重载，把恢复推迟，多次重载可以一直推迟下去（第 8.33 节）。`OnCalendar=` 定在截止时间，重载后仍是同一时刻。墙钟被往回调时，`OnActiveSec=` 仍按时触发；墙钟被往前调时，恢复会早于时限，这是安全的方向，而且 `status` 显示的截止时间本来就是墙钟时间。
+- 两个触发条件，先到的生效（v0.19，需求 D75）。systemd 每次 daemon-reload 都从重载的时刻重新计算 `OnActiveSec=`：`src/core/timer.c` 的 `timer_coldplug` 在单元状态仍为 `TIMER_DEAD` 时调用 `timer_enter_waiting`，计时起点因此取当前时刻，v252、v255、v257 和 2026-11-20 的 main 都是这样。待确认期间安装或升级软件包（包括 unattended-upgrades）会触发重载，把恢复推迟，多次重载可以一直推迟下去（第 8.33 节）。`OnCalendar=` 定在截止时间，重载后仍是同一时刻。墙钟被往回调时，在下一次重载之前 `OnActiveSec=` 仍按时触发；墙钟往回调之后又发生重载，两个触发都会推后，恢复最多推迟墙钟被调回的量（拉取请求 #42 的代码评审意见）；墙钟被往前调时，恢复会早于时限，这是安全的方向，而且 `status` 显示的截止时间本来就是墙钟时间。
 - `--collect`：单元结束后被回收，失败的也一样，所以名称不会残留。
 
 开机兜底单元的内容（路径为安装位置，省略注释行）：
@@ -710,7 +710,7 @@ M2 用例的判定要点（验证计划第 4.2、4.3 节）：
 - VT-15：取 `apply` 输出中的隧道命令，只替换私钥和地址两个占位符，加上测试的主机密钥和端口选项；不建隧道时本地 8443 端口没有应答，建隧道后返回 HTTP 200。
 - VT-20：时限 3 分钟，`apply` 的会话随即结束；待确认期间 root 能登录，8080 端口不可达；应用后 90 秒从新会话执行一次 `systemctl daemon-reload`，模拟待确认期间安装软件包（v0.19，需求 D75），这一步须在应用后 150 秒内完成；状态变为"已回滚"；恢复的开始时间（`restore_started_at`）与 `applied_at` 相差不少于时限减 5 秒、不多于时限加 60 秒，恢复耗时不超过 600 秒（模拟环境下可达数分钟，附录 A），测试驱动最多等 900 秒；`sshd -T`、UFW、受管文件、受管单元与基线一致，软件包保留；root 和默认用户都能登录，8080 端口恢复可达。
 - VT-21：不确认的情况即 VT-20；确认的情况在主流程中：`apply` 的会话结束后，从新会话确认，之后不再恢复（重启后状态仍为"已应用"）。
-- VT-22：同一会话中执行 `apply` 后立即 `systemctl reboot`；boot ID 改变；开机兜底单元的日志中有"已恢复到应用前的配置"，它的结束时间（v0.19 起取自 systemd 记录的 "Finished" 日志）早于 `ssh.socket`、`ssh.service`、`ufw.service` 进入运行状态的时间；ssh.service 的 `NeedDaemonReload` 为 no（v0.19，需求 D77）；受管单元的启用状态与基线一致，应用前不存在的单元没有运行；`sshd -T`、UFW、受管文件与基线一致，软件包保留，root 和默认用户都能登录。
+- VT-22：同一会话中执行 `apply` 后立即 `systemctl reboot`；boot ID 改变；开机兜底单元的日志中有"已恢复到应用前的配置"，它的结束时间早于 `ssh.socket`、`ssh.service`、`ufw.service` 进入运行状态的时间，v0.19 起两边都取自 systemd 写入日志的启动作业完成记录（各单元取本次启动中的第一条），由 journald 按收到的顺序标注时间；ssh.service 的 `NeedDaemonReload` 为 no（v0.19，需求 D77）；受管单元的启用状态与基线一致，应用前不存在的单元没有运行；`sshd -T`、UFW、受管文件与基线一致，软件包保留，root 和默认用户都能登录。
 - VT-23：先安装发行版的 Fail2ban 并屏蔽 `fail2ban.service`；`apply` 在 Fail2ban 步骤失败，退出码为 1，输出"正在恢复应用前的配置"和"已恢复到应用前的配置"；状态为"已回滚"，原因含"应用失败"；`sshd -T`、UFW、受管文件、受管单元与基线一致，软件包保留，root 和默认用户都能登录。
 - VT-24：在 `apply` 的会话中执行 `confirm`（提示另开终端）、默认用户在应用前打开的会话中经 `sudo` 执行 `confirm`（提示经 sudo 切换不算）、确认之后再执行 `confirm`（提示没有待确认的变更），都以退出码 1 被拒绝；前两次之后状态仍为"待确认"，标记、开机兜底单元和一个定时器都在。
 - VT-25：每个流程期间，测试驱动每 3 秒用 root 的密钥登录一次（间隔依据第 8.2 节的 VO-2 结论）；失败时 1 秒后重试一次，两次都失败才算失败，只允许发生在声明的重启窗口内；证据记录每次探测的起止时间和第一次失败的错误信息；每次状态切换（待确认、确认后、重启后、恢复后）用当时应当可用的身份登录一次，恢复后 root 和默认用户都要能登录。探测线程因异常停止时（v0.13，需求 D55），异常写入探测证据，流程结束时作为 VT-25 的失败抛出；此前探测静默结束，只判定异常之前的探测。
@@ -1816,7 +1816,10 @@ VT-02 的新步骤（第 7.3 节）也在这台主机上用 `m1.sh` 中的函数
 | `76b029c`、`ff4b79a`（VT-98 C；VT-20 加入重载，产品代码未改） | [44879164019](https://github.com/alieismy/vps-hardening/actions/runs/44879164019) | 20 个作业通过。三个平台的 recovery 和 non22 recovery 共 6 个作业在 VT-20 失败，恢复在应用后 270～272 秒才开始，正好是重载后 180 秒，复现了上述机制。另有 4 个作业失败：legacy Debian 13 和 Ubuntu 24.04（VT-98 C 端口变更开机恢复后的 `verify`）、non22 non22 Ubuntu 24.04（夹具启动频率限制）、hardened Debian 12（VT-33） |
 | `cb6c370`（定时器另设日历触发） | [44879287836](https://github.com/alieismy/vps-hardening/actions/runs/44879287836) | 27 个作业通过，6 个 recovery 作业全部通过。3 个作业失败：legacy Debian 13 和 Ubuntu 24.04、non22 non22 Ubuntu 24.04，原因同上一行 |
 | `bf55f5d`、`8a2a13d`（开机恢复最后重新加载；夹具先重置启动频率限制；VT-33 先写日志记录） | [44882938562](https://github.com/alieismy/vps-hardening/actions/runs/44882938562) | 21 个作业通过，non22 non22 Ubuntu 24.04 和 hardened 通过。9 个作业失败：三个平台的 recovery、non22 recovery 和 legacy，都失败在 VT-22 和 VT-98 C 开机恢复后的"开机兜底单元在本次启动中运行过"这项检查，此前的检查（受管文件、单元状态与基线一致）都已通过。失败原因：恢复最后的重载之后，兜底单元已停用、也没有别的单元引用它，结束后就被 systemd 卸载，`ExecMainExitTimestampMonotonic` 读到 0。问题出在测试，`cc570ce` 改为从 systemd 记录的 "Finished" 日志中取结束时刻 |
-| `cc570ce`、`5940538`（VT-22 的结束时刻；本节和版本号 `0.2.0-rc.3`） | [44886404819](https://github.com/alieismy/vps-hardening/actions/runs/44886404819) | 29 个作业通过，包括全部 recovery、non22 recovery 和 legacy：VT-98 C 端口变更开机恢复后的 `verify` 在三个平台上都通过（需求 D77）。non22 hardened Debian 13 失败在 VT-63：`verify` 前后的快照中 `apt-listchanges.timer` 从启用变为停用。两次快照在 09:00:01 和 09:00:05，这个定时器是 `OnCalendar=hourly`，它的服务（apt-listchanges 4.8）第一次运行后执行 `systemctl disable apt-listchanges.timer`。这是测试环境的问题，后续提交在准备阶段预先停用它（第 7 节）。之后的运行记录在发布 rc.3 之后的文档提交中 |
+| `cc570ce`、`5940538`（VT-22 的结束时刻；本节和版本号 `0.2.0-rc.3`） | [44886404819](https://github.com/alieismy/vps-hardening/actions/runs/44886404819) | 29 个作业通过，包括全部 recovery、non22 recovery 和 legacy：VT-98 C 端口变更开机恢复后的 `verify` 在三个平台上都通过（需求 D77）。non22 hardened Debian 13 失败在 VT-63：`verify` 前后的快照中 `apt-listchanges.timer` 从启用变为停用。两次快照在 09:00:01 和 09:00:05，这个定时器是 `OnCalendar=hourly`，它的服务（apt-listchanges 4.8）第一次运行后执行 `systemctl disable apt-listchanges.timer`。这是测试环境的问题，`d3e3b03` 在准备阶段预先停用它（第 7 节） |
+| `d3e3b03`（准备阶段停用 `apt-listchanges.timer`） | [44888971135](https://github.com/alieismy/vps-hardening/actions/runs/44888971135) | 30 个作业全部通过，静态检查通过。之后按代码评审意见修改的提交，其运行记录在发布 rc.3 之后的文档提交中 |
+
+**代码评审。** CodeRabbit 对 #42 提了两处 Minor 意见，经核实都成立。第一处：第 2.7 节和 `start_timer` 的注释说墙钟被往回调时 `OnActiveSec=` 仍按时触发，没有考虑之后又发生重载的情况：这时日历触发推后了墙钟被调回的量，`OnActiveSec=` 又从重载时刻重新计时，恢复会推迟，最多推迟墙钟被调回的量。改为说明这个限度，不改行为；让单调触发不受重载影响需要改用 `OnBootSec=`，它在容器中的计时起点不同，留待以后。第二处：VT-22 用兜底单元 "Finished" 记录的日志时间，与 `ssh.socket` 等单元的 `ActiveEnterTimestampMonotonic` 比较，前者是 journald 收到记录的时间，后者是 PID 1 改变单元状态的时间，记录收得晚时会误报。改为两边都取 PID 1 的启动作业完成记录，各单元取本次启动中的第一条；单元进入过运行状态却没有这条记录时判为失败。
 
 **未完成的验证。** 这份代码还没有在真实 VPS 上运行过，计划按需求 D76 验收。arm64 参考矩阵按需求 D75 对 `v0.2.0-rc.3` 执行。VT-33 那次失败的原因尚未查明。
 
