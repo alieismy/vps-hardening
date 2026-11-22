@@ -237,8 +237,10 @@ install_missing_packages() {
 
 # write_managed PATH: content on stdin, mode 0644, replaced atomically.
 write_managed() {
-  cat >"$1.vh-new"
-  chmod 0644 "$1.vh-new"
+  # Checked step by step: in a condition errexit is off, and a failed write
+  # must not replace the file.
+  cat >"$1.vh-new" || return 1
+  chmod 0644 "$1.vh-new" || return 1
   mv -f -- "$1.vh-new" "$1"
 }
 
@@ -606,6 +608,8 @@ f2b_update_run() {
   f2b_wait || f2b_update_fail 'fail2ban 重启后 sshd jail 没有运行'
   [ "$(f2b_get sshd journalmatch)" = "$VH_F2B_JOURNALMATCH" ] || f2b_update_fail 'Fail2ban 运行中的 journalmatch 不是新值'
   record_digest "$VH_F2B_JAIL" || f2b_update_fail '无法记录 jail 文件的摘要'
+  # The update is complete: a signal from here on must not undo it.
+  trap '' INT TERM HUP
   # shellcheck disable=SC2034 # read by the ERR trap in bin/vps-hardening
   VH_ABORT_HOOK=''
   VH_F2B_UPDATE_STAGE=finished
@@ -621,13 +625,18 @@ f2b_update_undo() {
   # shellcheck disable=SC2034 # read by the ERR trap in bin/vps-hardening
   VH_ABORT_HOOK=''
   VH_F2B_UPDATE_STAGE=''
-  vh_log "update-fail2ban failed: $reason"
+  vh_log "update-fail2ban failed: $reason" || :
   [ -n "$stage" ] || return 0
   printf '正在恢复原来的 jail 文件……\n' >&2
   if ! f2b_jail_content "$VH_F2B_JOURNALMATCH_V1" | write_managed "$VH_F2B_JAIL"; then
     printf '[x] 无法恢复 %s：请执行 vps-hardening verify 查看\n' "$VH_F2B_JAIL" >&2
     return 0
   fi
+  # The restored content is what the record held before the update, so this
+  # puts digest.5 back also when a signal came after the new one was recorded.
+  # A failure is reported by the check at the end, or by verify when the
+  # restart below fails first.
+  record_digest "$VH_F2B_JAIL" || :
   if [ "$stage" = restarted ]; then
     if ! { bounded_change systemctl restart fail2ban.service && f2b_wait; }; then
       printf '[x] 已恢复原来的 jail 文件，但 fail2ban 没有正常运行：请执行 systemctl status fail2ban 查看\n' >&2

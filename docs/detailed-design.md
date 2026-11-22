@@ -514,8 +514,8 @@ WantedBy=sysinit.target
    - `update.service`：fail2ban 服务在运行，`fail2ban-client status sshd` 有响应。
 4. 内容已是当前的：输出"无需更新"，退出码 0，不提问，不做变更。
 5. 输出更新计划：`journalmatch` 的原值和新值；fail2ban 服务将重启，已有的封禁由 Fail2ban 从它的数据库恢复；不修改 SSH、UFW 和其他文件，没有确认时限，失败时立即恢复原内容。然后要求输入 `yes`（提示"确认更新请输入 yes："）。这里不用 `apply` 的两项确认：SSH 和 UFW 不变，当前会话断开不影响登录。
-6. 执行：写入当前内容（与 `apply` 相同，先写临时文件再改名），`fail2ban-client -t`，`systemctl restart fail2ban.service`，等待服务响应且 sshd jail 运行（与 `apply` 相同，最多约 120 秒），运行中的 `journalmatch` 必须等于当前值；然后更新记录中这个文件的摘要（`digest.5`），写日志。记录中的其他字段和快照都不变：`rollback` 按应用前的快照恢复，与 jail 文件是哪个版本无关。
-7. 失败处理：第 6 步的任一步失败、ERR 陷阱和 SIGINT、SIGTERM、SIGHUP，都立即按 P 写回旧内容，并核对它的摘要等于记录中的；已经执行过重启的，再重启一次并等待。退出码为 1（内部错误为 3）。写回或重启失败时提示用 `verify` 和 `systemctl status fail2ban` 查看。
+6. 执行：写入当前内容（与 `apply` 相同，先写临时文件再改名；临时文件写入或设置权限失败时不改名，返回失败），`fail2ban-client -t`，`systemctl restart fail2ban.service`，等待服务响应且 sshd jail 运行（与 `apply` 相同，最多约 120 秒），运行中的 `journalmatch` 必须等于当前值；然后更新记录中这个文件的摘要（`digest.5`），写日志。记录中的其他字段和快照都不变：`rollback` 按应用前的快照恢复，与 jail 文件是哪个版本无关。
+7. 失败处理：第 6 步的任一步失败、ERR 陷阱和 SIGINT、SIGTERM、SIGHUP，都立即按 P 写回旧内容，再按写回的文件记录摘要。写回的内容就是更新前记录的内容，摘要因此回到原值；第 6 步已经更新摘要、之后才收到信号时也是如此。已经执行过重启的，再重启一次并等待。最后核对文件的摘要等于记录中的。写日志失败不中断恢复。第 6 步更新摘要之后先忽略这三个信号，此后的信号不再触发恢复。退出码为 1（内部错误为 3）。写回或重启失败时提示用 `verify` 和 `systemctl status fail2ban` 查看。
 
 用重启而不用 `fail2ban-client reload`：重启的路径与 `apply` 相同，已由 VT-30 验证；`reload` 替换 `journalmatch` 的行为没有核实（需求 D84）。Fail2ban 启动时从数据库恢复未到期的封禁；手工封禁同样写入数据库：fail2ban 1.0.2 的 `server/actions.py` 中 `__checkBan` 把封禁交给 `server/observer.py` 的 `banFound`，后者调用 `database.addBan`（2026-11-21 核对源码）。VT-38 实测。
 
