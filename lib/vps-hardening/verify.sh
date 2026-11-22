@@ -328,11 +328,12 @@ sshd bantime.rndtime|600
 sshd ignoreself|True
 sshd ignoreip|127.0.0.0/8 ::1
 sshd usedns|no
-sshd journalmatch|_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session
 sshd actions|nftables
 sshd action nftables protocol|tcp
 dbpurgeage|2592000
 EOF
+  printf 'sshd journalmatch|%s
+' "$VH_F2B_JOURNALMATCH"
   if [ "${VH_SSH_BASELINE_OK-}" = yes ]; then
     printf 'sshd action nftables port|%s\n' "$VH_SSH_PORT"
   fi
@@ -403,9 +404,11 @@ verify_fail2ban() {
   fi
 }
 
-# FR-08: the values the server uses, compared with f2b_expected_values.
+# FR-08: the values the server uses, compared with f2b_expected_values. On a
+# host hardened by v0.1.0 to v0.2.0 the journalmatch is still the old one
+# until update-fail2ban; alone, that is a warning (requirements D84).
 verify_fail2ban_values() {
-  local args want got count=0 bad=()
+  local args want got count=0 bad=() old=''
   if [ "${VH_SSH_BASELINE_OK-}" != yes ]; then
     report SKIP f2b.port 'SSH 基线未通过核对，不能猜测封禁端口'
   fi
@@ -413,10 +416,18 @@ verify_fail2ban_values() {
     count=$((count + 1))
     # shellcheck disable=SC2086 # ARGS is several words.
     got="$(f2b_get $args)" || got='（读取失败）'
-    [ "$got" = "$want" ] || bad+=("${args#sshd } 为 ${got:-（空）}，应为 $want")
+    [ "$got" != "$want" ] || continue
+    if [ "$args" = 'sshd journalmatch' ] && [ "$got" = "$VH_F2B_JOURNALMATCH_V1" ]; then
+      old="journalmatch 为 v0.2.0 及以前的旧值 $got，应为 $want"
+    else
+      bad+=("${args#sshd } 为 ${got:-（空）}，应为 $want")
+    fi
   done < <(f2b_expected_values)
   if [ "${#bad[@]}" -gt 0 ]; then
+    [ -z "$old" ] || bad+=("$old")
     report FAIL f2b.values "生效值与 FR-08 不一致：$(join_by '；' "${bad[@]}")"
+  elif [ -n "$old" ]; then
+    report WARN f2b.values "$old：journald 补不上进程字段的失败登录不被计数。请执行 vps-hardening update-fail2ban 更新；其余 $((count - 1)) 项与 FR-08 一致"
   else
     report PASS f2b.values "生效值与 FR-08 一致（$count 项）"
   fi

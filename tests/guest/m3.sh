@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # Guest side of the M3 VM tests (docs/verification-plan.md 4.4 to 4.7:
-# VT-30 to VT-36, VT-40, VT-50 after installing 3X-UI, VT-51, VT-55 and the
+# VT-30 to VT-38, VT-40, VT-50 after installing 3X-UI, VT-51, VT-55 and the
 # 3X-UI part of VT-71). tests/vm.py runs the first phase of VT-36 before apply,
 # hardens and confirms the guest, then runs one phase of this script per SSH
 # session; VT-51 runs on overlays of the disk after VT-55, one drift each.
@@ -9,7 +9,11 @@
 # shellcheck source=m2.sh
 . "${BASH_SOURCE[0]%/*}/m2.sh"
 
-readonly JOURNALMATCH='_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session'
+readonly JOURNALMATCH='_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session + SYSLOG_IDENTIFIER=sshd _UID=0 + SYSLOG_IDENTIFIER=sshd-session _UID=0'
+# The value v0.1.0 to v0.2.0 wrote (VT-38, requirements D84).
+readonly OLD_JOURNALMATCH='_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session'
+readonly F2B_JAIL=/etc/fail2ban/jail.d/99-vps-hardening.local
+readonly F2B_DB=/var/lib/fail2ban/fail2ban.sqlite3
 # Wait for a package run the APT timers started; unlike settle, the timers
 # stay running, as verify requires after apply.
 apt_idle() {
@@ -24,7 +28,9 @@ apt_idle() {
 # Fail2ban ban nor Debian 13's sshd penalties carry over between cases.
 readonly REGEX_SRC=192.0.2.6 BAN_SRC=192.0.2.7 INC_SRC=192.0.2.8 AGENT_SRC=192.0.2.9 PREAUTH_SRC=192.0.2.10
 readonly BACKLOG_SRC=192.0.2.11
-readonly M3_SOURCES="$REGEX_SRC $BAN_SRC $INC_SRC $AGENT_SRC $PREAUTH_SRC $BACKLOG_SRC"
+# VT-37: one attempt each; VT-38: the control under the old journalmatch.
+readonly VT37_SOURCES='192.0.2.13 192.0.2.14 192.0.2.15 192.0.2.16' VT38_SOURCES='192.0.2.17 192.0.2.18'
+readonly M3_SOURCES="$REGEX_SRC $BAN_SRC $INC_SRC $AGENT_SRC $PREAUTH_SRC $BACKLOG_SRC $VT37_SOURCES $VT38_SOURCES"
 # 192.0.2.12 is m2.sh's BAD_SHELL_KEY.
 # VT-32: a documentation address that never sends traffic.
 readonly MANUAL_BAN=203.0.113.123
@@ -132,7 +138,7 @@ ban_by_failures() {
 }
 
 # journal_entries ADDR: journal entries mentioning ADDR since the phase began,
-# as "_COMM SYSLOG_IDENTIFIER _SYSTEMD_UNIT | MESSAGE" (VT-35).
+# as "_COMM SYSLOG_IDENTIFIER _SYSTEMD_UNIT _UID | MESSAGE" (VT-35).
 journal_entries() {
   journalctl --since "@$phase_start" --no-pager -o json | python3 -c '
 import json, sys
@@ -141,18 +147,20 @@ for line in sys.stdin:
     e = json.loads(line)
     msg = e.get("MESSAGE")
     if isinstance(msg, str) and (" " + addr + " ") in (" " + msg.replace(",", " ") + " "):
-        print(e.get("_COMM"), e.get("SYSLOG_IDENTIFIER"), e.get("_SYSTEMD_UNIT"), "|", msg)
+        print(e.get("_COMM"), e.get("SYSLOG_IDENTIFIER"), e.get("_SYSTEMD_UNIT"), e.get("_UID"), "|", msg)
 ' "$1"
 }
 
-# VT-35: every log line about the address is inside FR-08's journalmatch.
+# VT-35: every log line about the address is inside FR-08's journalmatch: the
+# unit, the command, or the identifier sent by a root process (D84).
 check_journal_scope() {
   local addr="$1" outside
   journal_entries "$addr" >"$phase_dir/journal-$addr.txt"
-  awk '{ print $1, $2 }' "$phase_dir/journal-$addr.txt" | sort | uniq -c >"$phase_dir/journal-$addr.fields"
+  awk '{ print $1, $2, $3, $4 }' "$phase_dir/journal-$addr.txt" | sort | uniq -c >"$phase_dir/journal-$addr.fields"
   cat "$phase_dir/journal-$addr.fields"
   [ -s "$phase_dir/journal-$addr.txt" ] || fail "no journal entries mention $addr"
-  outside="$(awk '$3 != "ssh.service" && $1 != "sshd" && $1 != "sshd-session"' "$phase_dir/journal-$addr.txt")"
+  outside="$(awk '!($3 == "ssh.service" || $1 == "sshd" || $1 == "sshd-session" ||
+    (($2 == "sshd" || $2 == "sshd-session") && $4 == "0"))' "$phase_dir/journal-$addr.txt")"
   [ -z "$outside" ] || fail "log lines about $addr outside the journalmatch: $outside"
   log "every log line about $addr is inside the journalmatch"
 }
@@ -170,7 +178,8 @@ phase_m3_fail2ban() {
   capture vt30-ping fail2ban-client ping
   expect_text vt30-ping pong
   capture vt30-status fail2ban-client status sshd
-  expect_match vt30-status 'Journal matches:[[:space:]]+_SYSTEMD_UNIT=ssh\.service \+ _COMM=sshd \+ _COMM=sshd-session$'
+  [ "$(sed -n 's/^.*Journal matches:[[:space:]]*//p' "$phase_dir/vt30-status.out")" = "$JOURNALMATCH" ] ||
+    fail 'Journal matches is not the journalmatch of FR-08'
   capture vt30-jails fail2ban-client status
   expect_match vt30-jails 'Jail list:[[:space:]]+sshd$'
   while IFS='|' read -r args want; do
@@ -190,7 +199,7 @@ sshd bantime.rndtime|600
 sshd ignoreself|True
 sshd ignoreip|These IP addresses/networks are ignored:\n|- 127.0.0.0/8\n`- ::1
 sshd usedns|no
-sshd journalmatch|Current match filter:\n_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session
+sshd journalmatch|Current match filter:\n_SYSTEMD_UNIT=ssh.service + _COMM=sshd + _COMM=sshd-session + SYSLOG_IDENTIFIER=sshd _UID=0 + SYSLOG_IDENTIFIER=sshd-session _UID=0
 sshd actions|The jail sshd has the following actions:\nnftables
 sshd action nftables port|22
 sshd action nftables protocol|tcp
@@ -614,6 +623,178 @@ phase_m3_drift() {
   log "$drift: verify reported ${want_fail:-no failure}${want_warn:+, warning $want_warn}"
 }
 
+# stopped_attempt BIND N: attempt N as a user that does not exist, with
+# journald stopped until a second after it, so that the sshd process has
+# exited when journald reads its records and cannot give them _COMM and
+# _SYSTEMD_UNIT (detailed design 8.36, group E). Prints the result.
+stopped_attempt() {
+  local jpid got
+  jpid="$(systemctl show -p MainPID --value systemd-journald.service)"
+  [ "${jpid:-0}" -gt 0 ] || fail 'systemd-journald has no main PID'
+  kill -STOP "$jpid"
+  got="$(attempt "$1" "vh-nouser-$2" -i "$PRIVATE/ed25519" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey)" ||
+    got=error
+  sleep 1
+  kill -CONT "$jpid"
+  printf '%s stopped-invalid-user-%s %s %s\n' "$(date +%s)" "$2" "$1" "$got" >>"$phase_dir/attempts.txt"
+  sleep 1
+  printf '%s\n' "$got"
+}
+
+# stopped_failures LABEL ADDR...: one stopped attempt from each address. Writes
+# the attempts, the change of Fail2ban's counter and the "Invalid user"
+# records that lack both _COMM and _SYSTEMD_UNIT to LABEL.txt; sets
+# STOPPED_COUNTED and STOPPED_UNATTRIBUTED.
+STOPPED_COUNTED=0 STOPPED_UNATTRIBUTED=0
+stopped_failures() {
+  local label="$1" addr n=0 before after got
+  shift
+  before="$(f2b_settled_count)"
+  for addr in "$@"; do
+    n=$((n + 1))
+    got="$(stopped_attempt "$addr" "$n")"
+    [ "$got" = denied ] || fail "attempt from $addr with journald stopped: $got, expected denied"
+  done
+  after="$(f2b_settled_count)"
+  STOPPED_COUNTED=$((after - before))
+  STOPPED_UNATTRIBUTED="$(for addr in "$@"; do journal_entries "$addr"; done |
+    awk '$1 == "None" && $3 == "None" && / [|] Invalid user /' | wc -l)"
+  printf 'attempts %s counted %s unattributed %s\n' "$n" "$STOPPED_COUNTED" "$STOPPED_UNATTRIBUTED" |
+    tee "$phase_dir/$label.txt"
+  [ "$STOPPED_UNATTRIBUTED" -ge 1 ] || fail 'no record lacks _COMM and _SYSTEMD_UNIT: the case was not produced'
+}
+
+# VT-37 (requirements D84): failures journald cannot attribute to sshd are
+# counted all the same, through the identifier and the kernel-attested UID.
+phase_m3_journald() {
+  local addr n
+  m3_netns_up
+  wait_fail2ban
+  phase_start="$(date +%s)"
+  # shellcheck disable=SC2086 # one argument per address
+  stopped_failures vt37 $VT37_SOURCES
+  n="$(wc -w <<<"$VT37_SOURCES")"
+  [ "$STOPPED_COUNTED" -eq "$n" ] || fail "Fail2ban counted $STOPPED_COUNTED of $n failures"
+  for addr in $VT37_SOURCES; do
+    check_journal_scope "$addr"
+    ! banned "$addr" || fail "$addr was banned"
+  done
+  log "all $n failures counted, $STOPPED_UNATTRIBUTED records without _COMM and _SYSTEMD_UNIT"
+}
+
+# What update-fail2ban may change: the jail file, the record and the running
+# journalmatch.
+f2b_material() {
+  sha256sum "$F2B_JAIL" "$STATE_DIR/state"
+  fail2ban-client get sshd journalmatch
+}
+
+# wait_banned_in_db ADDR: Fail2ban writes a ban to its database from another
+# thread; a restart restores the bans it finds there.
+wait_banned_in_db() {
+  local _
+  for _ in $(seq 30); do
+    if python3 -c '
+import sqlite3, sys
+db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True, timeout=10)
+sys.exit(0 if db.execute("SELECT 1 FROM bans WHERE jail = ? AND ip = ?", ("sshd", sys.argv[2])).fetchone() else 1)
+' "$F2B_DB" "$1"; then
+      return 0
+    fi
+    sleep 1
+  done
+  fail "$1 is not in the Fail2ban database"
+}
+
+# VT-38 (requirements D84), first part: a host hardened by v0.2.0 and then
+# upgraded, simulated: the jail file and its recorded digest as v0.2.0 wrote
+# them, and Fail2ban restarted with it. The control repeats VT-37 under the
+# old journalmatch. verify warns; update-fail2ban without a terminal, and
+# cancelled, changes nothing. Last, a file without a section header in
+# jail.d makes the configuration check of the next update fail.
+phase_m3_f2b_old() {
+  local n
+  m3_netns_up
+  wait_fail2ban
+  sed -i "s/^journalmatch = .*/journalmatch = $OLD_JOURNALMATCH/" "$F2B_JAIL"
+  sed -i "s|^digest\.5=.*|digest.5=$(sha256sum <"$F2B_JAIL" | awk '{print $1}') $F2B_JAIL|" "$STATE_DIR/state"
+  systemctl restart fail2ban.service
+  wait_fail2ban
+  [ "$(fail2ban-client get sshd journalmatch | sed 1d)" = "$OLD_JOURNALMATCH" ] || fail 'the old journalmatch is not running'
+  phase_start="$(date +%s)"
+  # shellcheck disable=SC2086 # one argument per address
+  stopped_failures control $VT38_SOURCES
+  n="$(wc -w <<<"$VT38_SOURCES")"
+  [ "$STOPPED_COUNTED" -lt "$n" ] || fail "the old journalmatch counted all $n failures"
+  fail2ban-client set sshd banip "$MANUAL_BAN" >/dev/null
+  wait_banned_in_db "$MANUAL_BAN"
+  cp -p "$STATE_DIR/state" "$PRIVATE/vt38-state"
+  f2b_material >"$PRIVATE/vt38-material"
+  capture verify-old "$VH" verify
+  expect_rc verify-old 0
+  expect_clean verify-old
+  expect_report verify-old WARN f2b.values
+  expect_text verify-old 'vps-hardening update-fail2ban'
+  expect_report verify-old PASS f2b.files
+  capture no-tty "$VH" update-fail2ban
+  expect_rc no-tty 2
+  capture cancelled on_tty "$VH" update-fail2ban
+  expect_rc cancelled 1
+  expect_report cancelled PASS update.jail
+  expect_text cancelled '已取消，未做任何变更'
+  for name in no-tty cancelled; do
+    expect_clean "$name"
+  done
+  f2b_material >"$phase_dir/material.txt"
+  diff -u "$PRIVATE/vt38-material" "$phase_dir/material.txt" || fail 'a refused or cancelled update left changes'
+  printf 'not a configuration file\n' >/etc/fail2ban/jail.d/vh-broken.local
+}
+
+# VT-38: after the update that failed its configuration check, the old file,
+# record and running value are back.
+phase_m3_f2b_restored() {
+  rm -f /etc/fail2ban/jail.d/vh-broken.local
+  f2b_material >"$phase_dir/material.txt"
+  diff -u "$PRIVATE/vt38-material" "$phase_dir/material.txt" || fail 'the failed update left changes'
+  capture f2b-test fail2ban-client -t
+  expect_rc f2b-test 0
+  banned "$MANUAL_BAN" || fail "$MANUAL_BAN is no longer banned"
+}
+
+# VT-38, after the update: the new value runs, only digest.5 changed in the
+# record, the ban survived the restart and verify passes. A second run has
+# nothing to do and asks nothing; a changed jail file is refused.
+phase_m3_f2b_updated() {
+  wait_fail2ban
+  [ "$(fail2ban-client get sshd journalmatch | sed 1d)" = "$JOURNALMATCH" ] || fail 'the new journalmatch is not running'
+  grep -qxF "journalmatch = $JOURNALMATCH" "$F2B_JAIL" || fail 'the jail file lacks the new journalmatch'
+  [ "$(sed -n 's/^digest\.5=\([0-9a-f]*\) .*/\1/p' "$STATE_DIR/state")" = "$(sha256sum <"$F2B_JAIL" | awk '{print $1}')" ] ||
+    fail 'digest.5 is not the digest of the new jail file'
+  diff -u <(grep -v '^digest\.5=' "$PRIVATE/vt38-state") <(grep -v '^digest\.5=' "$STATE_DIR/state") ||
+    fail 'update-fail2ban changed other lines of the record'
+  banned "$MANUAL_BAN" || fail "$MANUAL_BAN was not restored after the restart"
+  fail2ban-client set sshd unbanip "$MANUAL_BAN" >/dev/null
+  verify_passes vt38-verify
+  expect_report vt38-verify PASS f2b.values
+  expect_report vt38-verify PASS f2b.files
+  f2b_material >"$phase_dir/material-before.txt"
+  capture again on_tty "$VH" update-fail2ban
+  expect_rc again 0
+  expect_text again '无需更新'
+  ! grep -qF '确认更新请输入 yes' "$phase_dir/again.out" || fail 'asked although there was nothing to update'
+  cp -p "$F2B_JAIL" "$PRIVATE/jail.saved"
+  printf '# changed\n' >>"$F2B_JAIL"
+  capture changed on_tty "$VH" update-fail2ban
+  cp -p "$PRIVATE/jail.saved" "$F2B_JAIL"
+  expect_rc changed 1
+  expect_report changed FAIL update.jail
+  for name in again changed; do
+    expect_clean "$name"
+  done
+  f2b_material >"$phase_dir/material-after.txt"
+  diff -u "$phase_dir/material-before.txt" "$phase_dir/material-after.txt" || fail 'a second or refused update left changes'
+}
+
 m3_main() {
   local phase="${1-}"
   [ "$#" -eq 0 ] || shift
@@ -631,6 +812,10 @@ m3_main() {
     m3-manual-ban) phase_m3_manual_ban ;;
     m3-agent) phase_m3_agent ;;
     m3-updates) phase_m3_updates ;;
+    m3-journald) phase_m3_journald ;;
+    m3-f2b-old) phase_m3_f2b_old ;;
+    m3-f2b-restored) phase_m3_f2b_restored ;;
+    m3-f2b-updated) phase_m3_f2b_updated ;;
     m3-xui) phase_m3_xui ;;
     m3-xui-rebooted) phase_m3_xui_rebooted ;;
     m3-drift) phase_m3_drift "$@" ;;
