@@ -149,7 +149,7 @@ D64 已随预发行 [`v0.2.0-rc.1`](https://github.com/alieismy/vps-hardening/re
 | 仓库 | 用途 | 状态 |
 |---|---|---|
 | [vps-tuning](https://github.com/alieismy/vps-tuning) | 网络调优、诊断与测量 | Pre-release |
-| vps-hardening（本仓库） | 基础安全加固 | 预发行 v0.2.0-rc.3 已发布，并在一台 Debian 13 VPS 上完成原地增量验收；Latest 稳定版仍为 v0.1.2 |
+| vps-hardening（本仓库） | 基础安全加固 | 正式版 v0.2.1 已发布并设为 Latest；在一台已加固的 Debian 13 VPS 上做过原地增量验收和升级验收 |
 | [vps-proxy-setup](https://github.com/alieismy/vps-proxy-setup) | 代理服务搭建（以 3X-UI 为例） | 需求阶段（2026-10-25 创建） |
 
 建议的执行顺序（需求 D27、D41、D42；理由见[需求规格说明第 7.3 节](docs/requirements.md#73-与-vps-tuning-的约定)）：更新系统、安装基础工具并重启 → 加固并确认（UFW 只放行已核实的 P/tcp）→ 调优（应用 → 重启 → 验证）→ 安装并配置 3X-UI，用 `vps-hardening ports` 开放它的端口并确认 → 调优仓库的严格验证 → 重启后复核。系统更新和重启由管理员执行，本工具不执行。调优的应用和重启要在加固确认之后进行，确认前重启会自动撤销加固。
