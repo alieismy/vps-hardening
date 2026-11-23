@@ -127,11 +127,11 @@ Reinstall with the install command from the new release's page. The installer on
 
 The three repositories are used in the order of the table below: harden first, then tune, then set up the proxy (requirements D27; rationale in [requirements §7.3](docs/requirements.md#73-与-vps-tuning-的约定)).
 
-| Order | Repository | Purpose | Status |
-|---|---|---|---|
-| 1 | vps-hardening (this repository) | Baseline security hardening | Release v0.2.1 |
-| 2 | [vps-tuning](https://github.com/alieismy/vps-tuning) | Network tuning, diagnostics and measurement | Pre-release |
-| 3 | [vps-proxy-setup](https://github.com/alieismy/vps-proxy-setup) | Proxy service setup (3X-UI as the example) | Requirements stage (created 2026-10-25) |
+| Order | Repository | Purpose |
+|---|---|---|
+| 1 | vps-hardening (this repository) | Baseline security hardening |
+| 2 | [vps-tuning](https://github.com/alieismy/vps-tuning) | Network tuning, diagnostics and measurement |
+| 3 | [vps-proxy-setup](https://github.com/alieismy/vps-proxy-setup) | Proxy service setup (3X-UI as the example) |
 
 Full flow (requirements D27, D41, D42):
 

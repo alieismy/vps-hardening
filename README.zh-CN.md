@@ -125,11 +125,11 @@ P 不能与面板或业务端口同号，TCP/UDP 不用于绕过用途冲突；P
 
 三个仓库按下表的顺序使用：先加固，再调优，最后搭建代理（需求 D27；理由见[需求规格说明第 7.3 节](docs/requirements.md#73-与-vps-tuning-的约定)）。
 
-| 顺序 | 仓库 | 用途 | 状态 |
-|---|---|---|---|
-| 1 | vps-hardening（本仓库） | 基础安全加固 | 正式版 v0.2.1 |
-| 2 | [vps-tuning](https://github.com/alieismy/vps-tuning) | 网络调优、诊断与测量 | Pre-release |
-| 3 | [vps-proxy-setup](https://github.com/alieismy/vps-proxy-setup) | 代理服务搭建（以 3X-UI 为例） | 需求阶段（2026-10-25 创建） |
+| 顺序 | 仓库 | 用途 |
+|---|---|---|
+| 1 | vps-hardening（本仓库） | 基础安全加固 |
+| 2 | [vps-tuning](https://github.com/alieismy/vps-tuning) | 网络调优、诊断与测量 |
+| 3 | [vps-proxy-setup](https://github.com/alieismy/vps-proxy-setup) | 代理服务搭建（以 3X-UI 为例） |
 
 完整流程（需求 D27、D41、D42）：
 
