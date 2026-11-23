@@ -36,7 +36,7 @@
 
 - OpenSSH、UFW、Fail2ban、unattended-upgrades、3X-UI 等上游组件自身的漏洞，请报告给相应的项目；
 - 需要事先取得目标主机 root 权限才能利用的问题：`confirm` 等检查防的是误操作，不防有意绕过的 root（[方案设计第 7.5 节](docs/solution-design.md#75-防锁死与确认fr-05)）；
-- [适用范围](README.md#适用范围)中明确不做的事项，以及[详细设计第 9 节](docs/detailed-design.md#9-已知限制与后续)已记录的已知限制，除非你发现了新的利用方式。
+- [适用范围](README.zh-CN.md#适用范围)中明确不做的事项，以及[详细设计第 9 节](docs/detailed-design.md#9-已知限制与后续)已记录的已知限制，除非你发现了新的利用方式。
 
 ## English
 
@@ -72,4 +72,4 @@ Out of scope:
 
 - vulnerabilities in upstream components such as OpenSSH, UFW, Fail2ban, unattended-upgrades or 3X-UI; report them to those projects;
 - issues that require root on the target host beforehand: checks such as `confirm` guard against mistakes, not against a root user deliberately bypassing them ([solution design §7.5](docs/solution-design.md#75-防锁死与确认fr-05));
-- what the [Scope](README.en.md#scope) section explicitly excludes, and the known limitations recorded in [detailed design §9](docs/detailed-design.md#9-已知限制与后续), unless you have found a new way to exploit them.
+- what the [Scope](README.md#scope) section explicitly excludes, and the known limitations recorded in [detailed design §9](docs/detailed-design.md#9-已知限制与后续), unless you have found a new way to exploit them.
