@@ -15,7 +15,7 @@
 
 ### 报告漏洞
 
-请不要在公开的 Issue 或拉取请求中报告漏洞。请使用 GitHub 的私密漏洞报告：打开 [Report a vulnerability](https://github.com/alieismy/vps-hardening/security/advisories/new) 填写，报告只有维护者能看到。中文或英文均可。
+请不要在公开的 Issue 或拉取请求中报告漏洞。请使用 GitHub 的私密漏洞报告：打开 [Report a vulnerability](https://github.com/alieismy/vps-hardening/security/advisories/new) 填写。报告不公开，只有仓库维护者和维护者加入这份报告的协作者能看到。中文或英文均可。
 
 报告请尽量包含：
 
@@ -51,7 +51,7 @@ Only the latest release (the one marked Latest under [Releases](https://github.c
 
 ### Reporting a vulnerability
 
-Do not report vulnerabilities in public issues or pull requests. Use GitHub private vulnerability reporting: open [Report a vulnerability](https://github.com/alieismy/vps-hardening/security/advisories/new) and fill in the form; only the maintainers can see the report. Reports in English or Chinese are welcome.
+Do not report vulnerabilities in public issues or pull requests. Use GitHub private vulnerability reporting: open [Report a vulnerability](https://github.com/alieismy/vps-hardening/security/advisories/new) and fill in the form. The report is not public: only the repository maintainers and any collaborators they add to the report can see it. Reports in English or Chinese are welcome.
 
 Please include, where possible:
 
