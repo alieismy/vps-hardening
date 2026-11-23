@@ -1,36 +1,149 @@
 # VPS Hardening
 
-**Release [v0.2.1](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.1) published on 2026-11-22 (UTC) and set as Latest:** Fail2ban now also counts failed logins whose journal records lack `_COMM` and `_SYSTEMD_UNIT` (D84), and the new `update-fail2ban` command moves hosts hardened by v0.1.0 to v0.2.0 to the new `journalmatch` after the upgrade; `verify` warns until it is run. The code is v0.2.1-rc.1 with only the version changed (D86). PR #51 and master each passed the 30-job amd64 VM matrix on the first attempt and the static checks; all 15 public assets were downloaded anonymously and matched the build, and the release attestation verifies ([design §8.40](docs/detailed-design.md#840-正式版-v021-和-vt-72-的公开部分)). On a real VPS, rc.1 was installed as an upgrade on one Debian 13 host hardened by v0.2.0, and after `update-fail2ban` `verify` passed all 44 checks ([design §8.39](docs/detailed-design.md#839-预发行版-v021-rc1-和验收主机上的-d84-增量验收)); first-time apply on a new host relies on VM evidence.
+简体中文 | [English](README.en.md)
 
-**Pre-release [v0.2.1-rc.1](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.1-rc.1) published on 2026-11-22 (UTC):** Fail2ban now also counts failed logins whose journal records lack `_COMM` and `_SYSTEMD_UNIT`, which journald cannot fill in once the short-lived sshd process has exited; the `journalmatch` gains `SYSLOG_IDENTIFIER=sshd _UID=0` and `SYSLOG_IDENTIFIER=sshd-session _UID=0` (D84, [design §8.36](docs/detailed-design.md#836-vt-33-偶发少计的原因需求-d79)). On hosts hardened by v0.1.0 to v0.2.0, `verify` warns about the old value after the upgrade, and the new `update-fail2ban` command rewrites only this tool's jail file and its recorded digest, then restarts Fail2ban. The final PR #49 commit and master each passed the 30-job amd64 VM matrix on the first attempt and the static checks (an earlier PR commit failed ShellCheck SC2034, fixed in `0e2b94a`); all 15 public assets were downloaded anonymously and matched the build, and the release attestation verifies. On the hardened Debian 13 acceptance VPS, the upgrade from `v0.2.0` left the records unchanged and `verify` warned only about the journalmatch; after `update-fail2ban` it passed all 44 checks ([design §8.39](docs/detailed-design.md#839-预发行版-v021-rc1-和验收主机上的-d84-增量验收)). The stable Latest release remains `v0.2.0`.
-
-**Release [v0.2.0](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0) published on 2026-11-21 and set as Latest:** keeps the provider's existing single SSH management port, including non-22 ports (D64), with the fixes of rc.2 and rc.3. The code is v0.2.0-rc.3 with only the version changed (D81). PR #46 and master each passed the 30-job amd64 VM matrix and static checks on the first attempt; all 15 public assets were downloaded anonymously and matched the build ([design §8.37](docs/detailed-design.md#837-正式版-v020-和-vt-72-的公开部分)). On a real VPS, rc.3 had an in-place incremental acceptance on one hardened Debian 13 host ([design §8.35](docs/detailed-design.md#835-真实-vps-增量验收v020-rc3需求-d76)); first-time preflight, apply and confirm on a new host rely on VM evidence. Known limitation: when journald cannot attach `_COMM` and `_SYSTEMD_UNIT` to the record of a short-lived sshd process, Fail2ban's journalmatch misses it and one failed attempt goes uncounted, so a ban can take one more failure ([design §8.36](docs/detailed-design.md#836-vt-33-偶发少计的原因需求-d79)); this has been so since v0.1.0, and the fix is left to the next version.
-
-**Pre-release [v0.2.0-rc.3](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.3) published on 2026-11-21:** fixes two automatic-restore issues and adds the VT-98 C test; no new features. A `systemctl daemon-reload` while a change was pending (package installs and unattended-upgrades run one) restarted the restore countdown, so the restore could be delayed again and again; the restore timer now also has a calendar trigger at the deadline that `status` shows. On systemd 255 and later (Debian 13, Ubuntu 24.04), after a reboot during the pending window had restored the previous configuration, `verify`, `preflight` and `ports` reported the SSH entry as unverifiable until the next reload; the boot restore now ends with one reload. PR #42 and master each passed the 30-job amd64 VM matrix and static checks. All 15 public assets were downloaded anonymously and matched the verified build, and the release attestation verifies. In the arm64 reference run (requirements D26, emulated), the recovery suite passed on all three platforms, including the reload case; the matrix suite ran past its 45-minute job limit and the hardened suite failed three test cases on emulation timing, with no tool fault found ([appendix A](docs/detailed-design.md#附录-a-arm64-参考结果)). On 2026-11-21 it passed in-place incremental acceptance on one hardened Debian 13 VPS: an upgrade from `v0.2.0-rc.1`, port changes confirmed from new sessions, a timed restore with a systemd reload in the window, and reboots with and without a pending change ([design §8.35](docs/detailed-design.md#835-真实-vps-增量验收v020-rc3需求-d76)). The stable Latest release remains `v0.1.2` ([design §8.34](docs/detailed-design.md#834-预发行版-v020-rc3-和-vt-72-的公开部分)).
-
-**Pre-release [v0.2.0-rc.2](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.2) published on 2026-11-20:** fixes the P0 and P1 issues found in a review of the repository. Preflight now refuses a host when sshd would reject root's key, when confirm could not identify the new session, when another firewall service is enabled or running, or when the kernel was booted with `ipv6.disable=1`. The state record carries a format number, and the installer refuses to install a release over a record of a later format. PR #39 and master each passed the 30-job amd64 VM matrix and static checks. All 15 public assets were downloaded anonymously and matched the verified build. It is the first release published after immutable releases were enabled, and its GitHub release attestation verifies. This code has not run on a real VPS. The stable Latest release remains `v0.1.2` ([design §8.32](docs/detailed-design.md#832-预发行版-v020-rc2-和-vt-72-的公开部分)).
-
-**Pre-release [v0.2.0-rc.1](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.1) published on 2026-11-03:** preserves the existing single SSH management port, including non-22 ports. PR #35 and master each passed the 30-job amd64 VM matrix and static checks; all 15 public assets were downloaded and matched the verified build. This is a pre-release. For a real VPS there is only a user report: on one Debian 13 x86_64 host from a general VPS provider, with the provider's non-22 SSH port and service activation, `verify` passed all 42 checks after apply and confirm; the build used and whether it came from the public release are not recorded ([design §8.30](docs/detailed-design.md#830-非-22-端口的真实-vps-验证用户报告)). Uncovered VT-98 C, arm64, external IPv6 and provider NAT remain unverified; the stable Latest release remains `v0.1.2`.
-
-**正式版 [`v0.2.1`](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.1)（2026-11-22 UTC，设为 Latest，D86）。** Fail2ban 现在也计入 journal 记录缺 `_COMM` 和 `_SYSTEMD_UNIT` 的失败登录（D84）；新命令 `update-fail2ban` 让由 `v0.1.0`～`v0.2.0` 加固的主机在升级后改用新的 `journalmatch`，执行之前 `verify` 报告警告。代码与 `v0.2.1-rc.1` 相同，只改版本号。[PR #51](https://github.com/alieismy/vps-hardening/pull/51) 与 master 的三平台 amd64 VM 各 30 项首次运行即通过，静态检查也通过，15 项公开资产匿名下载核对通过，GitHub 的发行版证明核对通过（[详细设计第 8.40 节](docs/detailed-design.md#840-正式版-v021-和-vt-72-的公开部分)）。真实 VPS 上，rc.1 在一台由 `v0.2.0` 加固的 Debian 13 主机上以升级的方式安装，执行 `update-fail2ban` 后 `verify` 44 项通过（[第 8.39 节](docs/detailed-design.md#839-预发行版-v021-rc1-和验收主机上的-d84-增量验收)）；新机上的首次应用以 VM 证据为准。
-
-**预发行 [`v0.2.1-rc.1`](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.1-rc.1)（2026-11-22 UTC，D84、D85）。** Fail2ban 现在也计入 journal 记录缺 `_COMM` 和 `_SYSTEMD_UNIT` 的失败登录：短命的 sshd 进程已经退出时，journald 补不上这两个字段。`journalmatch` 另含 `SYSLOG_IDENTIFIER=sshd _UID=0` 和 `SYSLOG_IDENTIFIER=sshd-session _UID=0` 两组（[详细设计第 8.36 节](docs/detailed-design.md#836-vt-33-偶发少计的原因需求-d79)）。由 `v0.1.0`～`v0.2.0` 加固的主机升级后，`verify` 对旧值报告警告；新命令 `update-fail2ban` 只改写本工具的 jail 文件和它的记录摘要，然后重启 Fail2ban。[PR #49](https://github.com/alieismy/vps-hardening/pull/49) 的最终提交与 master 的三平台 amd64 VM 各 30 项首次运行即通过，静态检查也通过（PR 中较早的一个提交未通过 ShellCheck SC2034，已由 `0e2b94a` 修复）；15 项公开资产匿名下载核对通过，GitHub 的发行版证明核对通过。在已由 `v0.2.0` 加固的 Debian 13 验收主机上，升级后记录不变，`verify` 只对 `journalmatch` 报告警告；执行 `update-fail2ban` 后 44 项通过（[详细设计第 8.39 节](docs/detailed-design.md#839-预发行版-v021-rc1-和验收主机上的-d84-增量验收)）。稳定版仍为 `v0.2.0`。
-
-**正式版 [`v0.2.0`](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0)（2026-11-21，设为 Latest，D81）。** 保留服务商预设的单一 SSH 管理端口，包括非 22 端口（D64），并含 rc.2、rc.3 的修复。代码与 `v0.2.0-rc.3` 相同，只改版本号。[PR #46](https://github.com/alieismy/vps-hardening/pull/46) 与 master 的三平台 amd64 VM 各 30 项和静态检查首次运行即通过，15 项公开资产匿名下载核对通过（[详细设计第 8.37 节](docs/detailed-design.md#837-正式版-v020-和-vt-72-的公开部分)）。真实 VPS 上，rc.3 在一台已加固的 Debian 13 主机上做了原地增量验收（[第 8.35 节](docs/detailed-design.md#835-真实-vps-增量验收v020-rc3需求-d76)）；新机上的首次预检、应用和确认以 VM 证据为准。已知限制：journald 补不上短命 sshd 进程的记录的 `_COMM`、`_SYSTEMD_UNIT` 时，Fail2ban 的 `journalmatch` 选不中这条记录，少计一次失败，偶尔要多失败一次才封禁（[第 8.36 节](docs/detailed-design.md#836-vt-33-偶发少计的原因需求-d79)）；这一局限从 `v0.1.0` 起就存在，修复放到下一版本。
-
-**预发行 [`v0.2.0-rc.3`](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.3)（2026-11-21，D75、D77）。** 修复自动恢复的两个问题，补上 VT-98 C 的测试，没有新增功能。待确认期间的 `systemctl daemon-reload`（安装或升级软件包、unattended-upgrades 都会执行）会让自动恢复重新计时，可能被一再推迟；现在临时定时器另设一个触发，定在 `status` 显示的截止时间。在 systemd 255 及以上（Debian 13、Ubuntu 24.04），待确认期间重启、由开机兜底恢复之后，`verify`、`preflight`、`ports` 报告 SSH 入口无法核实，直到下一次重载；现在开机恢复最后执行一次重载。[PR #42](https://github.com/alieismy/vps-hardening/pull/42) 与 master 的三平台 amd64 VM 各 30 项和静态检查通过，15 项公开资产匿名下载核对通过，GitHub 的发行版证明核对通过。arm64 参考运行（需求 D26，模拟运行）中，recovery 套件三个平台都通过，包括待确认期间重载的情况；matrix 套件超过 45 分钟的作业上限，hardened 套件有三处用例因模拟下的时间失败，没有发现工具的问题（[附录 A](docs/detailed-design.md#附录-a-arm64-参考结果)）。发布记录见[详细设计第 8.34 节](docs/detailed-design.md#834-预发行版-v020-rc3-和-vt-72-的公开部分)。2026-11-21 在一台已加固的 Debian 13 VPS 上完成原地增量验收：从 `v0.2.0-rc.1` 升级、端口增删并从新会话确认、超时恢复（期间重载 systemd）、待确认期间重启和无待确认时重启（[详细设计第 8.35 节](docs/detailed-design.md#835-真实-vps-增量验收v020-rc3需求-d76)）。
-
-**预发行 [`v0.2.0-rc.2`](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.2)（2026-11-20，D73）。** 修复仓库评估中的 P0 和 P1 问题，没有新增功能（需求 D67～D72）。预检在下列情况下拒绝：sshd 会拒绝 root 用公钥登录、`confirm` 无法识别新会话、其他防火墙服务启用或运行、内核以 `ipv6.disable=1` 启动。状态记录带格式编号；主机记录的格式高于要安装的版本能读取的格式时，安装脚本拒绝安装。[PR #39](https://github.com/alieismy/vps-hardening/pull/39) 与 master 的三平台 amd64 VM 各 30 项和静态检查通过，15 项公开资产匿名下载核对通过。这是仓库启用不可变发行版之后发布的第一个版本，GitHub 的发行版证明核对通过。这份代码没有在真实 VPS 上运行过；VM 中的真实升级只覆盖从 `v0.1.2` 升级（[详细设计第 8.32 节](docs/detailed-design.md#832-预发行版-v020-rc2-和-vt-72-的公开部分)）。
-
-**预发行 [`v0.2.0-rc.1`](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.1)（2026-11-03，D64）。** 本工作树按[需求 FR-04](docs/requirements.md#ssh-管理端口契约d64)、[详细设计第 2.13 节](docs/detailed-design.md#213-ssh-端口识别及兼容契约d64开发实现待验收)支持保留服务商预设的单一 SSH 管理端口；这不是 SSH 端口迁移功能，也没有新增 `--ssh-port` 参数。新增非 22 行为的验收以[验证计划第 4.12 节](docs/verification-plan.md#412-既有非-22-ssh-端口d64)及实际测试报告为准，不能由下面的历史通过记录推定。[PR #35](https://github.com/alieismy/vps-hardening/pull/35) 已合并，[第三轮 VM](https://github.com/alieismy/vps-hardening/actions/runs/41576403342) 与 [master 复核](https://github.com/alieismy/vps-hardening/actions/runs/41579030485) 的三平台 amd64 各 30 项及对应静态检查通过；15 项公开资产下载与摘要核对通过。本版本是预发行。真实 VPS 只有用户报告：一台一般服务商的 Debian 13 x86_64 主机，服务商预设非 22 端口、service 启动方式，应用并确认后 `verify` 42 项全部通过；所用的版本、是否从公网安装都没有记录（[详细设计第 8.30 节](docs/detailed-design.md#830-非-22-端口的真实-vps-验证用户报告)）。未覆盖的 VT-98 C、本轮 arm64、外部 IPv6 路径及服务商真实 NAT 仍未验收，不能宣称 VT-91～VT-98 全部通过。[CI 与发布记录](docs/detailed-design.md#828-v020-rc1-的-ci-与发布)分别列出已验证结果和未覆盖范围。以下 `v0.1.2` 状态、发布日期和测试结论描述已发布旧稳定基线，原 `0.2.0-dev` 本地证据保留。
-
-Baseline security hardening for Debian/Ubuntu VPS. **Historical stable baseline: release [v0.1.2](https://github.com/alieismy/vps-hardening/releases/tag/v0.1.2) (milestones M1–M4: read-only checks, apply with automatic restore, Fail2ban values, coexistence with 3X-UI, status, rollback, port changes and the release installer; fixes for gaps found in the requirements review are included, v0.1.0-rc.2 fixes four issues found after v0.1.0-rc.1 was released, v0.1.0-rc.3 makes the recommended flow open only 22/tcp at hardening, v0.1.0-rc.4 makes Fail2ban use this tool's values from its first start and fixes the installer's next-step hint, v0.1.1 fixes failure-path issues found in a review of v0.1.0 and an occasional false report in verify, and v0.1.2 fixes issues found in a review of v0.1.1: the key check before a rollback, accounts whose shell is not in /etc/shells, and whether ufw.service still starts at boot). Tested in CI VMs on Debian 12, Debian 13 and Ubuntu 24.04. Real-host acceptance (M5) passed on one freshly installed Debian 13 test VPS; the v0.1.0-rc.4 fixes were rechecked on the same host after a rollback, and v0.1.0 and then v0.1.1 were installed there as upgrades; v0.1.2 has not been run on a real host. Debian 12 and Ubuntu 24.04 have VM evidence only.**
+[![Latest release](https://img.shields.io/github/v/release/alieismy/vps-hardening)](https://github.com/alieismy/vps-hardening/releases/latest)
+[![static](https://github.com/alieismy/vps-hardening/actions/workflows/static.yml/badge.svg?branch=master)](https://github.com/alieismy/vps-hardening/actions/workflows/static.yml)
+[![vm](https://github.com/alieismy/vps-hardening/actions/workflows/vm.yml/badge.svg?branch=master)](https://github.com/alieismy/vps-hardening/actions/workflows/vm.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 为 Debian/Ubuntu VPS 提供基础安全加固，包括：SSH 只允许密钥登录（root 作为管理账户，只能用密钥登录）、UFW 只开放必要端口、Fail2ban，以及自动安全更新。目标是在不明显增加日常管理负担的前提下缩小暴露面，同时避免把管理员锁在服务器外。
 
-**旧稳定版基线：正式版 [`v0.1.2`](https://github.com/alieismy/vps-hardening/releases/tag/v0.1.2)（2026-10-29），修复 `v0.1.1` 的评审指出的问题：回滚前的公钥检查、shell 没有登记在 `/etc/shells` 中的账户和 `ufw.service` 的开机启用（需求 D59～D62）。真实主机验收（M5）已在一台全新安装的 Debian 13 测试 VPS 上完成，用户确认通过（需求 D52）；`v0.1.0-rc.4` 的修复已在同一台主机上复核，`v0.1.0`、`v0.1.1` 先后在这台主机上以升级的方式安装；`v0.1.2` 还没有在真实主机上运行。** 已完成里程碑 M1～M3：只读的 `preflight`（预检）和 `verify`（验证），`apply`（应用）、`confirm`（确认）和自动恢复，以及 Fail2ban 生效值、自动更新和与 3X-UI 共存的验证。M4 已实现并经评审批准（需求 D38）：`status`（状态）、`rollback`（手工回滚）、`ports`（端口变更）、已应用的主机上再次 `apply` 只做核对，以及发行版安装脚本；3X-UI 共存基线改为 v3.10.2。评审需求时发现的三处缺口已修复并随预发行版发布，相应的文档（需求 v1.7、方案设计 v1.4、验证计划 v1.5、详细设计 v0.6）已批准（需求 D39）：sshd 配置中的 `Match` 块、`ufw status` 不显示的规则、规则的基线（需求 D34～D37）。`v0.1.0-rc.1` 发布后核实的四个问题列在它的发布说明中，已在 `v0.1.0-rc.2` 中修复（需求 D40）：带引号或含空格的 sshd 配置写法会让 `Match` 块漏查；重复安装不检查权限；安装中途失败或被中断时不恢复原来的文件。以上都在三个平台的 amd64 虚拟机测试中通过（arm64 作为参考，按需测试）。`v0.1.0-rc.3` 按需求 v1.9 调整推荐流程：加固时 UFW 只放行 22/tcp，安装 3X-UI 后再用 `ports` 开放它的端口；预检发现待重启时警告（需求 D41～D43）。真实主机验收（M5）在一台重装的 Debian 13 测试 VPS 上从公开地址安装 `v0.1.0-rc.3`，按验证计划第 5 节完成（[详细设计第 8.19 节](docs/detailed-design.md#819-真实主机验收m5)）。它没有覆盖 Fail2ban 的受控触发和外部 IPv6 路径；Debian 12 和 Ubuntu 24.04 只有虚拟机证据。`v0.1.0-rc.4` 修复了 M5 之后列出的两个问题（需求 D47）：由本工具安装 fail2ban 时，第一次启动就使用 FR-08 的值；安装脚本在新机上提示不带 `--open` 的 `preflight`。在这台测试 VPS 上回滚、卸载 3X-UI 之后，从公开地址安装 `v0.1.0-rc.4` 复核了这两项（[详细设计第 8.22 节](docs/detailed-design.md#822-测试-vps-上复核需求-d47-的修复)，需求 D50）。此前在这台测试 VPS 上的试运行和核对见[详细设计第 8.6 节](docs/detailed-design.md#86-测试-vps-上的试运行)、[第 8.8 节](docs/detailed-design.md#88-测试-vps-上的-m3-核对)、[第 8.9 节](docs/detailed-design.md#89-测试-vps-上的-d27-顺序演练)、[第 8.11 节](docs/detailed-design.md#811-测试-vps-上的-m4-核对)；发布和公开下载的回验见[第 8.14 节](docs/detailed-design.md#814-预发行版和-vt-72-的公开部分)、[第 8.16 节](docs/detailed-design.md#816-预发行版-v010-rc2-和-vt-72-的公开部分)、[第 8.18 节](docs/detailed-design.md#818-预发行版-v010-rc3-和-vt-72-的公开部分)、[第 8.21 节](docs/detailed-design.md#821-预发行版-v010-rc4-和-vt-72-的公开部分)、[第 8.23 节](docs/detailed-design.md#823-正式版-v010-和-vt-72-的公开部分)、[第 8.25 节](docs/detailed-design.md#825-正式版-v011-和-vt-72-的公开部分)、[第 8.27 节](docs/detailed-design.md#827-正式版-v012-和-vt-72-的公开部分)）。Debian 12 和 Ubuntu 24.04 只有虚拟机证据（需求 D52）。`v0.1.0` 发布后，Astra 的评审指出了失败路径上的问题，已在 `v0.1.1` 中修复（需求 D54、D55，[详细设计第 8.24 节](docs/detailed-design.md#824-astra-对-v010-的评审和修复)）：快照、待确认标记或状态记录写不进时，`apply` 和 `ports` 在第一项变更之前停止或完整恢复，`confirm` 在状态改为"已应用"之前失败、`rollback` 失败后都可以再次执行（之后的失败见[详细设计第 9 节](docs/detailed-design.md#9-已知限制与后续)），这些问题只出现在失败路径上。修复时还发现 `verify` 偶尔误报 UFW 未启用或默认策略不符合（只会误报，不会漏报），一并修复（需求 D56）。`v0.1.1` 发布后，Astra 的再次评审指出的问题已在 `v0.1.2` 中修复（需求 D59～D61，[详细设计第 8.26 节](docs/detailed-design.md#826-astra-对-v011-的评审和修复)）：回滚前按回滚后的 sshd 配置检查 root 的公钥；shell 没有登记在 `/etc/shells` 中、有公钥和免密 sudo 的账户同样禁止经 SSH 登录；`verify` 检查 `ufw.service`、Fail2ban 和 APT 定时器仍然开机启动。已应用的主机上如果有这样的账户，升级后 `verify` 报告 `accounts.nopasswd` 不符合，回滚后重新应用即可。文档：[需求规格说明](docs/requirements.md)（v1.11）、[方案设计](docs/solution-design.md)（v1.7）、[验证计划](docs/verification-plan.md)（v1.10）、[详细设计](docs/detailed-design.md)（v0.16）已批准（需求规格说明、方案设计和验证计划为 2026-10-28，需求 D62；详细设计为 2026-10-29，需求 D63）。
+**当前正式版：[`v0.2.1`](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.1)（2026-11-22 UTC）。** 由 `v0.1.0`～`v0.2.0` 加固的主机，升级后须执行一次 `vps-hardening update-fail2ban`，见[升级](#升级)。
 
-## 已确认的范围（2026-10-10，后续修订至 2026-11-20）
+## 功能
+
+- **SSH**：只允许密钥登录，root 只能用密钥登录（`PermitRootLogin prohibit-password`）；除 root 外，有免密 sudo 的账户（例如镜像默认用户）禁止经 SSH 登录，它的 sudo 规则不改动。保留服务商预设的单一 SSH 管理端口，包括非 22 端口，不迁移端口。
+- **UFW**：默认拒绝入站、允许出站、拒绝转发；加固时只放行 SSH 端口，其他公开端口按声明开放。
+- **Fail2ban**：只保护 SSH，`maxretry` 为 5，白名单只含回环地址。
+- **自动安全更新**：启用 unattended-upgrades，不自动重启；需要重启时由 `verify` 报告。
+- **防锁死**：`apply` 和 `ports` 之后须在时限内（默认 10 分钟）从新的 SSH 会话确认；到期未确认，或在此之前重启，都会按快照自动恢复。
+- **只读核对与回滚**：`preflight` 在变更前检查主机，`verify` 随时核对加固结果和漂移，`rollback` 恢复到应用前的配置。
+
+## 适用范围
+
+| 项目 | 支持 |
+|---|---|
+| 发行版 | Debian 12、Debian 13、Ubuntu 24.04 LTS |
+| 架构 | x86_64；arm64 只作参考，工具可以运行，测试按需执行 |
+| 主机 | 一般 VPS 服务商的新机，在安装 3X-UI 之前加固；不含 Oracle Cloud、AWS 等大型云厂商的虚拟机 |
+
+只支持新机：已运行 3X-UI 的存量主机不在范围内，启用或运行 `nftables.service`、`netfilter-persistent` 或 `firewalld` 的主机也按存量主机拒绝。内核以 `ipv6.disable=1` 启动的主机在预检中拒绝。
+
+范围限定为基础加固，不做 CIS 全量合规、入侵检测、AppArmor/SELinux 策略或审计系统。本仓库不安装代理服务，也不做网络性能调优。各项设计决定见[已确认的范围](#已确认的范围)。
+
+## 安装
+
+前提：root 已配置可用的公钥（一般在服务商管理页面绑定 SSH 密钥即可），能以 root 用密钥登录，服务商控制台可用。
+
+1. 更新系统、安装基础工具并重启。本工具不执行这一步：
+
+   ```bash
+   apt update
+   apt -s full-upgrade   # 只模拟，查看升级计划
+   apt full-upgrade -y
+   apt install -y curl wget ca-certificates gnupg lsb-release unzip vim nano htop ufw jq iproute2 procps kmod util-linux python3
+   apt autoremove        # 清理自动安装且不再需要的软件包
+   reboot
+   ```
+
+   软件包按需增减，但须保留官方仓库的 `python3`（预检只用标准库解析 SSH 入口）和 systemd 配套的 `busctl`：缺少任一个时，预检在变更前拒绝。只安装 `ufw`、不启用也不添加规则时，主机仍是新机；这一步不要安装 Docker 或 3X-UI，也不要启用其他防火墙服务。
+
+2. 安装 `v0.2.1`：
+
+   ```bash
+   curl --disable --fail --location --proto '=https' --proto-redir '=https' \
+     https://github.com/alieismy/vps-hardening/releases/download/v0.2.1/install.sh \
+     -o install.sh &&
+   echo '32110ed9ce8ef815a1e3cc5f3ebc3db1dd94eba3cd14e3e6fbde7ac392f3cc70  install.sh' | sha256sum -c - &&
+   bash install.sh
+   ```
+
+   下载和摘要校验都成功后才执行安装器，任一步失败即停止。安装器先用内置的摘要校验 `SHA256SUMS`，再逐个校验 13 个文件，然后安装到 `/usr/local/bin/vps-hardening` 和 `/usr/local/lib/vps-hardening`；它只放置文件，不执行预检或应用（[详细设计第 2.12 节](docs/detailed-design.md#212-安装脚本)）。
+
+**发行版证明。** 仓库于 2026-11-20 启用不可变发行版，此后发布的发行版（自 `v0.2.0-rc.2` 起）资产和标签不能再修改，可以用 `gh release verify <标签>` 核对 GitHub 的发行版证明，例如 `gh release verify v0.2.1`。`v0.2.0-rc.1` 及更早的发行版不受这项保护，以各自发布页上的摘要校验为准（需求 D71）。
+
+**其他版本。** 各版本的安装命令和摘要见各自的[发布页](https://github.com/alieismy/vps-hardening/releases)。`v0.2.1` 标签及其源码归档中的 README 是发布前的快照，其中的安装示例仍指向 `v0.2.0`；安装 `v0.2.1` 请使用上面的命令。
+
+**从仓库运行（开发版）。** 仓库中的 `install.sh` 没有绑定发行版，执行时拒绝。也可以直接运行 `bin/vps-hardening`：待确认期间，自动恢复按这个路径调用它，所以确认之前不要移动或删除仓库目录。
+
+## 使用方法
+
+下文的 **P** 指预检核实的 VPS **本机监听端口**；**E** 指管理员核实的**公网 SSH 端口**，客户端使用 `ssh -p <公网SSH端口> root@vps`。服务商在 VPS 外做端口映射时，E 可以不同于 P，本机 UFW 和 Fail2ban 仍使用 P；云端安全组及映射由管理员维护。VPS 本机 DNAT、转发及容器网络不在范围内。
+
+在新的 VPS 上，以 root 用密钥经已经核实的公网入口登录后：
+
+1. **预检**：`vps-hardening preflight`。核对报告的 P、监听地址和地址族、启动方式（service 或 socket）。预检综合 sshd 的有效配置、启动参数和实际监听核实 SSH 入口，不只读主配置中的首个 `Port`，也不会把未知值当作 22；无法核实、有效多端口或入口不一致时在变更前拒绝。本工具只检查、不写入公钥；cloud-init 写给 root、带 `command=` 前缀的公钥不算可用。存在 `/var/run/reboot-required` 时给出警告，不阻止应用，建议先重启。
+2. **应用**：`vps-hardening apply`。确认已保留当前会话、服务商控制台可用后输入 `yes`。这时 UFW 只放行 P/tcp；也可以在加固时就声明公开端口（`--open 443/tcp --open 2096/tcp`），前提是这些端口与 P、面板端口不冲突。
+3. **确认**：保持当前会话，另开一个终端，经核实的公网 E 用 root 的密钥登录后执行 `vps-hardening confirm`。确认会检查新会话身份、当前完整入口与记录基线一致，以及该会话实际连接的本机端口为 P；任一入口检查不符或无法核实时，退出码为 1，保留待确认状态和已有恢复机制，不延长截止时间。确认时限默认 10 分钟（`--confirm-timeout` 可设 3～60 分钟）；到期未确认，或在此之前重启，都会按快照恢复。
+4. **验证**：之后可随时用 `vps-hardening verify` 只读核对。安装 3X-UI 之后同样适用：面板监听了非回环地址、启用了 IP Limit、用过 BBR 菜单、防火墙菜单改动了 UFW 等漂移都会报告为不符合。
+5. **安装 3X-UI 之后开放端口**：开放与 P 不冲突的入站端口和订阅端口，`vps-hardening ports --add 443/tcp --add 2096/tcp`。与应用一样，须在时限内从新的 SSH 会话执行 `confirm`，否则恢复原端口；确认后执行 `verify`。不要用 3X-UI 的防火墙菜单开放端口。
+
+面板只经 SSH 隧道访问，`apply`、`confirm` 和 `status` 的输出中有带 `<公网SSH端口>` 占位符的隧道命令，使用前替换为管理员核实的 E。本机检查和恢复结果不能单独证明公网可达。
+
+### 命令
+
+| 命令 | 作用 |
+|---|---|
+| `preflight` | 只读预检：检查平台、输入和新机条件，不改变系统 |
+| `verify` | 只读验证：逐项核对加固结果，不改变系统 |
+| `apply` | 应用加固（交互执行），结束后进入待确认；已应用的主机上用相同参数再次执行只做核对，不做变更 |
+| `confirm` | 在新的 SSH 会话中以 root 确认 `apply` 或 `ports` 的结果 |
+| `status` | 显示状态、变更记录、确认截止时间和面板隧道命令（只读） |
+| `rollback` | 恢复到应用前的配置（交互执行），包括应用前的密码认证（回滚前检查会警告）；本工具安装的软件包保留 |
+| `ports` | 增减公开端口（交互执行），例如 `ports --add 8443/tcp --remove 2096/tcp`；先撤销后增加，结束后进入待确认 |
+| `update-fail2ban` | 由 `v0.2.0` 及以前的版本加固的主机升级后，把 Fail2ban 的 `journalmatch` 改为当前值（交互执行），见[升级](#升级) |
+
+| 参数 | 适用命令 | 说明 |
+|---|---|---|
+| `--panel-port PORT` | `preflight`、`apply` | 3X-UI 面板端口，只经 SSH 隧道访问（默认 2053） |
+| `--open PORT/PROTO[/FAM]` | `preflight`、`apply` | 公开端口，PROTO 为 `tcp` 或 `udp`，FAM 为 `both`、`ipv4` 或 `ipv6`，可重复 |
+| `--add PORT/PROTO[/FAM]`、`--remove PORT/PROTO[/FAM]` | `ports` | 增加或撤销公开端口，可重复，至少给出一个 |
+| `--confirm-timeout MIN` | `preflight`、`apply`、`ports` | 确认时限，3～60 分钟（默认 10） |
+
+退出码：`0` 全部通过；`1` 有不符合项；`2` 用法或输入错误；`3` 内部错误。`vps-hardening --help` 显示帮助，`--version` 显示版本；完整的命令契约见[详细设计第 2 节](docs/detailed-design.md#2-命令契约)。
+
+### 端口冲突与漂移
+
+P 不能与面板或业务端口同号，TCP/UDP 不用于绕过用途冲突；P=80 拒绝。SSH 使用 443 或 2096 本身可用，但不能再把同号端口分配给代理或订阅。`ports --add/--remove` 不得包含 P；P≠22 时，业务端口 22 可单独增减。`verify`、再次 `apply`、`ports` 和 `confirm` 比对记录基线，发现漂移不会重新采用新端口或自动修复；排查时保留控制台入口。
+
+### 恢复
+
+恢复先尽力完成受管文件和服务恢复，再核对本机入口。运行期入口不一致或无法核实时报告“恢复失败”，`rollback` 返回 1，保留快照、标记及尚存的开机兜底；恢复开始时已停止的定时器不会自动重计时。开机恢复在 SSH 启动前执行，入口记为未验证，服务启动后仍须 `verify` 及外部新会话登录验收。
+
+## 升级
+
+用新版本发布页上的安装命令重新安装。安装器只替换程序文件，不执行预检或应用。
+
+- **待确认期间**：安装器拒绝升级，须先用旧工具完成确认或等待恢复。
+- **从 `v0.1.0`～`v0.2.0` 升级到 `v0.2.1`**：`verify` 对 Fail2ban 旧的 `journalmatch` 报告警告。执行 `vps-hardening update-fail2ban`，它只改写本工具的 jail 文件和它的记录摘要，然后重启 Fail2ban；执行之前，Fail2ban 仍按旧值工作，偶尔要多失败一次才封禁（需求 D84，[详细设计第 8.36 节](docs/detailed-design.md#836-vt-33-偶发少计的原因需求-d79)）。
+- **从 `v0.1.1` 及更早的版本升级**：shell 没有登记在 `/etc/shells` 中、有公钥和免密 sudo 的账户，升级后 `verify` 报告 `accounts.nopasswd` 不符合，回滚后重新应用即可。
+- **状态记录格式**：自 `v0.2.0-rc.2` 起，状态记录带格式编号 `record_format`；主机的记录格式高于要安装的版本能读取的格式时，安装器拒绝安装（需求 D70）。`v0.2.0-rc.1` 写的记录没有这个字段，按格式 2 读取。已发布旧版的记录缺少 P 等字段时，仅在旧格式、来源版本、原 jail 的 22 基线以及当前 SSH 入口均能核实的条件下只读兼容，不回写或猜测缺失字段；完整的新记录由完整回滚后重新应用生成。
+- **降级**：由 `v0.2.1` 加固或已执行 `update-fail2ban` 的主机，降级到 `v0.2.0` 及更早的版本不受支持（[详细设计第 9 节](docs/detailed-design.md#9-已知限制与后续)）。
+
+## 配套仓库与执行顺序
+
+三个仓库按下表的顺序使用：先加固，再调优，最后搭建代理（需求 D27；理由见[需求规格说明第 7.3 节](docs/requirements.md#73-与-vps-tuning-的约定)）。
+
+| 顺序 | 仓库 | 用途 | 状态 |
+|---|---|---|---|
+| 1 | vps-hardening（本仓库） | 基础安全加固 | 正式版 v0.2.1 |
+| 2 | [vps-tuning](https://github.com/alieismy/vps-tuning) | 网络调优、诊断与测量 | Pre-release |
+| 3 | [vps-proxy-setup](https://github.com/alieismy/vps-proxy-setup) | 代理服务搭建（以 3X-UI 为例） | 需求阶段（2026-10-25 创建） |
+
+完整流程（需求 D27、D41、D42）：
+
+1. **准备**：更新系统、安装基础工具并重启，由管理员执行（见[安装](#安装)第 1 步）；
+2. **vps-hardening**：加固并确认，UFW 只放行已核实的 P/tcp；
+3. **vps-tuning**：调优（应用 → 重启 → 验证）；
+4. **vps-proxy-setup**：安装并配置 3X-UI，然后用 `vps-hardening ports` 开放它的端口并确认；
+5. **收尾验证**：vps-tuning 的严格验证（要求代理服务已运行）；重启后再用 `vps-hardening verify`、调优的严格验证和代理客户端连接复核。
+
+调优的应用和重启要在加固确认之后进行，确认前重启会自动撤销加固。
+
+## 已确认的范围
+
+2026-10-10 确认，后续修订至 2026-11-20；[需求规格说明](docs/requirements.md)以此为上游依据。表中的 D 编号是需求规格说明第 2.2 节记录的决定。
 
 | 项目 | 决定 |
 |---|---|
@@ -46,113 +159,29 @@ Baseline security hardening for Debian/Ubuntu VPS. **Historical stable baseline:
 | 交付形态 | 在 VPS 本机运行的单命令工具 `vps-hardening`，提供预检、应用、验证和回滚，不依赖控制端；应用后须在 10 分钟内（可设 3～60 分钟）从新的 SSH 会话确认，否则自动恢复 |
 | 3X-UI 共存基线 | v3.10.2（2026-10-21 起替代 v3.7.0，需求 D32）：安装时带版本参数 `v3.10.2`，上游安装脚本从同一 tag 取得菜单脚本，不再需要替换 `/usr/bin/x-ui`；设 `XUI_ENABLE_FAIL2BAN=false`，用 `XUI_PANEL_PORT` 预先指定面板端口；不使用 3X-UI 的防火墙菜单和 BBR 菜单。已安装 v3.7.0 的现有主机不受此约束；v3.10.2 自带的 Xray 对 REALITY 客户端的要求见需求规格说明第 7.2 节 |
 
-范围限定为基础加固，不做 CIS 全量合规、入侵检测、AppArmor/SELinux 策略或审计系统。本仓库不安装代理服务，也不做网络性能调优。
+## 项目状态
 
-## 使用方法
+- **发布**：正式版 `v0.2.1` 于 2026-11-22（UTC）发布并设为 Latest，代码与预发行版 `v0.2.1-rc.1` 相同，只改版本号。
+- **CI**：发布前，拉取请求和 master 都在 Debian 12、Debian 13、Ubuntu 24.04 的 amd64 虚拟机中通过了 30 个作业的测试矩阵和静态检查；15 项公开资产匿名下载后与构建一致，GitHub 的发行版证明核对通过。
+- **真实 VPS**：`v0.2.x` 只在一台已加固的 Debian 13 主机（服务商预设的非 22 端口）上做过原地增量验收和升级，升级到 `v0.2.1` 后 `verify` 44 项通过。新机上的首次预检、应用和确认没有用 `v0.2.x` 在真实 VPS 上做过，以虚拟机证据为准。`v0.1.x` 的真实主机验收（M5）在一台全新安装的 Debian 13 测试 VPS 上完成。
+- **未覆盖**：Debian 12 和 Ubuntu 24.04 只有虚拟机证据；arm64 只作参考，`v0.2.1` 没有运行；外部 IPv6 路径和服务商真实 NAT 未验收。
 
-以下步骤中的 P 指预检核实的 VPS **本机监听端口**；E 指管理员核实的**公网 SSH 端口**，客户端使用 `ssh -p <公网SSH端口> root@vps`。服务商在 VPS 外做端口映射时，E 可以不同于 P，本机 UFW 和 Fail2ban 仍使用 P；云端安全组及映射由管理员维护。VPS 本机 DNAT、转发及容器网络不在本次范围内。
+各版本的变化见 [Releases](https://github.com/alieismy/vps-hardening/releases)；发布、CI 和验收的完整记录见[详细设计第 8 节](docs/detailed-design.md#8-运行证据)，已知限制见[第 9 节](docs/detailed-design.md#9-已知限制与后续)。
 
-以下加固和确认步骤对应正式版 `v0.2.1`（代码与预发行 `v0.2.1-rc.1` 相同，只改版本号）；三平台 amd64 的 CI 矩阵已通过；真实 VPS 上，`v0.2.0-rc.3` 在一台已加固的 Debian 13 主机上完成了原地增量验收（从 `v0.2.0-rc.1` 升级，详细设计第 8.35 节），这台主机之后升级到 `v0.2.1-rc.1` 并执行了 `update-fail2ban`（详细设计第 8.39 节），新机上的首次预检、应用和确认没有在真实 VPS 上重做，以 VM 证据为准，其他未覆盖场景尚未验收。旧稳定版 `v0.1.2` 不包含非 22 扩展，其发布和验收历史保留在下文及详细设计第 8.27 节。在新的 VPS 上，以 root 用密钥经已经核实的公网入口登录后：
+## 文档
 
-1. 更新系统、安装基础工具并重启（需求 D24、D42）。本工具不执行这一步：
+| 文档 | 内容 |
+|---|---|
+| [需求规格说明](docs/requirements.md) | 功能需求（FR）、非功能需求、跨仓库约定，以及用户原话（U）和已确认决定（D）的记录 |
+| [方案设计](docs/solution-design.md) | 组件、边界、流程和关键机制 |
+| [详细设计](docs/detailed-design.md) | 命令契约、检查项、模块划分、测试框架、运行证据和已知限制 |
+| [验证计划](docs/verification-plan.md) | 验证什么、在哪里验证、怎样判定通过（测试项编号为 VT） |
 
-   ```bash
-   apt update
-   apt -s full-upgrade   # 只模拟，查看升级计划
-   apt full-upgrade -y
-   apt install -y curl wget ca-certificates gnupg lsb-release unzip vim nano htop ufw jq iproute2 procps kmod util-linux python3
-   apt autoremove        # 清理自动安装且不再需要的软件包
-   reboot
-   ```
+各文档的版本和评审状态见文档开头的表格。
 
-   软件包按需增减。本工具的只读预检需要 `python3` 和 systemd 配套的 `busctl`；`busctl` 用于读取保留类型及参数边界的 systemd 属性，缺少时在变更前拒绝，不安装或启动额外服务。只安装 `ufw`、不启用也不添加规则时，主机仍是新机；这一步不要安装 Docker 或 3X-UI，也不要启用其他防火墙服务。
-2. 安装正式版 `v0.2.1`。公开资产及下列安装器摘要已经下载核对（详细设计第 8.40 节）；真实 VPS 上只做过一台已加固主机的原地增量验收和升级（`v0.2.0-rc.3`、`v0.2.1-rc.1`、`v0.2.1`，详细设计第 8.35、8.39、8.40 节）。安装脚本先用内置的摘要校验 `SHA256SUMS`，再逐个校验 13 个资产，然后安装到 `/usr/local/bin/vps-hardening` 和 `/usr/local/lib/vps-hardening`；它只放置文件，不执行预检或应用（[详细设计第 2.12 节](docs/detailed-design.md#212-安装脚本)）：
+## 反馈
 
-   ```bash
-   curl --disable --fail --location --proto '=https' --proto-redir '=https' \
-     https://github.com/alieismy/vps-hardening/releases/download/v0.2.1/install.sh \
-     -o install.sh &&
-   echo '32110ed9ce8ef815a1e3cc5f3ebc3db1dd94eba3cd14e3e6fbde7ac392f3cc70  install.sh' | sha256sum -c - &&
-   bash install.sh
-   ```
-
-   下载、摘要校验均成功后才执行安装器；任一步失败即停止这组命令。`v0.2.1` 标签及其源码归档内的 README、验证记录保留了发布前快照，其中的安装示例仍指向 `v0.2.0`。安装本版本请使用上面的命令；最终 CI、发布及公开下载回验见[详细设计第 8.40 节](docs/detailed-design.md#840-正式版-v021-和-vt-72-的公开部分)。正式版 `v0.2.0` 和预发行版 `v0.2.1-rc.1`、`v0.2.0-rc.3`、`v0.2.0-rc.2`、`v0.2.0-rc.1` 的安装命令和摘要见各自的发布页（[v0.2.0](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0)、[v0.2.1-rc.1](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.1-rc.1)、[rc.3](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.3)、[rc.2](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.2)、[rc.1](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.1)）。
-
-   仓库于 2026-11-20 启用不可变发行版：此后发布的发行版，资产和标签不能再修改。`v0.2.0-rc.2` 是启用后发布的第一个版本；它和此后的版本都可以用 `gh release verify <标签>` 核对 GitHub 的发行版证明，例如 `gh release verify v0.2.1`。`v0.2.0-rc.1` 及更早的发行版发布在启用之前，不受这项保护，仍以各自发布页上的摘要校验为准（需求 D71）。
-
-   仓库中的 `install.sh` 没有绑定发行版，执行时拒绝。也可以直接从仓库运行 `bin/vps-hardening`（开发版）：待确认期间，自动恢复按这个路径调用它，所以确认之前不要移动或删除仓库目录。
-3. 预检前须具备官方仓库的 `python3`（只使用标准库解析 SSH 入口；缺少时只读拒绝）。预检：`vps-hardening preflight`。核对报告的本机 P、监听地址/族和启动方式；工具组合配置求值、有效启动参数、加载配置及实际监听核实入口，不能只读主配置中的首个 `Port`，也不会把未知值当作 22。控制台中没有 `SSH_CONNECTION` 不会单独导致预检失败。root 必须已有可用的公钥，一般在服务商管理页面绑定 SSH 密钥即可；本工具只检查、不写入公钥，cloud-init 写给 root、带 `command=` 前缀的公钥不算可用。存在 `/var/run/reboot-required` 时预检给出警告，不阻止应用，建议先重启（需求 D43，自 `v0.1.0-rc.3` 起）。自 `v0.1.0-rc.4` 起，安装脚本结尾提示的就是这一步；`v0.1.0-rc.3` 提示的 `preflight --open <公开端口>` 是旧的推荐做法（详细设计第 9 节）。
-4. 应用：`vps-hardening apply`，确认已保留当前会话、服务商控制台可用后输入 `yes`。这时 UFW 只放行 P/tcp，3X-UI 的端口在第 7 步开放（需求 D41、D64）；也可以在加固时就声明公开端口（`--open 443/tcp --open 2096/tcp`），前提是这些端口与 P、面板端口不冲突。
-5. 保持当前会话，另开一个终端，经核实的公网 E 用 root 的密钥登录后执行 `vps-hardening confirm`。确认会检查新会话身份、当前完整入口与记录基线一致，以及该会话实际连接的本机端口为 P；任一入口检查不符或无法核实时，退出码为 1，保留待确认状态和已有恢复机制，不延长截止时间。确认时限默认 10 分钟（`--confirm-timeout` 可设 3～60 分钟）；到期未确认，或在此之前重启，都会按快照恢复。
-6. 之后可随时用 `vps-hardening verify` 只读核对。安装 3X-UI 之后同样适用：面板监听了非回环地址、启用了 IP Limit、用过 BBR 菜单、防火墙菜单改动了 UFW 等漂移都会报告为不符合。
-7. 安装 3X-UI 之后，开放与 P 不冲突的入站端口和订阅端口：`vps-hardening ports --add 443/tcp --add 2096/tcp`。与应用一样，须在时限内从新的 SSH 会话执行 `confirm`，否则恢复原端口；确认后执行 `verify`。不要用 3X-UI 的防火墙菜单开放端口。
-8. 其他命令：`vps-hardening status` 显示状态、变更记录和面板隧道命令。`vps-hardening ports --add 8443/tcp --remove 2096/tcp` 增减公开端口，与应用一样须在时限内从新的 SSH 会话执行 `confirm`，否则恢复原端口。`vps-hardening rollback` 恢复到应用前的配置，包括应用前的密码认证（回滚前检查会警告），本工具安装的软件包保留。已应用的主机上用相同参数再次 `apply` 只做核对，不做变更。由 `v0.2.0` 及以前的版本加固的主机升级到 `v0.2.1-rc.1` 及以后的版本后，`verify` 对 Fail2ban 旧的 `journalmatch` 报告警告，执行 `vps-hardening update-fail2ban` 更新（需求 D84）。
-
-**端口冲突与漂移。** P 不能与面板或业务端口同号，TCP/UDP 不用于绕过用途冲突；P=80 拒绝。SSH 使用 443 或 2096 本身可用，但不能再把同号端口分配给代理或订阅。`ports --add/--remove` 不得包含 P；P≠22 时，业务端口 22 可单独增减。`verify`、再次 `apply`、`ports` 和 `confirm` 比对记录基线，发现漂移不会重新采用新端口或自动修复；排查时保留控制台入口。
-
-**恢复与旧记录。** 恢复先尽力完成受管文件和服务恢复，再核对本机入口。运行期入口不一致或无法核实时报告“恢复失败”，`rollback` / `_restore` 返回 1，保留快照、标记及尚存的开机兜底；恢复开始时已停止的定时器不会自动重计时。开机恢复在 SSH 启动前执行，入口记为未验证，服务启动后仍须 `verify` 及外部新会话登录验收。已发布旧版记录缺少 P 等字段时，仅在旧格式、来源版本、原 jail 的 22 基线以及当前 SSH 入口均能核实的条件下只读兼容，不回写或猜测缺失字段；完整新记录由完整回滚后重新应用生成。待确认期间安装器拒绝升级，须先用旧工具完成确认或恢复，保留原工具文件及恢复触发。自 `v0.2.0-rc.2` 起，状态记录带格式编号 `record_format`，兼容按格式判断，不再按来源版本；从它起的安装脚本，在主机的记录格式高于要安装的版本能读取的格式时拒绝安装（需求 D70）。`v0.2.0-rc.1` 写的记录没有这个字段，按格式 2 读取；从 `v0.2.0-rc.1` 升级只有状态记录解析的单元测试，没有在 VM 中实际升级。
-
-面板只经 SSH 隧道访问，`apply`、`confirm` 和 `status` 的输出中有带 `<公网SSH端口>` 占位符的隧道命令，使用前替换为管理员核实的 E。本机检查和恢复结果不能单独证明公网可达。命令细节见[详细设计第 2 节](docs/detailed-design.md#2-命令契约)。
-
-## 待定事项
-
-正式版 [`v0.2.1`](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.1) 已于 2026-11-22（UTC）发布并设为 Latest（需求 D86，[详细设计第 8.40 节](docs/detailed-design.md#840-正式版-v021-和-vt-72-的公开部分)）：修复 VT-33 的 `journalmatch` 并新增 `update-fail2ban`（需求 D84，[第 8.36 节](docs/detailed-design.md#836-vt-33-偶发少计的原因需求-d79)），代码与预发行版 `v0.2.1-rc.1` 相同，只改版本号。由 `v0.2.0` 及以前的版本加固的主机升级后要执行 `update-fail2ban`，否则 Fail2ban 仍按旧值工作。验收主机已从 `v0.2.0` 升级到 `v0.2.1-rc.1` 并执行 `update-fail2ban`（[第 8.39 节](docs/detailed-design.md#839-预发行版-v021-rc1-和验收主机上的-d84-增量验收)），之后按需求 D87 升级到正式版 `v0.2.1`，`verify` 44 项通过（[第 8.40 节](docs/detailed-design.md#840-正式版-v021-和-vt-72-的公开部分)）。需求 v1.21 和详细设计 v0.26 待评审。上一个正式版 `v0.2.0` 于 2026-11-21 发布（需求 D81，[第 8.37 节](docs/detailed-design.md#837-正式版-v020-和-vt-72-的公开部分)）。
-
-D64 已随预发行 [`v0.2.0-rc.1`](https://github.com/alieismy/vps-hardening/releases/tag/v0.2.0-rc.1) 发布；PR #35 与 master 的三平台 amd64 VM 各 30 项和静态检查、15 项公开资产下载核对通过，未覆盖边界见[详细设计第 8.28 节](docs/detailed-design.md#828-v020-rc1-的-ci-与发布)。旧版 VM/M5 证据只覆盖当时的 22 主机。新增端口识别、完整生命周期、实际封禁及兼容验证须按 VT-91～VT-98 分别取证；真实非 22 VPS 的操作及验收需另行授权；用户已报告一台 Debian 13 VPS 上的验证通过（[详细设计第 8.30 节](docs/detailed-design.md#830-非-22-端口的真实-vps-验证用户报告)）。P0 修复（[#38](https://github.com/alieismy/vps-hardening/pull/38)，[详细设计第 8.29 节](docs/detailed-design.md#829-p0-修复拉取请求-38的-ci)）和 P1 的修改（[#39](https://github.com/alieismy/vps-hardening/pull/39)，需求 D68～D72，[详细设计第 8.31 节](docs/detailed-design.md#831-p1-修复拉取请求-39的-ci)）已随预发行 `v0.2.0-rc.2` 发布（[详细设计第 8.32 节](docs/detailed-design.md#832-预发行版-v020-rc2-和-vt-72-的公开部分)）。需求 D75、D77 的修复（[#42](https://github.com/alieismy/vps-hardening/pull/42)，[详细设计第 8.33 节](docs/detailed-design.md#833-vt-20-的恢复延迟vt-98-c-和拉取请求-42-的-ci)）已随预发行 `v0.2.0-rc.3` 发布（[详细设计第 8.34 节](docs/detailed-design.md#834-预发行版-v020-rc3-和-vt-72-的公开部分)）；按需求 D76 的真实 VPS 增量验收已于 2026-11-21 在 `v0.2.0-rc.3` 上完成（[详细设计第 8.35 节](docs/detailed-design.md#835-真实-vps-增量验收v020-rc3需求-d76)）。需求 v1.20、方案 v1.11、验证计划 v1.15、详细设计 v0.25 已经用户评审批准（需求 D87）；当前修订文档为需求 v1.21、详细设计 v0.26，这些修订没有评审，方案设计和验证计划不变。它们的历史批准记录保留在文档中，实际实现和验证状态以本次交付报告为准。
-
-详细设计 v0.16 已批准（2026-10-29，需求 D63）：记录正式版 `v0.1.2` 的发布和 VT-72 的公开部分（[第 8.27 节](docs/detailed-design.md#827-正式版-v012-和-vt-72-的公开部分)）。测试 VPS 暂不从 `v0.1.1` 升级到 `v0.1.2`，以后是否升级由用户决定（需求 D63）。已知限制和后续事项见[详细设计第 9 节](docs/detailed-design.md#9-已知限制与后续)。
-
-需求 v1.11、方案设计 v1.7、验证计划 v1.10 和详细设计 v0.15 已批准（2026-10-28，需求 D62）：记录 Astra 对 `v0.1.1` 的评审、自检、复核和修复（[第 8.26 节](docs/detailed-design.md#826-astra-对-v011-的评审和修复)）；FR-03 中可以经 SSH 登录的账户按 sshd 的判定确定，新增 VT-65。修复随正式版 `v0.1.2` 发布。
-
-详细设计 v0.14 已批准（2026-10-27，需求 D58）：记录正式版 `v0.1.1` 的发布、VT-72 的公开部分和在测试 VPS 上从 `v0.1.0` 的升级（[第 8.25 节](docs/detailed-design.md#825-正式版-v011-和-vt-72-的公开部分)）。当时本仓库没有待用户决定的事项，已知限制和后续事项见[详细设计第 9 节](docs/detailed-design.md#9-已知限制与后续)；后续的工作转到配套仓库 vps-proxy-setup（需求 D58）。
-
-验证计划 v1.9 和详细设计 v0.13 已批准（2026-10-27，需求 D57）：记录 Astra 对 `v0.1.0` 的评审、复核和修复（[第 8.24 节](docs/detailed-design.md#824-astra-对-v010-的评审和修复)，需求 D54～D56），新增 VT-27。修复随正式版 `v0.1.1` 发布。
-
-详细设计 v0.12 已批准（2026-10-26，需求 D53）：记录正式版 `v0.1.0` 的发布、VT-72 的公开部分和在测试 VPS 上从 `v0.1.0-rc.4` 的升级（[第 8.23 节](docs/detailed-design.md#823-正式版-v010-和-vt-72-的公开部分)），第 2.12 节写明正式版设为 Latest（需求 D52）。
-
-详细设计 v0.11 已批准（2026-10-26，需求 D51）：记录 `v0.1.0-rc.4` 的发布（[第 8.21 节](docs/detailed-design.md#821-预发行版-v010-rc4-和-vt-72-的公开部分)）和在测试 VPS 上对需求 D47 修复的复核（[第 8.22 节](docs/detailed-design.md#822-测试-vps-上复核需求-d47-的修复)，需求 D50），附录 A 增加一次 arm64 参考运行，第 9 节随之修改。用户确认真实主机验收（M5）通过，发布正式版 `v0.1.0`（需求 D52，[方案设计第 10 节](docs/solution-design.md#10-里程碑)：M5 之后由用户确认）：生产 VPS 目前只用 Debian 13，Debian 12 和 Ubuntu 24.04 以虚拟机证据为准；代码与 `v0.1.0-rc.4` 相同，只改版本号。
-
-需求 v1.10、方案设计 v1.6、验证计划 v1.8 和详细设计 v0.10 已批准（2026-10-25，需求 D48）：修复需求 D46 列出的两个问题（需求 D47，#20）。由本工具安装 fail2ban 时，安装期间临时阻止服务启动，第一次启动就使用 FR-08 的值；安装脚本在没有应用过的主机上提示执行不带 `--open` 的 `preflight`。修复已合并，随预发行版 `v0.1.0-rc.4` 发布（需求 D49）。
-
-详细设计 v0.9 已批准（2026-10-24，需求 D46）：记录 `v0.1.0-rc.3` 的发布和真实主机验收（M5）（第 8.18、8.19 节），第 9 节增加 M5 发现的一个问题，并记录 M5 再次观察到的一个已知问题。
-
-需求 v1.8、v1.9，方案设计 v1.5，验证计划 v1.6、v1.7 和详细设计 v0.7、v0.8 已批准（2026-10-24，需求 D44）。这两轮批准的内容：
-
-- VPS 流程的澄清（需求 D41～D43，用户于 2026-10-24 决定）：加固时不声明公开端口，UFW 只放行 22/tcp；安装 3X-UI 时用 `ports --add` 开放它的端口并从新会话确认，`ports` 因此改为 P0；加固前的系统更新、基础工具安装和清理写入需求第 7.3 节；预检发现待重启时只警告。3X-UI 的 IP Limit 暂不考虑（需求第 8 节）。
-
-- 发布后的修复（需求 D40，用户于 2026-10-22 决定）：`v0.1.0-rc.1` 发布后核实了四个问题。修复后，检查 sshd 配置时按 sshd 自己的规则读取每一行，带引号的关键字、带引号或转义空格的 `Include` 路径不再漏查；安装脚本只在已安装文件的内容、属主和权限都与发行版相同时不做变更；替换文件的过程中失败或被中断时，恢复为安装前的文件（[详细设计第 1 节](docs/detailed-design.md#1-范围)、[第 2.12 节](docs/detailed-design.md#212-安装脚本)）。
-
-需求 v1.7、方案设计 v1.4、验证计划 v1.5 和详细设计 v0.6 已批准（2026-10-22，需求 D39）。这一轮批准的内容：
-
-- 修复（需求 D34～D37，用户于 2026-10-22 决定）：评审需求 v1.6 草案时发现三处自 M2 起就有的缺口。修复后，预检和 `verify` 拒绝 sshd 配置中的 `Match` 块；UFW 未启用时，预检也拒绝已添加的规则和被改动的 before/after 框架文件，`verify` 另外比较框架文件；规则改为与声明比较；`verify` 核对 `user.rules`、`user6.rules` 与记录的摘要，两者不一致时 `ports` 拒绝变更；80/tcp 在输入阶段就拒绝（[详细设计第 1 节](docs/detailed-design.md#1-范围)、[第 8.13 节](docs/detailed-design.md#813-修复的运行结果)）。
-
-需求 v1.6、方案设计 v1.3、验证计划 v1.4、详细设计 v0.5 和 M4 的拉取请求 #10 已批准（2026-10-22，需求 D38）。这一轮批准的内容：3X-UI 共存基线由 v3.7.0 改为 v3.10.2（需求 D32，用户于 2026-10-21 选定；测试 VPS 上先卸载 3.7.0 再安装，需求 D33）；M4 的命令契约、测试和运行证据（[详细设计第 8.10～8.12 节](docs/detailed-design.md#810-m4-运行结果)）。评审时要求安装脚本在已应用的主机上的结尾提示在发布前修复，这一项已在修复中完成（[详细设计第 2.12 节](docs/detailed-design.md#212-安装脚本)）。
-
-需求 v1.5、验证计划 v1.3 和详细设计 v0.4 已确认（2026-10-20，需求 D31）。这一轮确认的内容：3X-UI 的"安装防火墙"在 UFW 已启用时不做任何改动，据此更正需求第 7.2 节和 FR-10 的验收（需求 D29）；增加 `f2b.config`、`f2b.files`、`uu.dropin` 三个检查项；Fail2ban 对封禁过的来源加重计数（需求第 10.1 节、R-3）。这三项由需求 D30 确认。
-
-需求 v1.4、方案设计 v1.2、验证计划 v1.2 和详细设计 v0.3 已确认（2026-10-20，需求 D28）。这一轮确认的内容：ARM64 改为按需运行的参考（需求 D26）；加固、调优和 3X-UI 的执行顺序（需求 D27）；Fail2ban 和自动更新的配置写入提前到 M2（[详细设计第 1 节](docs/detailed-design.md#1-范围)）；连续探测失败后重试一次，两次都失败才算中断（VT-25）。此前确认的 root 只用密钥登录、Fail2ban 参数等见上方的范围表。另有一项留到 M4 之后：真实主机验收的时间和主机（[验证计划第 9 节](docs/verification-plan.md#9-待决事项)）。
-
-预发行版 `v0.1.0-rc.1` 已于 2026-10-22 在 #10、#11 合并之后发布，VT-72 的公开部分已完成（需求 D38，[详细设计第 8.14 节](docs/detailed-design.md#814-预发行版和-vt-72-的公开部分)）；发布后核实的四个问题已补进它的发布说明（需求 D39）。预发行版 `v0.1.0-rc.2` 已于 2026-10-22 在 #14、#15 合并之后发布，修复了这四个问题，VT-72 的公开部分已完成（需求 D39，[详细设计第 8.16 节](docs/detailed-design.md#816-预发行版-v010-rc2-和-vt-72-的公开部分)）。预发行版 `v0.1.0-rc.3` 已于 2026-10-24 在 #18 合并之后发布，包含这两轮批准的修改，VT-72 的公开部分已完成（需求 D44，[详细设计第 8.18 节](docs/detailed-design.md#818-预发行版-v010-rc3-和-vt-72-的公开部分)）。真实主机验收（M5）已在一台重装的 Debian 13 测试 VPS 上完成（[详细设计第 8.19 节](docs/detailed-design.md#819-真实主机验收m5)）。验收中发现一个问题，并再次观察到一个已知问题，都在详细设计第 9 节。按用户的决定（需求 D46），`v0.1.0-rc.3` 的发布说明补充"已知问题"，这两个问题在一个修复拉取请求中修复，随下一个预发行版与其他修改一起发布：
-- 安装脚本结尾的提示仍是 `preflight --open <公开端口>`，与推荐流程不一致（M5 发现）；
-- 应用时 fail2ban 先按软件包自带的配置运行几秒，这期间产生的封禁只有 600 秒（详细设计第 8.8 节已记录，当时判断影响小、不修改）。
-
-预发行版 `v0.1.0-rc.4` 已于 2026-10-25 在 #20～#22 合并之后发布，修复了这两个问题，VT-72 的公开部分已完成（需求 D49，[详细设计第 8.21 节](docs/detailed-design.md#821-预发行版-v010-rc4-和-vt-72-的公开部分)）。之后在这台测试 VPS 上回滚 `v0.1.0-rc.3`、卸载 3X-UI，从公开地址安装 `v0.1.0-rc.4` 复核了这两项：按应用前已有失败产生的封禁为 1 天（需求 D50，[详细设计第 8.22 节](docs/detailed-design.md#822-测试-vps-上复核需求-d47-的修复)）。
-
-正式版 `v0.1.0` 已于 2026-10-26 在 #24 合并之后发布，VT-72 的公开部分已完成；在这台测试 VPS 上从公开地址安装，把 `v0.1.0-rc.4` 升级为 `v0.1.0`，`verify` 全部通过（需求 D52，[详细设计第 8.23 节](docs/detailed-design.md#823-正式版-v010-和-vt-72-的公开部分)）。
-
-正式版 `v0.1.1` 已于 2026-10-27 在 #27、#28 合并之后发布，VT-72 的公开部分已完成；在这台测试 VPS 上从公开地址安装，把 `v0.1.0` 升级为 `v0.1.1`，`verify` 全部通过，已应用的配置和状态记录不变（需求 D57，[详细设计第 8.25 节](docs/detailed-design.md#825-正式版-v011-和-vt-72-的公开部分)）。
-
-正式版 `v0.1.2` 已于 2026-10-29 在 #31、#32 合并之后发布，VT-72 的公开部分已完成；用户决定暂不在这台测试 VPS 上升级（需求 D63，[详细设计第 8.27 节](docs/detailed-design.md#827-正式版-v012-和-vt-72-的公开部分)）。
-
-## 配套仓库
-
-| 仓库 | 用途 | 状态 |
-|---|---|---|
-| [vps-tuning](https://github.com/alieismy/vps-tuning) | 网络调优、诊断与测量 | Pre-release |
-| vps-hardening（本仓库） | 基础安全加固 | 正式版 v0.2.1 已发布并设为 Latest；在一台已加固的 Debian 13 VPS 上做过原地增量验收和升级验收 |
-| [vps-proxy-setup](https://github.com/alieismy/vps-proxy-setup) | 代理服务搭建（以 3X-UI 为例） | 需求阶段（2026-10-25 创建） |
-
-建议的执行顺序（需求 D27、D41、D42；理由见[需求规格说明第 7.3 节](docs/requirements.md#73-与-vps-tuning-的约定)）：更新系统、安装基础工具并重启 → 加固并确认（UFW 只放行已核实的 P/tcp）→ 调优（应用 → 重启 → 验证）→ 安装并配置 3X-UI，用 `vps-hardening ports` 开放它的端口并确认 → 调优仓库的严格验证 → 重启后复核。系统更新和重启由管理员执行，本工具不执行。调优的应用和重启要在加固确认之后进行，确认前重启会自动撤销加固。
+问题和建议请提交到 [GitHub Issues](https://github.com/alieismy/vps-hardening/issues)。安全漏洞请不要提交到 Issues，按 [SECURITY.md](SECURITY.md) 私密报告。
 
 ## 许可证
 
